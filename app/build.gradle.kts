@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.thomas.carspeed"
-        minSdk = 36
+        minSdk = 26
         targetSdk = 36
-        versionCode = 100
-        versionName = "1.1.6"
+        versionCode = 101
+        versionName = "1.1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

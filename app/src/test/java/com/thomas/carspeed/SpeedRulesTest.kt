@@ -270,6 +270,110 @@ class SpeedRulesTest {
         assertTrue(result.finalSpeedMps > 0f)
     }
 
+    @Test
+    fun tunnel_estimate_should_continue_after_gps_loss() {
+        val state = SpeedRules.SpeedFilterState(
+            currentSpeedMps = 16f,
+            lastNonZeroSpeedMps = 16f,
+            lastNonZeroTimeMs = 9_000L,
+            lastTrustedSpeedMps = 16f,
+            lastTrustedTimeMs = 9_000L,
+            lastTrustedGpsSpeedMps = 16f,
+            lastTrustedGpsTimeMs = 9_000L,
+            lastEstimateTimeMs = 9_000L
+        )
+
+        val result = SpeedRules.estimateTunnelSpeed(
+            old = state,
+            nowMs = 10_000L,
+            linearAccelMps2 = 0.03f,
+            gpsSignalLost = true
+        )
+
+        assertTrue(result.isEstimated)
+        assertTrue(result.finalSpeedMps > 0f)
+        assertEquals(SpeedRules.EstimateStatus.ESTIMATE, result.estimateStatus)
+        assertFalse(result.allowUpdateMaxSpeed)
+    }
+
+    @Test
+    fun tunnel_estimate_should_decay_under_low_motion() {
+        var state = SpeedRules.SpeedFilterState(
+            currentSpeedMps = 12f,
+            lastNonZeroSpeedMps = 12f,
+            lastNonZeroTimeMs = 0L,
+            lastTrustedSpeedMps = 12f,
+            lastTrustedTimeMs = 0L,
+            tunnelModeActive = true,
+            estimatedSpeedMps = 12f,
+            lastTrustedGpsSpeedMps = 12f,
+            lastTrustedGpsTimeMs = 0L,
+            lastEstimateTimeMs = 0L,
+            estimateConfidence = 1f,
+            estimateStatus = SpeedRules.EstimateStatus.ESTIMATE
+        )
+
+        repeat(8) { idx ->
+            state = SpeedRules.estimateTunnelSpeed(
+                old = state,
+                nowMs = (idx + 1) * 1_000L,
+                linearAccelMps2 = 0.01f,
+                gpsSignalLost = true
+            ).nextFilterState
+        }
+
+        assertTrue(state.currentSpeedMps < 12f)
+        assertTrue(state.lowMotionSampleCount >= 4)
+    }
+
+    @Test
+    fun tunnel_estimate_should_eventually_reach_decay_mode() {
+        var state = SpeedRules.SpeedFilterState(
+            currentSpeedMps = 10f,
+            lastNonZeroSpeedMps = 10f,
+            lastNonZeroTimeMs = 0L,
+            lastTrustedSpeedMps = 10f,
+            lastTrustedTimeMs = 0L,
+            tunnelModeActive = true,
+            estimatedSpeedMps = 10f,
+            lastTrustedGpsSpeedMps = 10f,
+            lastTrustedGpsTimeMs = 0L,
+            lastEstimateTimeMs = 0L,
+            estimateConfidence = 0.2f,
+            lowMotionSampleCount = 3,
+            estimateStatus = SpeedRules.EstimateStatus.ESTIMATE
+        )
+
+        val result = SpeedRules.estimateTunnelSpeed(
+            old = state,
+            nowMs = 10_000L,
+            linearAccelMps2 = 0.0f,
+            gpsSignalLost = true
+        )
+
+        assertEquals(SpeedRules.EstimateStatus.DECAY, result.estimateStatus)
+        assertTrue(result.estimateConfidence < 0.2f)
+    }
+
+    @Test
+    fun tunnel_estimate_should_not_start_without_recent_trusted_gps() {
+        val state = SpeedRules.SpeedFilterState(
+            currentSpeedMps = 8f,
+            lastTrustedGpsSpeedMps = 8f,
+            lastTrustedGpsTimeMs = 1_000L,
+            lastEstimateTimeMs = 1_000L
+        )
+
+        val result = SpeedRules.estimateTunnelSpeed(
+            old = state,
+            nowMs = 8_000L,
+            linearAccelMps2 = 0.0f,
+            gpsSignalLost = true
+        )
+
+        assertFalse(result.isEstimated)
+    }
+
     private fun lockStationary(): SpeedRules.SpeedFilterState {
         var state = SpeedRules.SpeedFilterState()
         repeat(2) { idx ->

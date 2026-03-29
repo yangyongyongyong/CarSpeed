@@ -25,4 +25,7 @@
     <string name="tips_title">启动前提示</string>
     <string name="no_gps_signal">无GPS信号</string>
     <string name="no_gps_short">无GPS</string>
+    <string name="estimated_speed_label">估算速度</string>
+    <string name="gps_estimate_hint">GPS丢失，惯性估算</string>
+    <string name="gps_estimate_short">估算</string>
 </resources>

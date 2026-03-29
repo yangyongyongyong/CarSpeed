@@ -114,6 +114,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
     private val maxSpeedTimeFormatter = SimpleDateFormat("yyyyMMdd HH:mm:ss", Locale.getDefault())
     private var transparentTextMode = false
+    private var currentEstimateActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -681,8 +682,17 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         val nowRealtimeNs = SystemClock.elapsedRealtimeNanos()
         gpsSignalLost = SpeedRules.shouldForceZeroOnStale(lastReceiveRealtimeNs, nowRealtimeNs, GPS_STALE_TIMEOUT_MS)
         if (gpsSignalLost) {
-            speedMps = 0f
-            speedFilterState = speedFilterState.copy(currentSpeedMps = 0f)
+            val estimate = SpeedRules.estimateTunnelSpeed(
+                old = speedFilterState,
+                nowMs = System.currentTimeMillis(),
+                linearAccelMps2 = accelDisplayMps2,
+                gpsSignalLost = true
+            )
+            speedFilterState = estimate.nextFilterState
+            speedMps = estimate.finalSpeedMps
+            currentEstimateActive = estimate.isEstimated
+        } else {
+            currentEstimateActive = false
         }
 
         val speedKmh = SpeedRules.toKmhClamped(speedMps)
@@ -692,12 +702,24 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         } else {
             "峰值时间 --:--:--"
         }
-        tvCurrentSpeedValue?.text = if (gpsSignalLost) {
+        tvCurrentSpeedLabel?.text = if (currentEstimateActive) {
+            getString(R.string.estimated_speed_label)
+        } else {
+            "当前速度"
+        }
+        tvCurrentSpeedValue?.text = if (currentEstimateActive) {
+            String.format("%.1f", speedKmh)
+        } else if (gpsSignalLost) {
             getString(R.string.no_gps_signal)
         } else {
             String.format("%.1f", speedKmh)
         }
         applyCurrentSpeedTextStyle(gpsSignalLost)
+        tvDragHandle?.text = if (currentEstimateActive) {
+            getString(R.string.gps_estimate_hint)
+        } else {
+            "拖动移动 · 靠边收起"
+        }
         val waitNowMs = SpeedRules.resolveWaitClockNowMs(
             gpsSignalLost = gpsSignalLost,
             lastGpsFixWallTimeMs = lastGpsFixWallTimeMs,
@@ -733,7 +755,11 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
         speedTrendView?.updateData(speedHistory.toList(), yMax, historyWindowMs)
 
-        overlayBubble?.text = if (gpsSignalLost) getString(R.string.no_gps_short) else String.format("%.0f", speedKmh)
+        overlayBubble?.text = when {
+            currentEstimateActive -> String.format("%.0f", speedKmh)
+            gpsSignalLost -> getString(R.string.no_gps_short)
+            else -> String.format("%.0f", speedKmh)
+        }
     }
 
     private fun formatDuration(ms: Long): String {
@@ -747,10 +773,15 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     private fun applyCurrentSpeedTextStyle(signalLost: Boolean) {
         tvCurrentSpeedValue?.setTextSize(
             TypedValue.COMPLEX_UNIT_SP,
-            if (signalLost) 16f * overlayScale else 34f * overlayScale
+            when {
+                currentEstimateActive -> 28f * overlayScale
+                signalLost -> 16f * overlayScale
+                else -> 34f * overlayScale
+            }
         )
-        tvCurrentSpeedValue?.setLineSpacing(0f, if (signalLost) 0.92f else 1f)
-        tvCurrentSpeedUnit?.visibility = if (signalLost) View.INVISIBLE else View.VISIBLE
+        tvCurrentSpeedValue?.setLineSpacing(0f, if (signalLost && !currentEstimateActive) 0.92f else 1f)
+        tvCurrentSpeedUnit?.visibility = if (signalLost && !currentEstimateActive) View.INVISIBLE else View.VISIBLE
+        tvCurrentSpeedValue?.alpha = if (currentEstimateActive) 0.92f else 1f
     }
 
     private fun calculateMaxScaleForBounds(params: WindowManager.LayoutParams): Float {

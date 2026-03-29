@@ -16,6 +16,24 @@ object SpeedRules {
     private const val MAX_IMPLAUSIBLE_ACCEL_MPS2 = 12f
     private const val ENTER_STATIONARY_SAMPLES = 2
     private const val EXIT_STATIONARY_SAMPLES = 2
+    private const val TUNNEL_ENTRY_SPEED_MPS = 1.4f
+    private const val TUNNEL_MAX_DT_SEC = 1.2f
+    private const val TUNNEL_ACCEL_SMOOTHING = 0.18f
+    private const val TUNNEL_ACCEL_POSITIVE_LIMIT = 0.45f
+    private const val TUNNEL_ACCEL_NEGATIVE_LIMIT = -1.4f
+    private const val TUNNEL_BASE_DRAG_PER_SEC = 0.08f
+    private const val TUNNEL_LOW_MOTION_DRAG_PER_SEC = 0.3f
+    private const val TUNNEL_LOW_SPEED_DRAG_PER_SEC = 0.55f
+    private const val TUNNEL_CONFIDENCE_DECAY_PER_SEC = 0.012f
+    private const val TUNNEL_LOW_CONFIDENCE_DECAY_PER_SEC = 0.035f
+    private const val TUNNEL_LOW_MOTION_SAMPLES = 4
+    private const val TUNNEL_MIN_CONFIDENCE = 0.12f
+
+    enum class EstimateStatus {
+        GPS,
+        ESTIMATE,
+        DECAY
+    }
 
     data class MaxSpeedResult(
         val maxSpeedKmh: Float,
@@ -40,7 +58,17 @@ object SpeedRules {
         val movingSampleCount: Int = 0,
         val isStationaryLocked: Boolean = false,
         val lastTrustedSpeedMps: Float = 0f,
-        val lastTrustedTimeMs: Long = 0L
+        val lastTrustedTimeMs: Long = 0L,
+        val tunnelModeActive: Boolean = false,
+        val estimatedSpeedMps: Float = 0f,
+        val lastTrustedGpsSpeedMps: Float = 0f,
+        val lastTrustedGpsTimeMs: Long = 0L,
+        val lastEstimateTimeMs: Long = 0L,
+        val tunnelElapsedMs: Long = 0L,
+        val estimateConfidence: Float = 0f,
+        val lowMotionSampleCount: Int = 0,
+        val estimateStatus: EstimateStatus = EstimateStatus.GPS,
+        val smoothedLinearAccelMps2: Float = 0f
     )
 
     data class LocationSample(
@@ -61,6 +89,9 @@ object SpeedRules {
         val isStationaryLocked: Boolean,
         val isSampleTrusted: Boolean,
         val allowUpdateMaxSpeed: Boolean,
+        val isEstimated: Boolean,
+        val estimateConfidence: Float,
+        val estimateStatus: EstimateStatus,
         val nextFilterState: SpeedFilterState
     )
 
@@ -212,12 +243,146 @@ object SpeedRules {
             movingCount >= 1 &&
             finalSpeed > STATIONARY_NOISE_SPEED_MPS
 
+        val lastTrustedGpsSpeedMps = if (gpsTrusted) gpsSpeed else old.lastTrustedGpsSpeedMps
+        val lastTrustedGpsTimeMs = if (gpsTrusted) sample.nowMs else old.lastTrustedGpsTimeMs
+
         return FilterResult(
             finalSpeedMps = finalSpeed,
             isStationaryLocked = isStationaryLocked,
             isSampleTrusted = isSampleTrusted,
             allowUpdateMaxSpeed = allowUpdateMaxSpeed,
-            nextFilterState = stabilized.copy(currentSpeedMps = finalSpeed)
+            isEstimated = false,
+            estimateConfidence = 0f,
+            estimateStatus = EstimateStatus.GPS,
+            nextFilterState = stabilized.copy(
+                currentSpeedMps = finalSpeed,
+                tunnelModeActive = false,
+                estimatedSpeedMps = finalSpeed,
+                lastTrustedGpsSpeedMps = lastTrustedGpsSpeedMps,
+                lastTrustedGpsTimeMs = lastTrustedGpsTimeMs,
+                estimateConfidence = 0f,
+                tunnelElapsedMs = 0L,
+                lowMotionSampleCount = 0,
+                estimateStatus = EstimateStatus.GPS,
+                lastEstimateTimeMs = sample.nowMs
+            )
+        )
+    }
+
+    fun estimateTunnelSpeed(
+        old: SpeedFilterState,
+        nowMs: Long,
+        linearAccelMps2: Float?,
+        gpsSignalLost: Boolean
+    ): FilterResult {
+        val lastTrustedAgeMs = if (old.lastTrustedGpsTimeMs > 0L) nowMs - old.lastTrustedGpsTimeMs else Long.MAX_VALUE
+        val canEnterEstimate = gpsSignalLost &&
+            old.lastTrustedGpsSpeedMps > TUNNEL_ENTRY_SPEED_MPS &&
+            lastTrustedAgeMs in 0..5_000L
+
+        if (!old.tunnelModeActive && !canEnterEstimate) {
+            val stabilized = stabilizeSpeedMps(old, 0f, nowMs).copy(
+                tunnelModeActive = false,
+                estimatedSpeedMps = 0f,
+                estimateConfidence = 0f,
+                lowMotionSampleCount = 0,
+                tunnelElapsedMs = 0L,
+                estimateStatus = EstimateStatus.GPS,
+                lastEstimateTimeMs = nowMs
+            )
+            return FilterResult(
+                finalSpeedMps = stabilized.currentSpeedMps,
+                isStationaryLocked = stabilized.isStationaryLocked,
+                isSampleTrusted = false,
+                allowUpdateMaxSpeed = false,
+                isEstimated = false,
+                estimateConfidence = 0f,
+                estimateStatus = EstimateStatus.GPS,
+                nextFilterState = stabilized
+            )
+        }
+
+        val entering = !old.tunnelModeActive
+        val estimateBaseSpeed = if (entering) {
+            old.lastTrustedGpsSpeedMps.coerceAtLeast(old.currentSpeedMps)
+        } else {
+            old.estimatedSpeedMps.coerceAtLeast(old.currentSpeedMps)
+        }
+        val dtSec = when {
+            old.lastEstimateTimeMs <= 0L -> 0.25f
+            else -> ((nowMs - old.lastEstimateTimeMs).coerceAtLeast(0L) / 1000f).coerceIn(0.05f, TUNNEL_MAX_DT_SEC)
+        }
+        val rawAccel = (linearAccelMps2 ?: 0f).coerceIn(-3.5f, 3.5f)
+        val smoothedAccel = if (entering) {
+            rawAccel
+        } else {
+            old.smoothedLinearAccelMps2 * (1f - TUNNEL_ACCEL_SMOOTHING) + rawAccel * TUNNEL_ACCEL_SMOOTHING
+        }
+        val lowMotion = abs(smoothedAccel) < LOW_LINEAR_ACCEL_MPS2
+        val lowMotionCount = if (lowMotion) old.lowMotionSampleCount + 1 else 0
+
+        val accelForEstimate = when {
+            smoothedAccel > 0f -> smoothedAccel.coerceAtMost(TUNNEL_ACCEL_POSITIVE_LIMIT)
+            else -> smoothedAccel.coerceAtLeast(TUNNEL_ACCEL_NEGATIVE_LIMIT)
+        }
+
+        val tunnelElapsedMs = if (entering) 0L else old.tunnelElapsedMs + (dtSec * 1000f).toLong()
+        var confidence = if (entering) 1f else old.estimateConfidence
+        confidence -= TUNNEL_CONFIDENCE_DECAY_PER_SEC * dtSec
+        if (lowMotionCount >= TUNNEL_LOW_MOTION_SAMPLES) {
+            confidence -= TUNNEL_LOW_CONFIDENCE_DECAY_PER_SEC * dtSec
+        }
+        confidence = confidence.coerceIn(0f, 1f)
+
+        val drag = when {
+            estimateBaseSpeed < 2.2f -> TUNNEL_LOW_SPEED_DRAG_PER_SEC
+            lowMotionCount >= TUNNEL_LOW_MOTION_SAMPLES -> TUNNEL_LOW_MOTION_DRAG_PER_SEC
+            else -> TUNNEL_BASE_DRAG_PER_SEC
+        }
+
+        val integrated = (estimateBaseSpeed + accelForEstimate * dtSec).coerceAtLeast(0f)
+        val confidenceScale = if (accelForEstimate > 0f) confidence.coerceAtLeast(0.18f) else 1f
+        val dragged = (integrated - drag * dtSec).coerceAtLeast(0f)
+        val estimatedSpeed = (dragged * confidenceScale).coerceAtLeast(0f)
+
+        val estimateStatus = if (confidence <= TUNNEL_MIN_CONFIDENCE || lowMotionCount >= TUNNEL_LOW_MOTION_SAMPLES) {
+            EstimateStatus.DECAY
+        } else {
+            EstimateStatus.ESTIMATE
+        }
+
+        val stabilized = stabilizeSpeedMps(
+            old = old,
+            rawSpeedMps = estimatedSpeed,
+            nowMs = nowMs,
+            zeroGraceMs = 1_000L,
+            decayFactorOnZero = 0.92f
+        ).copy(
+            tunnelModeActive = estimatedSpeed > 0.05f,
+            estimatedSpeedMps = estimatedSpeed,
+            lastEstimateTimeMs = nowMs,
+            tunnelElapsedMs = tunnelElapsedMs,
+            estimateConfidence = confidence,
+            lowMotionSampleCount = lowMotionCount,
+            estimateStatus = estimateStatus,
+            smoothedLinearAccelMps2 = smoothedAccel
+        )
+        val finalSpeed = if (stabilized.currentSpeedMps < 0.18f || confidence <= 0f) 0f else stabilized.currentSpeedMps
+        val finalState = stabilized.copy(
+            currentSpeedMps = finalSpeed,
+            tunnelModeActive = finalSpeed > 0f,
+            estimatedSpeedMps = finalSpeed
+        )
+
+        return FilterResult(
+            finalSpeedMps = finalSpeed,
+            isStationaryLocked = finalState.isStationaryLocked,
+            isSampleTrusted = false,
+            allowUpdateMaxSpeed = false,
+            isEstimated = finalSpeed > 0f,
+            estimateConfidence = confidence,
+            estimateStatus = if (finalSpeed > 0f) estimateStatus else EstimateStatus.DECAY,
+            nextFilterState = finalState
         )
     }
 
