@@ -1,0 +1,31 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d0925"/>
+      <stop offset="100%" stop-color="#180f37"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg3)"/>
+
+  <rect x="160" y="310" rx="30" ry="30" width="760" height="520" fill="#121229" stroke="#8f53ff" stroke-width="3"/>
+  <rect x="176" y="330" rx="18" ry="18" width="728" height="78" fill="#1d1a3e" stroke="#00ffd2"/>
+  <text x="205" y="380" fill="#00ffd8" font-size="40" font-family="PingFang SC, Arial">SENSOR HUD</text>
+  <text x="780" y="380" fill="#ff67df" font-size="40" font-family="PingFang SC, Arial">A16</text>
+
+  <rect x="200" y="450" rx="18" ry="18" width="680" height="105" fill="#1b1b36" stroke="#4f4f8e"/>
+  <text x="230" y="514" fill="#9ea2d8" font-size="30" font-family="PingFang SC, Arial">SPD</text>
+  <text x="420" y="520" fill="#00ffd2" font-size="62" font-family="PingFang SC, Arial">35.6</text>
+  <text x="700" y="514" fill="#b9bbe6" font-size="30" font-family="PingFang SC, Arial">km/h</text>
+
+  <rect x="200" y="570" rx="18" ry="18" width="680" height="105" fill="#1b1b36" stroke="#4f4f8e"/>
+  <text x="230" y="634" fill="#9ea2d8" font-size="30" font-family="PingFang SC, Arial">ACC</text>
+  <text x="420" y="640" fill="#ffc36d" font-size="62" font-family="PingFang SC, Arial">2.08</text>
+  <text x="700" y="634" fill="#b9bbe6" font-size="30" font-family="PingFang SC, Arial">m/s²</text>
+
+  <rect x="200" y="690" rx="18" ry="18" width="680" height="105" fill="#1b1b36" stroke="#4f4f8e"/>
+  <text x="230" y="754" fill="#9ea2d8" font-size="30" font-family="PingFang SC, Arial">HDG</text>
+  <text x="420" y="760" fill="#95beff" font-size="62" font-family="PingFang SC, Arial">301</text>
+  <text x="730" y="754" fill="#b9bbe6" font-size="30" font-family="PingFang SC, Arial">deg</text>
+
+  <text x="205" y="810" fill="#8f95d1" font-size="28" font-family="PingFang SC, Arial">赛博夜景风 · 高对比 · 运动状态醒目</text>
+</svg>

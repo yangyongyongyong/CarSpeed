@@ -1,0 +1,28 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7f9ff"/>
+      <stop offset="100%" stop-color="#e8f0ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+
+  <rect x="130" y="240" rx="40" width="820" height="640" fill="#ffffff" stroke="#d4e1f8" stroke-width="2"/>
+  <text x="180" y="320" fill="#2c456f" font-size="40" font-family="PingFang SC, Arial">速度优先模式</text>
+
+  <text x="180" y="390" fill="#7a90b5" font-size="30" font-family="PingFang SC, Arial">目前最高速度</text>
+  <text x="180" y="515" fill="#1f5aff" font-size="104" font-family="PingFang SC, Arial" font-weight="700">68.9</text>
+  <text x="610" y="515" fill="#6f86ad" font-size="42" font-family="PingFang SC, Arial">km/h</text>
+
+  <line x1="170" y1="545" x2="910" y2="545" stroke="#e4ecfb" stroke-width="2"/>
+
+  <text x="180" y="615" fill="#7a90b5" font-size="28" font-family="PingFang SC, Arial">当前速度</text>
+  <text x="180" y="710" fill="#2f73ff" font-size="80" font-family="PingFang SC, Arial" font-weight="700">22.4</text>
+  <text x="470" y="710" fill="#7f94b8" font-size="34" font-family="PingFang SC, Arial">km/h</text>
+
+  <rect x="170" y="745" rx="18" width="350" height="95" fill="#f8fbff" stroke="#e1eaf9"/>
+  <text x="195" y="802" fill="#8ea2c1" font-size="28" font-family="PingFang SC, Arial">加速度: 0.98 m/s²</text>
+
+  <rect x="560" y="745" rx="18" width="350" height="95" fill="#f8fbff" stroke="#e1eaf9"/>
+  <text x="585" y="802" fill="#8ea2c1" font-size="28" font-family="PingFang SC, Arial">方向角: 178°</text>
+</svg>

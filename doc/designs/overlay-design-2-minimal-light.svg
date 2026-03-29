@@ -1,0 +1,31 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5f8ff"/>
+      <stop offset="100%" stop-color="#e2ebff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg2)"/>
+
+  <rect x="120" y="250" rx="36" ry="36" width="840" height="480" fill="#ffffff" stroke="#d6e2f7" stroke-width="2"/>
+  <text x="175" y="330" fill="#223a64" font-size="42" font-family="PingFang SC, Arial">传感悬浮窗</text>
+  <rect x="780" y="286" rx="16" ry="16" width="120" height="44" fill="#eaf3ff"/>
+  <text x="820" y="317" fill="#356ab0" font-size="28" font-family="PingFang SC, Arial">ON</text>
+
+  <rect x="165" y="390" rx="28" ry="28" width="230" height="280" fill="#f8fbff" stroke="#dee9f8"/>
+  <text x="195" y="445" fill="#6b84ab" font-size="32" font-family="PingFang SC, Arial">速度</text>
+  <text x="195" y="540" fill="#2f73ff" font-size="64" font-family="PingFang SC, Arial">22.4</text>
+  <text x="290" y="610" fill="#7e94b7" font-size="28" font-family="PingFang SC, Arial">km/h</text>
+
+  <rect x="425" y="390" rx="28" ry="28" width="230" height="280" fill="#f8fbff" stroke="#dee9f8"/>
+  <text x="455" y="445" fill="#6b84ab" font-size="32" font-family="PingFang SC, Arial">加速度</text>
+  <text x="455" y="540" fill="#ff8d42" font-size="64" font-family="PingFang SC, Arial">0.98</text>
+  <text x="550" y="610" fill="#7e94b7" font-size="28" font-family="PingFang SC, Arial">m/s²</text>
+
+  <rect x="685" y="390" rx="28" ry="28" width="230" height="280" fill="#f8fbff" stroke="#dee9f8"/>
+  <text x="715" y="445" fill="#6b84ab" font-size="32" font-family="PingFang SC, Arial">方向</text>
+  <text x="715" y="540" fill="#4ec688" font-size="64" font-family="PingFang SC, Arial">178</text>
+  <text x="810" y="610" fill="#7e94b7" font-size="28" font-family="PingFang SC, Arial">°</text>
+
+  <text x="170" y="700" fill="#7389ae" font-size="28" font-family="PingFang SC, Arial">极简风 · 白天可读性强 · 信息块清晰</text>
+</svg>

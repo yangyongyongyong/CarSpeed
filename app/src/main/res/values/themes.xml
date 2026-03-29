@@ -1,0 +1,33 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.CarSpeed" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_blue</item>
+        <item name="colorSecondary">@color/brand_teal</item>
+        <item name="colorSurface">@color/surface_primary</item>
+        <item name="android:colorBackground">@color/brand_sand</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/brand_navy</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="materialCardViewFilledStyle">@style/Widget.CarSpeed.Card</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Card" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">@color/surface_primary</item>
+        <item name="strokeColor">@color/divider_soft</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cardCornerRadius">28dp</item>
+    </style>
+
+    <style name="TextAppearance.CarSpeed.Title" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.CarSpeed.Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="TextAppearance.CarSpeed.SectionTitle" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>

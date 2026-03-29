@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">CarSpeed</string>
+    <string name="home_title">驾驶浮层控制台</string>
+    <string name="home_subtitle">用更清晰的结构管理速度浮层、透明度和图表范围。</string>
+    <string name="status_label">当前状态</string>
+    <string name="status_idle">状态：待机</string>
+    <string name="status_running">状态：悬浮窗运行中</string>
+    <string name="start_overlay">启动悬浮窗</string>
+    <string name="stop_overlay">停止悬浮窗</string>
+    <string name="history_title">驾驶记录</string>
+    <string name="history_subtitle">按时间或速度回看最近 100 条驾驶数据。</string>
+    <string name="history_panel_title">记录明细</string>
+    <string name="sort_label">排序方式</string>
+    <string name="history_empty">暂无驾驶记录</string>
+    <string name="usage_tips">请授予“定位”和“悬浮窗”权限，启动后会显示速度/加速度/方向角。</string>
+    <string name="notif_channel">悬浮窗服务</string>
+    <string name="notif_title">CarSpeed 正在运行</string>
+    <string name="notif_text">正在采集速度、加速度与方向角</string>
+    <string name="opacity_label_default">背景透明度：0%</string>
+    <string name="opacity_label_fmt">悬浮框透明度：%1$d%% (0不透明,100透明)</string>
+    <string name="y_axis_label_default">折线图Y轴最大值：300 km/h</string>
+    <string name="y_axis_label_fmt">折线图Y轴最大值：%1$d km/h</string>
+    <string name="opacity_helper">透明度越高，浮层越轻；适合叠在导航或行车界面上。</string>
+    <string name="y_axis_helper">建议覆盖你常见的最高车速，避免曲线被压扁。</string>
+    <string name="tips_title">启动前提示</string>
+    <string name="no_gps_signal">无GPS信号</string>
+    <string name="no_gps_short">无GPS</string>
+</resources>

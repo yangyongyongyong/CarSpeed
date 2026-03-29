@@ -1,0 +1,24 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3f7ff"/>
+      <stop offset="100%" stop-color="#dfe9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+
+  <rect x="140" y="230" rx="34" width="800" height="610" fill="#ffffff" stroke="#d8e3f8"/>
+  <text x="190" y="305" fill="#2a4168" font-size="40" font-family="PingFang SC, Arial">传感悬浮窗（优化）</text>
+
+  <rect x="180" y="340" rx="24" width="720" height="220" fill="#f0f5ff"/>
+  <text x="215" y="400" fill="#6f86ad" font-size="30" font-family="PingFang SC, Arial">MAX SPEED</text>
+  <text x="215" y="520" fill="#1e5bff" font-size="110" font-family="PingFang SC, Arial" font-weight="700">68.9</text>
+  <text x="670" y="520" fill="#6f86ad" font-size="38" font-family="PingFang SC, Arial">km/h</text>
+
+  <rect x="180" y="580" rx="22" width="720" height="145" fill="#f8fbff"/>
+  <text x="215" y="635" fill="#7c92b6" font-size="28" font-family="PingFang SC, Arial">CURRENT</text>
+  <text x="215" y="700" fill="#3073ff" font-size="76" font-family="PingFang SC, Arial" font-weight="700">22.4</text>
+  <text x="485" y="700" fill="#8297ba" font-size="32" font-family="PingFang SC, Arial">km/h</text>
+
+  <text x="215" y="770" fill="#8ea3c2" font-size="28" font-family="PingFang SC, Arial">ACC 0.98 m/s²   ·   HDG 178°</text>
+</svg>

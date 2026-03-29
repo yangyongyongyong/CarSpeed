@@ -1,0 +1,45 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wallpaper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2d4271"/>
+      <stop offset="55%" stop-color="#1b2646"/>
+      <stop offset="100%" stop-color="#0f1730"/>
+    </linearGradient>
+    <linearGradient id="frost" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f8ff" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#edf4ff" stop-opacity="0.52"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8bb7ff" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#8bb7ff" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 预览背景 -->
+  <rect width="1080" height="1920" fill="url(#wallpaper)"/>
+  <circle cx="910" cy="190" r="260" fill="#8ab6ff" fill-opacity="0.13"/>
+  <circle cx="160" cy="1640" r="330" fill="#95cbff" fill-opacity="0.10"/>
+
+  <!-- 半透明主卡片 -->
+  <rect x="120" y="230" rx="42" width="840" height="640" fill="url(#frost)" stroke="#e2edff" stroke-opacity="0.78" stroke-width="2"/>
+  <rect x="120" y="230" rx="42" width="840" height="640" fill="url(#highlight)"/>
+
+  <text x="175" y="315" fill="#1f3d69" fill-opacity="0.96" font-size="48" font-family="PingFang SC, Arial" font-weight="600">速度优先模式</text>
+
+  <!-- 最大速度：单位放在小字括号里，数值大面积展示 -->
+  <text x="175" y="395" fill="#5777a8" font-size="34" font-family="PingFang SC, Arial">目前最高速度（km/h）</text>
+  <text x="168" y="560" fill="#0f56ff" font-size="190" font-family="PingFang SC, Arial" font-weight="700">68.9</text>
+
+  <line x1="165" y1="595" x2="915" y2="595" stroke="#d5e5ff" stroke-opacity="0.85" stroke-width="2"/>
+
+  <!-- 当前速度：第二大，放在更大留白区域 -->
+  <text x="175" y="660" fill="#5c7eaf" font-size="30" font-family="PingFang SC, Arial">当前速度（km/h）</text>
+  <text x="172" y="805" fill="#2a6dff" font-size="130" font-family="PingFang SC, Arial" font-weight="700">22.4</text>
+
+  <!-- 次要信息缩小 -->
+  <rect x="165" y="815" rx="18" width="350" height="90" fill="#ffffff" fill-opacity="0.40" stroke="#e4edff" stroke-opacity="0.70"/>
+  <text x="190" y="870" fill="#5e7aa6" font-size="34" font-family="PingFang SC, Arial">加速度: 0.98 m/s²</text>
+
+  <rect x="565" y="815" rx="18" width="350" height="90" fill="#ffffff" fill-opacity="0.40" stroke="#e4edff" stroke-opacity="0.70"/>
+  <text x="590" y="870" fill="#5e7aa6" font-size="34" font-family="PingFang SC, Arial">方向角: 178°</text>
+</svg>
