@@ -243,13 +243,28 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         val end = System.currentTimeMillis()
         val start = tripStartTimeMs
         if (start > 0L && end > start) {
+            val waitNowMs = SpeedRules.resolveWaitClockNowMs(
+                gpsSignalLost = gpsSignalLost,
+                lastGpsFixWallTimeMs = lastGpsFixWallTimeMs,
+                nowMs = end
+            )
+            val waitDurationMs = SpeedRules.currentWaitDurationMs(
+                SpeedRules.WaitState(
+                    tripStarted = tripStarted,
+                    tripStartTimeMs = tripStartTimeMs,
+                    waitAtZeroAccumMs = waitAtZeroAccumMs,
+                    waitAtZeroStartMs = waitAtZeroStartMs
+                ),
+                waitNowMs
+            )
             DriveRecordStore.addRecord(
                 this,
                 DriveRecord(
                     startTimeMs = start,
                     endTimeMs = end,
                     durationMs = end - start,
-                    maxSpeedKmh = maxSpeedKmh
+                    maxSpeedKmh = maxSpeedKmh,
+                    waitDurationMs = waitDurationMs
                 )
             )
         }

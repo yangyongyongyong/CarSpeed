@@ -103,6 +103,7 @@ class HistoryActivity : AppCompatActivity() {
                 appendLine("启动时间: ${fmt.format(Date(r.startTimeMs))}")
                 appendLine("结束时间: ${fmt.format(Date(r.endTimeMs))}")
                 appendLine("本次耗时: ${formatDuration(r.durationMs)}")
+                appendLine("静止等待: ${formatDuration(r.waitDurationMs)}")
                 appendLine("最高速度: ${String.format("%.1f", r.maxSpeedKmh)} km/h")
                 appendLine("--------------------")
             }

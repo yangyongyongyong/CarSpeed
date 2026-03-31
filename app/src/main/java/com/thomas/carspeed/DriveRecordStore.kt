@@ -8,7 +8,8 @@ data class DriveRecord(
     val startTimeMs: Long,
     val endTimeMs: Long,
     val durationMs: Long,
-    val maxSpeedKmh: Float
+    val maxSpeedKmh: Float,
+    val waitDurationMs: Long = 0L
 )
 
 object DriveRecordStore {
@@ -36,7 +37,8 @@ object DriveRecordStore {
                 startTimeMs = o.optLong("startTimeMs", 0L),
                 endTimeMs = o.optLong("endTimeMs", 0L),
                 durationMs = o.optLong("durationMs", 0L),
-                maxSpeedKmh = o.optDouble("maxSpeedKmh", 0.0).toFloat()
+                maxSpeedKmh = o.optDouble("maxSpeedKmh", 0.0).toFloat(),
+                waitDurationMs = o.optLong("waitDurationMs", 0L)
             )
         }
         return result
@@ -51,6 +53,7 @@ object DriveRecordStore {
                     .put("endTimeMs", r.endTimeMs)
                     .put("durationMs", r.durationMs)
                     .put("maxSpeedKmh", r.maxSpeedKmh)
+                    .put("waitDurationMs", r.waitDurationMs)
             )
         }
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
