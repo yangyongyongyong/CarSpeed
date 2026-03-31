@@ -178,6 +178,15 @@
                         android:textColor="#9DB4D8"
                         android:textSize="10sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvGpsSatelliteCount"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="GPS卫星：--"
+                        android:textColor="#B8C8E6"
+                        android:textSize="10sp" />
                 </LinearLayout>
             </LinearLayout>
 

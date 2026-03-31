@@ -16,6 +16,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.GnssStatus
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -64,6 +65,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     private var tvMaxSpeedUnit: TextView? = null
     private var tvCurrentSpeedLabel: TextView? = null
     private var tvCurrentSpeedUnit: TextView? = null
+    private var tvGpsSatelliteCount: TextView? = null
     private var tvTrendLabel: TextView? = null
     private var tvWaitLabel: TextView? = null
     private var tvTripDurationLabel: TextView? = null
@@ -115,6 +117,8 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     private val maxSpeedTimeFormatter = SimpleDateFormat("yyyyMMdd HH:mm:ss", Locale.getDefault())
     private var transparentTextMode = false
     private var currentEstimateActive = false
+    private var gpsUsedSatelliteCount: Int? = null
+    private var gnssStatusCallback: GnssStatus.Callback? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -132,6 +136,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         createOverlay()
         registerSensors()
         requestLocationUpdates()
+        registerGnssStatusUpdates()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -158,6 +163,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         super.onDestroy()
         sensorManager.unregisterListener(this)
         locationManager?.removeUpdates(this)
+        unregisterGnssStatusUpdates()
         overlayView?.let { windowManager.removeView(it) }
         overlayView = null
     }
@@ -182,6 +188,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tvMaxSpeedUnit = view.findViewById(R.id.tvMaxSpeedUnit)
         tvCurrentSpeedLabel = view.findViewById(R.id.tvCurrentSpeedLabel)
         tvCurrentSpeedUnit = view.findViewById(R.id.tvCurrentSpeedUnit)
+        tvGpsSatelliteCount = view.findViewById(R.id.tvGpsSatelliteCount)
         tvTrendLabel = view.findViewById(R.id.tvTrendLabel)
         tvWaitLabel = view.findViewById(R.id.tvWaitLabel)
         tvTripDurationLabel = view.findViewById(R.id.tvTripDurationLabel)
@@ -293,6 +300,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tvMaxSpeedTime?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f * overlayScale)
         tvMaxSpeedValue?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30f * overlayScale)
         applyCurrentSpeedTextStyle(gpsSignalLost)
+        tvGpsSatelliteCount?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f * overlayScale)
         tvAccelValue?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f * overlayScale)
         tvHeadingValue?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f * overlayScale)
 
@@ -502,6 +510,55 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             this,
             Looper.getMainLooper()
         )
+    }
+
+    private fun registerGnssStatusUpdates() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) return
+        if (locationManager == null || gnssStatusCallback != null) return
+
+        val callback = object : GnssStatus.Callback() {
+            override fun onSatelliteStatusChanged(status: GnssStatus) {
+                var usedInFixCount = 0
+                for (i in 0 until status.satelliteCount) {
+                    if (status.usedInFix(i)) usedInFixCount += 1
+                }
+                gpsUsedSatelliteCount = usedInFixCount
+                refreshOverlay()
+            }
+
+            override fun onStopped() {
+                gpsUsedSatelliteCount = null
+                refreshOverlay()
+            }
+        }
+
+        try {
+            val registered = locationManager?.registerGnssStatusCallback(
+                callback,
+                Handler(Looper.getMainLooper())
+            ) == true
+            if (registered) {
+                gnssStatusCallback = callback
+            }
+        } catch (_: SecurityException) {
+            gpsUsedSatelliteCount = null
+        } catch (_: RuntimeException) {
+            gpsUsedSatelliteCount = null
+        }
+    }
+
+    private fun unregisterGnssStatusUpdates() {
+        val callback = gnssStatusCallback ?: return
+        try {
+            locationManager?.unregisterGnssStatusCallback(callback)
+        } catch (_: RuntimeException) {
+            // ignore teardown exception
+        }
+        gnssStatusCallback = null
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -714,6 +771,9 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         } else {
             String.format("%.1f", speedKmh)
         }
+        tvGpsSatelliteCount?.text = gpsUsedSatelliteCount?.let {
+            getString(R.string.gps_satellite_label_fmt, it)
+        } ?: getString(R.string.gps_satellite_unknown)
         applyCurrentSpeedTextStyle(gpsSignalLost)
         tvDragHandle?.text = if (currentEstimateActive) {
             getString(R.string.gps_estimate_hint)
@@ -851,6 +911,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tvMaxSpeedUnit?.setTextColor(secondary)
         tvCurrentSpeedLabel?.setTextColor(primary)
         tvCurrentSpeedUnit?.setTextColor(secondary)
+        tvGpsSatelliteCount?.setTextColor(secondary)
         tvTrendLabel?.setTextColor(primary)
         tvWaitLabel?.setTextColor(secondary)
         tvTripDurationLabel?.setTextColor(secondary)

@@ -28,4 +28,6 @@
     <string name="estimated_speed_label">估算速度</string>
     <string name="gps_estimate_hint">GPS丢失，惯性估算</string>
     <string name="gps_estimate_short">估算</string>
+    <string name="gps_satellite_label_fmt">GPS卫星：%1$d</string>
+    <string name="gps_satellite_unknown">GPS卫星：--</string>
 </resources>
