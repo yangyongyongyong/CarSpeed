@@ -271,6 +271,41 @@ class SpeedRulesTest {
     }
 
     @Test
+    fun slow_continuous_motion_should_unlock_stationary_without_linear_accel() {
+        var state = lockStationary()
+
+        val first = SpeedRules.processLocationSample(
+            old = state,
+            sample = sample(
+                computedSpeedMps = 2.9f,
+                accuracyMeters = 5f,
+                distanceMeters = 2.8f,
+                deltaTimeSec = 1f,
+                linearAccelMps2 = null,
+                nowMs = 3_000L
+            )
+        )
+        assertEquals(0f, first.finalSpeedMps)
+        assertTrue(first.isStationaryLocked)
+
+        state = first.nextFilterState
+        val second = SpeedRules.processLocationSample(
+            old = state,
+            sample = sample(
+                computedSpeedMps = 3.2f,
+                accuracyMeters = 5f,
+                distanceMeters = 3.1f,
+                deltaTimeSec = 1f,
+                linearAccelMps2 = null,
+                nowMs = 4_000L
+            )
+        )
+
+        assertFalse(second.isStationaryLocked)
+        assertTrue(second.finalSpeedMps > 0f)
+    }
+
+    @Test
     fun tunnel_estimate_should_continue_after_gps_loss() {
         val state = SpeedRules.SpeedFilterState(
             currentSpeedMps = 16f,

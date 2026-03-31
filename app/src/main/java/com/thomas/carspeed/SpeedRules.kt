@@ -16,6 +16,7 @@ object SpeedRules {
     private const val MAX_IMPLAUSIBLE_ACCEL_MPS2 = 12f
     private const val ENTER_STATIONARY_SAMPLES = 2
     private const val EXIT_STATIONARY_SAMPLES = 2
+    private const val STRONG_MOVING_SPEED_MPS = 2.8f
     private const val TUNNEL_ENTRY_SPEED_MPS = 1.4f
     private const val TUNNEL_MAX_DT_SEC = 1.2f
     private const val TUNNEL_ACCEL_SMOOTHING = 0.18f
@@ -175,6 +176,7 @@ object SpeedRules {
         val movingAccel = !linearAccel.isNaN() && linearAccel >= EXIT_LINEAR_ACCEL_MPS2
         val stationaryDistanceThreshold = max(6f, accuracy * 0.9f)
         val movingDistanceThreshold = max(12f, accuracy * 1.4f)
+        val computedMovingDistanceThreshold = max(2f, accuracy * 0.5f)
 
         val stationaryEvidence =
             (gpsTrusted && gpsSpeed <= STATIONARY_NOISE_SPEED_MPS || !gpsTrusted) &&
@@ -184,13 +186,28 @@ object SpeedRules {
 
         val movingEvidence =
             (gpsTrusted && gpsSpeed >= MOVING_SPEED_MPS) ||
-                (computedTrusted && computedSpeed >= MOVING_SPEED_MPS &&
+                (computedSpeed >= MOVING_SPEED_MPS &&
                     !distanceMeters.isNaN() &&
-                    distanceMeters >= movingDistanceThreshold &&
+                    distanceMeters >= computedMovingDistanceThreshold &&
+                    !dtSec.isNaN())
+
+        val strongMovingEvidence =
+            (gpsTrusted && gpsSpeed >= STRONG_MOVING_SPEED_MPS) ||
+                (computedTrusted &&
+                    computedSpeed >= STRONG_MOVING_SPEED_MPS &&
+                    !distanceMeters.isNaN() &&
+                    distanceMeters >= computedMovingDistanceThreshold &&
                     !dtSec.isNaN())
 
         val stationaryCount = if (stationaryEvidence) old.stationarySampleCount + 1 else 0
-        val movingCount = if (movingEvidence && (movingAccel || old.currentSpeedMps > 0.8f || sample.inWarmup)) {
+        val movingGatePassed =
+            movingAccel ||
+                old.currentSpeedMps > 0.8f ||
+                sample.inWarmup ||
+                linearAccel.isNaN() ||
+                strongMovingEvidence ||
+                (!distanceMeters.isNaN() && distanceMeters >= movingDistanceThreshold)
+        val movingCount = if (movingEvidence && movingGatePassed) {
             old.movingSampleCount + 1
         } else {
             0
@@ -198,6 +215,7 @@ object SpeedRules {
 
         val wasStationaryLocked = old.isStationaryLocked
         val isStationaryLocked = when {
+            movingCount >= EXIT_STATIONARY_SAMPLES -> false
             stationaryCount >= ENTER_STATIONARY_SAMPLES -> true
             wasStationaryLocked && movingCount < EXIT_STATIONARY_SAMPLES -> true
             else -> false
@@ -208,7 +226,9 @@ object SpeedRules {
                 if (gpsTrusted && gpsSpeed <= MOVING_SPEED_MPS) gpsSpeed else 0f
             }
             isStationaryLocked -> 0f
+            gpsTrusted && gpsSpeed <= STATIONARY_NOISE_SPEED_MPS && movingEvidence -> computedSpeed
             gpsTrusted -> gpsSpeed
+            movingEvidence && computedSpeed >= MOVING_SPEED_MPS -> computedSpeed
             computedTrusted -> computedSpeed
             else -> 0f
         }
