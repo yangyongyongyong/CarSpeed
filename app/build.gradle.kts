@@ -11,8 +11,8 @@ android {
         applicationId = "com.thomas.carspeed"
         minSdk = 26
         targetSdk = 36
-        versionCode = 101
-        versionName = "1.1.7"
+        versionCode = 119
+        versionName = "1.3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,6 +45,11 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-video:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
 
     testImplementation("junit:junit:4.13.2")
 
