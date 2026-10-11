@@ -4,9 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -19,7 +22,13 @@ import com.google.android.material.appbar.MaterialToolbar
 
 class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var toolbar: MaterialToolbar
-    private lateinit var spVideoMode: Spinner
+    private lateinit var spVideoResolution: Spinner
+    private lateinit var spVideoFps: Spinner
+    private lateinit var spHdrMode: Spinner
+    private lateinit var tvHdrStartLabel: TextView
+    private lateinit var sbHdrStartHour: SeekBar
+    private lateinit var tvHdrEndLabel: TextView
+    private lateinit var sbHdrEndHour: SeekBar
     private lateinit var tvLoopStorageLabel: TextView
     private lateinit var sbLoopStorage: SeekBar
     private lateinit var tvSegmentLabel: TextView
@@ -27,12 +36,24 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var cbParkingStop: CheckBox
     private lateinit var tvParkingStopLabel: TextView
     private lateinit var sbParkingStopMinutes: SeekBar
-    private lateinit var tvZoomLabel: TextView
-    private lateinit var sbZoom: SeekBar
+    private lateinit var tvFocusLabel: TextView
+    private lateinit var cbManualFocus: CheckBox
+    private lateinit var sbFocus: SeekBar
     private lateinit var cbRecordAudio: CheckBox
     private lateinit var cbVoicePhoto: CheckBox
     private lateinit var cbAutoStartRecording: CheckBox
-    private lateinit var cbAutoTrigger: CheckBox
+    private lateinit var cbAutoTriggerStartOnConnect: CheckBox
+    private lateinit var cbAutoTriggerStartOnBluetoothSpeed: CheckBox
+    private lateinit var cbAutoTriggerStopOnPowerDisconnected: CheckBox
+    private lateinit var cbAutoTriggerStopOnBluetoothDisconnected: CheckBox
+    private lateinit var cbAutoTriggerStopOnBluetoothStationary: CheckBox
+    private lateinit var cbRadarAlert: CheckBox
+    private lateinit var tvRadarThresholdsLabel: TextView
+    private lateinit var btnRadarThresholds: Button
+    private lateinit var tvRadarLeadLabel: TextView
+    private lateinit var sbRadarLeadSeconds: SeekBar
+    private lateinit var tvRadarSpeechRateLabel: TextView
+    private lateinit var sbRadarSpeechRate: SeekBar
     private lateinit var btnBluetoothDevices: Button
     private lateinit var tvBluetoothDeviceSummary: TextView
     private lateinit var cbWatermarkTime: CheckBox
@@ -40,11 +61,24 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var cbWatermarkGps: CheckBox
     private lateinit var cbWatermarkAddress: CheckBox
     private lateinit var cbWatermarkVideoMode: CheckBox
+    private lateinit var cbWatermarkFocus: CheckBox
+    private lateinit var sectionVideoHeader: TextView
+    private lateinit var sectionVideoContent: LinearLayout
+    private lateinit var sectionTriggerHeader: TextView
+    private lateinit var sectionTriggerContent: LinearLayout
+    private lateinit var sectionFocusHeader: TextView
+    private lateinit var sectionFocusContent: LinearLayout
+    private lateinit var sectionRadarHeader: TextView
+    private lateinit var sectionRadarContent: LinearLayout
+    private lateinit var sectionWatermarkHeader: TextView
+    private lateinit var sectionWatermarkContent: LinearLayout
 
-    private var supportedModes: List<VideoMode> = emptyList()
+    private var resolutionOptions: List<VideoResolution> = emptyList()
+    private var fpsOptions: List<Int> = emptyList()
     private var pairedBluetoothDevices: List<PairedBluetoothDevice> = emptyList()
     private var selectedBluetoothAddresses: MutableSet<String> = mutableSetOf()
-    private var settingsLoaded = false
+    private var updatingVideoSpinners = false
+    private var updatingHdrControls = false
 
     private val requestAudioPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -60,10 +94,11 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private val requestBluetoothPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (!granted) {
-                cbAutoTrigger.isChecked = false
+                bluetoothTriggerBoxes().forEach { it.isChecked = false }
                 persistSettings()
             }
             setupBluetoothDevices()
+            AutoTriggerController.sync(this, stopUnavailable = true)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,7 +106,13 @@ class DashcamSettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_dashcam_settings)
 
         toolbar = findViewById(R.id.toolbar)
-        spVideoMode = findViewById(R.id.spVideoMode)
+        spVideoResolution = findViewById(R.id.spVideoResolution)
+        spVideoFps = findViewById(R.id.spVideoFps)
+        spHdrMode = findViewById(R.id.spHdrMode)
+        tvHdrStartLabel = findViewById(R.id.tvHdrStartLabel)
+        sbHdrStartHour = findViewById(R.id.sbHdrStartHour)
+        tvHdrEndLabel = findViewById(R.id.tvHdrEndLabel)
+        sbHdrEndHour = findViewById(R.id.sbHdrEndHour)
         tvLoopStorageLabel = findViewById(R.id.tvLoopStorageLabel)
         sbLoopStorage = findViewById(R.id.sbLoopStorage)
         tvSegmentLabel = findViewById(R.id.tvSegmentLabel)
@@ -79,12 +120,24 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbParkingStop = findViewById(R.id.cbParkingStop)
         tvParkingStopLabel = findViewById(R.id.tvParkingStopLabel)
         sbParkingStopMinutes = findViewById(R.id.sbParkingStopMinutes)
-        tvZoomLabel = findViewById(R.id.tvZoomLabel)
-        sbZoom = findViewById(R.id.sbZoom)
+        tvFocusLabel = findViewById(R.id.tvFocusLabel)
+        cbManualFocus = findViewById(R.id.cbManualFocus)
+        sbFocus = findViewById(R.id.sbFocus)
         cbRecordAudio = findViewById(R.id.cbRecordAudio)
         cbVoicePhoto = findViewById(R.id.cbVoicePhoto)
         cbAutoStartRecording = findViewById(R.id.cbAutoStartRecording)
-        cbAutoTrigger = findViewById(R.id.cbAutoTrigger)
+        cbAutoTriggerStartOnConnect = findViewById(R.id.cbAutoTriggerStartOnConnect)
+        cbAutoTriggerStartOnBluetoothSpeed = findViewById(R.id.cbAutoTriggerStartOnBluetoothSpeed)
+        cbAutoTriggerStopOnPowerDisconnected = findViewById(R.id.cbAutoTriggerStopOnPowerDisconnected)
+        cbAutoTriggerStopOnBluetoothDisconnected = findViewById(R.id.cbAutoTriggerStopOnBluetoothDisconnected)
+        cbAutoTriggerStopOnBluetoothStationary = findViewById(R.id.cbAutoTriggerStopOnBluetoothStationary)
+        cbRadarAlert = findViewById(R.id.cbRadarAlert)
+        tvRadarThresholdsLabel = findViewById(R.id.tvRadarThresholdsLabel)
+        btnRadarThresholds = findViewById(R.id.btnRadarThresholds)
+        tvRadarLeadLabel = findViewById(R.id.tvRadarLeadLabel)
+        sbRadarLeadSeconds = findViewById(R.id.sbRadarLeadSeconds)
+        tvRadarSpeechRateLabel = findViewById(R.id.tvRadarSpeechRateLabel)
+        sbRadarSpeechRate = findViewById(R.id.sbRadarSpeechRate)
         btnBluetoothDevices = findViewById(R.id.btnBluetoothDevices)
         tvBluetoothDeviceSummary = findViewById(R.id.tvBluetoothDeviceSummary)
         cbWatermarkTime = findViewById(R.id.cbWatermarkTime)
@@ -92,15 +145,27 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbWatermarkGps = findViewById(R.id.cbWatermarkGps)
         cbWatermarkAddress = findViewById(R.id.cbWatermarkAddress)
         cbWatermarkVideoMode = findViewById(R.id.cbWatermarkVideoMode)
+        cbWatermarkFocus = findViewById(R.id.cbWatermarkFocus)
+        sectionVideoHeader = findViewById(R.id.sectionVideoHeader)
+        sectionVideoContent = findViewById(R.id.sectionVideoContent)
+        sectionTriggerHeader = findViewById(R.id.sectionTriggerHeader)
+        sectionTriggerContent = findViewById(R.id.sectionTriggerContent)
+        sectionFocusHeader = findViewById(R.id.sectionFocusHeader)
+        sectionFocusContent = findViewById(R.id.sectionFocusContent)
+        sectionRadarHeader = findViewById(R.id.sectionRadarHeader)
+        sectionRadarContent = findViewById(R.id.sectionRadarContent)
+        sectionWatermarkHeader = findViewById(R.id.sectionWatermarkHeader)
+        sectionWatermarkContent = findViewById(R.id.sectionWatermarkContent)
 
         toolbar.setNavigationOnClickListener { finish() }
         setupVideoModes()
+        setupHdrControls()
         setupBluetoothDevices()
         btnBluetoothDevices.setOnClickListener { showBluetoothDevicePicker() }
         loadSettings()
-        settingsLoaded = true
         setupCheckBoxes()
         setupStorageAndZoomControls()
+        setupCollapsibleSections()
     }
 
     private fun setupCheckBoxes() {
@@ -109,24 +174,37 @@ class DashcamSettingsActivity : AppCompatActivity() {
             cbVoicePhoto,
             cbAutoStartRecording,
             cbParkingStop,
-            cbAutoTrigger,
+            cbManualFocus,
+            cbAutoTriggerStartOnConnect,
+            cbAutoTriggerStartOnBluetoothSpeed,
+            cbAutoTriggerStopOnPowerDisconnected,
+            cbAutoTriggerStopOnBluetoothDisconnected,
+            cbAutoTriggerStopOnBluetoothStationary,
+            cbRadarAlert,
             cbWatermarkTime,
             cbWatermarkSpeed,
             cbWatermarkGps,
             cbWatermarkAddress,
-            cbWatermarkVideoMode
+            cbWatermarkVideoMode,
+            cbWatermarkFocus
         ).forEach { box ->
             box.setOnCheckedChangeListener { _, _ ->
                 if ((box == cbVoicePhoto || box == cbRecordAudio) && box.isChecked && !hasAudioPermission()) {
                     requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
                 }
-                if (box == cbAutoTrigger && cbAutoTrigger.isChecked && !BluetoothDeviceList.hasPermission(this)) {
+                if (box in bluetoothTriggerBoxes() && box.isChecked && !BluetoothDeviceList.hasPermission(this)) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         requestBluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
                     }
                 }
                 if (box == cbParkingStop) {
                     updateParkingStopControls()
+                }
+                if (box == cbManualFocus) {
+                    updateFocusControls()
+                }
+                if (box in bluetoothTriggerBoxes()) {
+                    updateAutoTriggerControls()
                 }
                 persistSettings()
                 refreshDashcamIfRunning()
@@ -135,34 +213,174 @@ class DashcamSettingsActivity : AppCompatActivity() {
     }
 
     private fun setupVideoModes() {
-        supportedModes = CameraCapabilities.supportedVideoModes(this)
-        val adapter = ArrayAdapter(this, R.layout.spinner_item, supportedModes.map { it.label })
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spVideoMode.adapter = adapter
+        resolutionOptions = CameraCapabilities.resolutionOptions(this)
+        val resolutionAdapter = ArrayAdapter(this, R.layout.spinner_item, resolutionOptions.map { resolutionLabel(it) })
+        resolutionAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
+        spVideoResolution.adapter = resolutionAdapter
+
         val selected = CameraCapabilities.selectedVideoMode(this)
-        val selectedIndex = supportedModes.indexOfFirst {
-            it.width == selected.width && it.height == selected.height && it.fps == selected.fps
-        }.coerceAtLeast(0)
-        spVideoMode.setSelection(selectedIndex)
-        spVideoMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+        var selectedResolutionIndex = resolutionOptions.indexOfFirst { it.width == selected.width && it.height == selected.height }
+        if (selectedResolutionIndex < 0) selectedResolutionIndex = 0
+        spVideoResolution.setSelection(selectedResolutionIndex)
+        updateFpsOptions(resolutionOptions.getOrNull(selectedResolutionIndex), selected.fps)
+
+        spVideoResolution.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: android.widget.AdapterView<*>?,
                 view: android.view.View?,
                 position: Int,
                 id: Long
             ) {
-                val mode = supportedModes.getOrNull(position) ?: return
-                getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putString(DashcamSettings.PREF_VIDEO_QUALITY, mode.qualityKey)
-                    .putInt(DashcamSettings.PREF_VIDEO_WIDTH, mode.width)
-                    .putInt(DashcamSettings.PREF_VIDEO_HEIGHT, mode.height)
-                    .putInt(DashcamSettings.PREF_VIDEO_FPS, mode.fps)
-                    .apply()
+                if (updatingVideoSpinners) return
+                val resolution = resolutionOptions.getOrNull(position) ?: return
+                val currentFps = selectedFpsFromPrefs()
+                updateFpsOptions(resolution, currentFps)
+                persistVideoMode(resolution, fpsOptions.getOrNull(spVideoFps.selectedItemPosition) ?: currentFps)
             }
 
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
         }
+        spVideoFps.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: android.view.View?,
+                position: Int,
+                id: Long
+            ) {
+                if (updatingVideoSpinners) return
+                val resolution = resolutionOptions.getOrNull(spVideoResolution.selectedItemPosition) ?: return
+                val fps = fpsOptions.getOrNull(position) ?: return
+                persistVideoMode(resolution, fps)
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun setupHdrControls() {
+        val items = listOf(
+            getString(R.string.hdr_mode_off),
+            getString(R.string.hdr_mode_always),
+            getString(R.string.hdr_mode_schedule)
+        )
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, items)
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
+        spHdrMode.adapter = adapter
+        syncHdrControlsFromPrefs()
+
+        spHdrMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: android.view.View?,
+                position: Int,
+                id: Long
+            ) {
+                if (updatingHdrControls) return
+                saveHdrControls()
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+
+        val listener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                updateHdrLabels()
+                if (fromUser && !updatingHdrControls) saveHdrControls()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (!updatingHdrControls) saveHdrControls()
+            }
+        }
+        sbHdrStartHour.setOnSeekBarChangeListener(listener)
+        sbHdrEndHour.setOnSeekBarChangeListener(listener)
+    }
+
+    private fun syncHdrControlsFromPrefs() {
+        updatingHdrControls = true
+        val settings = DashcamHdrSettings.load(this)
+        spHdrMode.setSelection(settings.mode.coerceIn(DashcamSettings.HDR_MODE_OFF, DashcamSettings.HDR_MODE_SCHEDULE))
+        sbHdrStartHour.progress = settings.startMinute / 60
+        sbHdrEndHour.progress = settings.endMinute / 60
+        updatingHdrControls = false
+        updateHdrLabels()
+    }
+
+    private fun saveHdrControls() {
+        DashcamHdrSettings.save(
+            this,
+            HdrSettings(
+                mode = spHdrMode.selectedItemPosition.coerceIn(DashcamSettings.HDR_MODE_OFF, DashcamSettings.HDR_MODE_SCHEDULE),
+                startMinute = sbHdrStartHour.progress.coerceIn(0, 23) * 60,
+                endMinute = sbHdrEndHour.progress.coerceIn(0, 23) * 60
+            )
+        )
+        updateHdrLabels()
+        refreshDashcamIfRunning()
+    }
+
+    private fun updateHdrLabels() {
+        val scheduleEnabled = spHdrMode.selectedItemPosition == DashcamSettings.HDR_MODE_SCHEDULE
+        sbHdrStartHour.isEnabled = scheduleEnabled
+        sbHdrEndHour.isEnabled = scheduleEnabled
+        tvHdrStartLabel.isEnabled = scheduleEnabled
+        tvHdrEndLabel.isEnabled = scheduleEnabled
+        tvHdrStartLabel.text = getString(
+            R.string.hdr_start_label,
+            DashcamHdrSettings.formatMinute(sbHdrStartHour.progress.coerceIn(0, 23) * 60)
+        )
+        tvHdrEndLabel.text = getString(
+            R.string.hdr_end_label,
+            DashcamHdrSettings.formatMinute(sbHdrEndHour.progress.coerceIn(0, 23) * 60)
+        )
+    }
+
+    private fun updateFpsOptions(resolution: VideoResolution?, preferredFps: Int) {
+        val selectedResolution = resolution ?: return
+        updatingVideoSpinners = true
+        fpsOptions = CameraCapabilities.fpsOptions(this, selectedResolution.width, selectedResolution.height)
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, fpsOptions.map { "${it}fps" })
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
+        spVideoFps.adapter = adapter
+        var selectedIndex = fpsOptions.indexOf(preferredFps)
+        if (selectedIndex < 0) selectedIndex = fpsOptions.indexOf(30).takeIf { it >= 0 } ?: 0
+        spVideoFps.setSelection(selectedIndex)
+        updatingVideoSpinners = false
+    }
+
+    private fun resolutionLabel(resolution: VideoResolution): String {
+        val prefix = when {
+            resolution.width == 3840 && resolution.height == 2160 -> "4K"
+            resolution.width == 1920 && resolution.height == 1080 -> "1080p"
+            resolution.width == 1280 && resolution.height == 720 -> "720p"
+            resolution.width == 720 && resolution.height == 480 -> "480p"
+            is8k(resolution.width, resolution.height) -> "8K"
+            else -> "录像"
+        }
+        return "$prefix：${resolution.width}x${resolution.height}"
+    }
+
+    private fun is8k(width: Int, height: Int): Boolean {
+        val longEdge = maxOf(width, height)
+        val shortEdge = minOf(width, height)
+        return longEdge >= 7600 && shortEdge >= 4200
+    }
+
+    private fun selectedFpsFromPrefs(): Int {
+        return getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+            .getInt(DashcamSettings.PREF_VIDEO_FPS, 30)
+    }
+
+    private fun persistVideoMode(resolution: VideoResolution, fps: Int) {
+        getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(DashcamSettings.PREF_VIDEO_QUALITY, resolution.qualityKey)
+            .putInt(DashcamSettings.PREF_VIDEO_WIDTH, resolution.width)
+            .putInt(DashcamSettings.PREF_VIDEO_HEIGHT, resolution.height)
+            .putInt(DashcamSettings.PREF_VIDEO_FPS, fps)
+            .apply()
     }
 
     private fun setupBluetoothDevices() {
@@ -173,6 +391,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
             .toMutableSet()
         btnBluetoothDevices.isEnabled = BluetoothDeviceList.hasPermission(this) || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         updateBluetoothSummary()
+        updateAutoTriggerControls()
     }
 
     private fun showBluetoothDevicePicker() {
@@ -258,11 +477,23 @@ class DashcamSettingsActivity : AppCompatActivity() {
         tvParkingStopLabel.text = getString(R.string.parking_stop_label, parkingStopMinutes)
         updateParkingStopControls()
 
-        val zoom = prefs.getInt(DashcamSettings.PREF_ZOOM_PERCENT, DashcamSettings.DEFAULT_ZOOM_PERCENT).coerceIn(10, 100)
-        sbZoom.min = 10
-        sbZoom.max = 100
-        sbZoom.progress = zoom
-        tvZoomLabel.text = getString(R.string.zoom_label, zoom)
+        val focus = prefs.getInt(DashcamSettings.PREF_FOCUS_PERCENT, DashcamSettings.DEFAULT_FOCUS_PERCENT).coerceIn(0, 100)
+        sbFocus.min = 0
+        sbFocus.max = 100
+        sbFocus.progress = focus
+        updateFocusControls()
+
+        val radarSettings = RadarAlertSettingsStore.load(this)
+        updateRadarThresholdLabel(radarSettings.thresholdsSeconds)
+        sbRadarLeadSeconds.min = RadarAlertSettingsStore.MIN_LEAD_SECONDS
+        sbRadarLeadSeconds.max = RadarAlertSettingsStore.MAX_LEAD_SECONDS
+        sbRadarLeadSeconds.progress = radarSettings.leadSeconds
+        updateRadarLeadLabel(radarSettings.leadSeconds)
+        sbRadarSpeechRate.min = RadarAlertSettingsStore.MIN_SPEECH_RATE_PERCENT
+        sbRadarSpeechRate.max = RadarAlertSettingsStore.MAX_SPEECH_RATE_PERCENT
+        sbRadarSpeechRate.progress = radarSettings.speechRatePercent
+        updateRadarSpeechRateLabel(radarSettings.speechRatePercent)
+        btnRadarThresholds.setOnClickListener { showRadarThresholdDialog() }
 
         sbLoopStorage.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -301,36 +532,116 @@ class DashcamSettingsActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
 
-        sbZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        sbFocus.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val fixed = progress.coerceIn(10, 100)
-                tvZoomLabel.text = getString(R.string.zoom_label, fixed)
-                prefs.edit().putInt(DashcamSettings.PREF_ZOOM_PERCENT, fixed).apply()
+                val fixed = progress.coerceIn(0, 100)
+                prefs.edit().putInt(DashcamSettings.PREF_FOCUS_PERCENT, fixed).apply()
+                updateFocusControls()
                 refreshDashcamIfRunning()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val fixed = (seekBar?.progress ?: sbFocus.progress).coerceIn(0, 100)
+                prefs.edit().putInt(DashcamSettings.PREF_FOCUS_PERCENT, fixed).commit()
+            }
+        })
+        sbRadarLeadSeconds.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val fixed = progress.coerceIn(RadarAlertSettingsStore.MIN_LEAD_SECONDS, RadarAlertSettingsStore.MAX_LEAD_SECONDS)
+                updateRadarLeadLabel(fixed)
+                prefs.edit().putInt(RadarAlertSettingsStore.PREF_RADAR_ALERT_LEAD_SECONDS, fixed).apply()
+                refreshDashcamIfRunning()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val fixed = (seekBar?.progress ?: sbRadarLeadSeconds.progress)
+                    .coerceIn(RadarAlertSettingsStore.MIN_LEAD_SECONDS, RadarAlertSettingsStore.MAX_LEAD_SECONDS)
+                prefs.edit().putInt(RadarAlertSettingsStore.PREF_RADAR_ALERT_LEAD_SECONDS, fixed).commit()
+            }
+        })
+        sbRadarSpeechRate.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val fixed = progress.coerceIn(
+                    RadarAlertSettingsStore.MIN_SPEECH_RATE_PERCENT,
+                    RadarAlertSettingsStore.MAX_SPEECH_RATE_PERCENT
+                )
+                updateRadarSpeechRateLabel(fixed)
+                prefs.edit().putInt(RadarAlertSettingsStore.PREF_RADAR_ALERT_SPEECH_RATE_PERCENT, fixed).apply()
+                refreshDashcamIfRunning()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val fixed = (seekBar?.progress ?: sbRadarSpeechRate.progress).coerceIn(
+                    RadarAlertSettingsStore.MIN_SPEECH_RATE_PERCENT,
+                    RadarAlertSettingsStore.MAX_SPEECH_RATE_PERCENT
+                )
+                prefs.edit().putInt(RadarAlertSettingsStore.PREF_RADAR_ALERT_SPEECH_RATE_PERCENT, fixed).commit()
+            }
         })
     }
 
     private fun loadSettings() {
         val settings = DashcamSettings.load(this)
+        val triggerSettings = TriggerSettings.load(this)
         cbRecordAudio.isChecked = settings.recordAudio
         cbWatermarkTime.isChecked = settings.showTime
         cbWatermarkSpeed.isChecked = settings.showSpeed
         cbWatermarkGps.isChecked = settings.showGps
         cbWatermarkAddress.isChecked = settings.showAddress
         cbWatermarkVideoMode.isChecked = settings.showVideoMode
+        cbWatermarkFocus.isChecked = settings.showFocus
         cbVoicePhoto.isChecked = settings.voicePhotoEnabled
         cbAutoStartRecording.isChecked = settings.autoStartRecording
         cbParkingStop.isChecked = settings.parkingStopEnabled
-        cbAutoTrigger.isChecked = TriggerSettings.load(this).enabled
+        cbManualFocus.isChecked = CameraFocus.isManualEnabled(this)
+        cbAutoTriggerStartOnConnect.isChecked = triggerSettings.startOnBluetoothConnected
+        cbAutoTriggerStartOnBluetoothSpeed.isChecked = triggerSettings.startOnBluetoothConnectedAndSpeed
+        cbAutoTriggerStopOnPowerDisconnected.isChecked = triggerSettings.stopOnPowerDisconnected
+        cbAutoTriggerStopOnBluetoothDisconnected.isChecked = triggerSettings.stopOnBluetoothDisconnected
+        cbAutoTriggerStopOnBluetoothStationary.isChecked = triggerSettings.stopOnBluetoothDisconnectedAndStationary
+        cbRadarAlert.isChecked = RadarAlertSettingsStore.load(this).enabled
+        updateAutoTriggerControls()
     }
 
     private fun updateParkingStopControls() {
         sbParkingStopMinutes.isEnabled = cbParkingStop.isChecked
         tvParkingStopLabel.isEnabled = cbParkingStop.isChecked
+    }
+
+    private fun updateAutoTriggerControls() {
+        val bluetoothEnabled = bluetoothTriggerBoxes().any { it.isChecked }
+        btnBluetoothDevices.isEnabled = bluetoothEnabled && (BluetoothDeviceList.hasPermission(this) || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        tvBluetoothDeviceSummary.isEnabled = bluetoothEnabled
+    }
+
+    private fun bluetoothTriggerBoxes(): List<CheckBox> {
+        return listOf(
+            cbAutoTriggerStartOnConnect,
+            cbAutoTriggerStartOnBluetoothSpeed,
+            cbAutoTriggerStopOnBluetoothDisconnected,
+            cbAutoTriggerStopOnBluetoothStationary
+        )
+    }
+
+    private fun updateFocusControls() {
+        val manual = cbManualFocus.isChecked
+        sbFocus.isEnabled = manual
+        tvFocusLabel.text = if (manual) {
+            getString(R.string.focus_label, sbFocus.progress, focusDistanceLabel(sbFocus.progress))
+        } else {
+            getString(R.string.focus_auto_label)
+        }
+    }
+
+    private fun focusDistanceLabel(percent: Int): String {
+        return when (percent.coerceIn(0, 100)) {
+            0 -> getString(R.string.focus_far_label)
+            100 -> getString(R.string.focus_near_label)
+            else -> "$percent%"
+        }
     }
 
     private fun persistSettings() {
@@ -347,19 +658,91 @@ class DashcamSettingsActivity : AppCompatActivity() {
             .putBoolean(DashcamSettings.PREF_WATERMARK_GPS, cbWatermarkGps.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_ADDRESS, cbWatermarkAddress.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_VIDEO_MODE, cbWatermarkVideoMode.isChecked)
+            .putBoolean(DashcamSettings.PREF_WATERMARK_FOCUS, cbWatermarkFocus.isChecked)
             .putBoolean(DashcamSettings.PREF_RECORD_AUDIO, cbRecordAudio.isChecked)
             .putBoolean(DashcamSettings.PREF_VOICE_PHOTO, cbVoicePhoto.isChecked)
             .putBoolean(DashcamSettings.PREF_AUTO_START_RECORDING, cbAutoStartRecording.isChecked)
             .putBoolean(DashcamSettings.PREF_PARKING_STOP_ENABLED, cbParkingStop.isChecked)
-            .apply()
+            .putBoolean(DashcamSettings.PREF_MANUAL_FOCUS_ENABLED, cbManualFocus.isChecked)
+            .putBoolean(RadarAlertSettingsStore.PREF_RADAR_ALERT_ENABLED, cbRadarAlert.isChecked)
+            .commit()
         TriggerSettings.save(
             this,
             AutoTriggerSettings(
-                enabled = cbAutoTrigger.isChecked,
                 bluetoothAddresses = selectedBluetoothAddresses,
-                bluetoothNamesByAddress = selectedBluetoothNames
+                bluetoothNamesByAddress = selectedBluetoothNames,
+                startOnAppOpen = cbAutoStartRecording.isChecked,
+                startOnBluetoothConnected = cbAutoTriggerStartOnConnect.isChecked,
+                startOnBluetoothConnectedAndSpeed = cbAutoTriggerStartOnBluetoothSpeed.isChecked,
+                stopOnPowerDisconnected = cbAutoTriggerStopOnPowerDisconnected.isChecked,
+                stopOnBluetoothDisconnected = cbAutoTriggerStopOnBluetoothDisconnected.isChecked,
+                stopOnBluetoothDisconnectedAndStationary = cbAutoTriggerStopOnBluetoothStationary.isChecked
             )
         )
+        AutoTriggerController.sync(this, stopUnavailable = true)
+    }
+
+    private fun showRadarThresholdDialog() {
+        val current = RadarAlertSettingsStore.formatThresholds(RadarAlertSettingsStore.load(this).thresholdsSeconds)
+        val input = android.widget.EditText(this).apply {
+            setText(current)
+            selectAll()
+            inputType = InputType.TYPE_CLASS_TEXT
+            hint = getString(R.string.radar_thresholds_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.radar_thresholds_title)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val thresholds = RadarAlertSettingsStore.parseThresholds(input.text.toString())
+                RadarAlertSettingsStore.saveThresholds(this, thresholds)
+                updateRadarThresholdLabel(thresholds)
+                refreshDashcamIfRunning()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateRadarThresholdLabel(thresholdsSeconds: List<Int>) {
+        tvRadarThresholdsLabel.text = getString(
+            R.string.radar_thresholds_label,
+            RadarAlertSettingsStore.thresholdsLabel(thresholdsSeconds)
+        )
+    }
+
+    private fun updateRadarLeadLabel(seconds: Int) {
+        tvRadarLeadLabel.text = getString(R.string.radar_lead_label, seconds)
+    }
+
+    private fun updateRadarSpeechRateLabel(percent: Int) {
+        tvRadarSpeechRateLabel.text = getString(R.string.radar_speech_rate_label, percent)
+    }
+
+    private fun setupCollapsibleSections() {
+        setupSection(sectionVideoHeader, sectionVideoContent, PREF_SECTION_VIDEO, defaultExpanded = true)
+        setupSection(sectionTriggerHeader, sectionTriggerContent, PREF_SECTION_TRIGGER, defaultExpanded = true)
+        setupSection(sectionFocusHeader, sectionFocusContent, PREF_SECTION_FOCUS, defaultExpanded = false)
+        setupSection(sectionRadarHeader, sectionRadarContent, PREF_SECTION_RADAR, defaultExpanded = false)
+        setupSection(sectionWatermarkHeader, sectionWatermarkContent, PREF_SECTION_WATERMARK, defaultExpanded = false)
+    }
+
+    private fun setupSection(header: TextView, content: LinearLayout, prefKey: String, defaultExpanded: Boolean) {
+        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+        val title = header.text.toString().removePrefix("▼ ").removePrefix("▶ ")
+        fun render(expanded: Boolean) {
+            content.visibility = if (expanded) View.VISIBLE else View.GONE
+            header.text = getString(
+                if (expanded) R.string.settings_section_collapse_fmt else R.string.settings_section_expand_fmt,
+                title
+            )
+        }
+        var expanded = prefs.getBoolean(prefKey, defaultExpanded)
+        render(expanded)
+        header.setOnClickListener {
+            expanded = !expanded
+            prefs.edit().putBoolean(prefKey, expanded).apply()
+            render(expanded)
+        }
     }
 
     private fun hasAudioPermission(): Boolean {
@@ -370,5 +753,13 @@ class DashcamSettingsActivity : AppCompatActivity() {
         if (DashcamService.instance != null) {
             DashcamService.refreshSettings(this)
         }
+    }
+
+    companion object {
+        private const val PREF_SECTION_VIDEO = "dashcam_settings_section_video"
+        private const val PREF_SECTION_TRIGGER = "dashcam_settings_section_trigger"
+        private const val PREF_SECTION_FOCUS = "dashcam_settings_section_focus"
+        private const val PREF_SECTION_RADAR = "dashcam_settings_section_radar"
+        private const val PREF_SECTION_WATERMARK = "dashcam_settings_section_watermark"
     }
 }

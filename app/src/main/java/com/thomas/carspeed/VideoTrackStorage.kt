@@ -38,6 +38,25 @@ object VideoTrackStorage {
         }
     }
 
+    fun readMergedTrack(videoFiles: List<File>): VideoTrack? {
+        val tracks = videoFiles.mapNotNull { readTrack(it) }.sortedBy { it.startTimeMs }
+        if (tracks.isEmpty()) return null
+        val firstStartMs = tracks.first().startTimeMs.takeIf { it > 0L }
+            ?: tracks.first().points.firstOrNull()?.timeMs
+            ?: 0L
+        val mergedPoints = tracks.flatMap { track ->
+            val segmentOffsetMs = (track.startTimeMs - firstStartMs).coerceAtLeast(0L)
+            track.points.map { point ->
+                point.copy(elapsedMs = segmentOffsetMs + point.elapsedMs)
+            }
+        }.sortedBy { it.elapsedMs }
+        return VideoTrack(
+            videoFileName = videoFiles.firstOrNull()?.parentFile?.name.orEmpty(),
+            startTimeMs = firstStartMs,
+            points = mergedPoints
+        )
+    }
+
     private fun toJson(track: VideoTrack): JSONObject {
         val points = JSONArray()
         track.points.forEach { point ->

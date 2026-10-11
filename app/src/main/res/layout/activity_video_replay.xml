@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/replayRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/brand_sand"
@@ -20,6 +21,7 @@
         app:titleTextColor="@color/text_primary" />
 
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/videoCard"
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -27,6 +29,7 @@
         android:layout_weight="1.1">
 
         <FrameLayout
+            android:id="@+id/videoFrame"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@android:color/black">
@@ -35,10 +38,73 @@
                 android:id="@+id/videoTextureView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
+
+            <TextView
+                android:id="@+id/tvSubtitleOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:layout_margin="12dp"
+                android:background="@drawable/overlay_chip_dark_bg"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginBottom="64dp"
+                android:padding="10dp"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/layoutReplayControls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:background="#99000000"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/tvReplayPlayPause"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="暂停"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/seekReplayProgress"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/tvReplayTime"
+                    android:layout_width="82dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/tvReplayFullscreen"
+                    android:layout_width="46dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="全屏"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/infoCard"
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -46,6 +112,7 @@
         android:layout_weight="1">
 
         <LinearLayout
+            android:id="@+id/infoContent"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
@@ -64,12 +131,57 @@
                 android:layout_marginTop="6dp"
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-            <com.thomas.carspeed.RouteMapView
-                android:id="@+id/routeMapView"
+            <FrameLayout
+                android:id="@+id/mapFrame"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_marginTop="12dp"
-                android:layout_weight="1" />
+                android:layout_weight="1">
+
+                <com.thomas.carspeed.MapRouteView
+                    android:id="@+id/mapRouteView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <LinearLayout
+                    android:id="@+id/layoutMapReplayControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:background="#99000000"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="10dp"
+                    android:paddingTop="8dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="8dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvMapReplayPlayPause"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:gravity="center"
+                        android:text="暂停"
+                        android:textColor="@android:color/white"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <SeekBar
+                        android:id="@+id/seekMapReplayProgress"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/tvMapReplayTime"
+                        android:layout_width="82dp"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/tvReplayPosition"

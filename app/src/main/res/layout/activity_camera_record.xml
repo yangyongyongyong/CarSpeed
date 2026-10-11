@@ -124,6 +124,30 @@
                 android:text="@string/video_background_hint"
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
+            <CheckBox
+                android:id="@+id/cbManualFocus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/manual_focus_toggle"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:id="@+id/tvFocusInlineLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/focus_auto_label"
+                android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+            <com.thomas.carspeed.HorizontalOnlySeekBar
+                android:id="@+id/sbInlineFocus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:max="100"
+                android:progress="10" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRecordVideo"
                 style="@style/Widget.Material3.Button"
@@ -147,6 +171,15 @@
                     android:layout_weight="1"
                     android:enabled="false"
                     android:text="@string/take_photo_now" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOpenPhotos"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="@string/photo_gallery_title" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenSettings"

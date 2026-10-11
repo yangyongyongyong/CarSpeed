@@ -3,4 +3,10 @@
     <cache-path
         name="gpx"
         path="gpx/" />
+    <external-files-path
+        name="photos"
+        path="Pictures/CarSpeed/" />
+    <external-path
+        name="gallery"
+        path="." />
 </paths>

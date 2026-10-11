@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
@@ -32,16 +34,29 @@
         android:name=".CarSpeedApplication"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.CarSpeed">
+        android:theme="@style/Theme.CarSpeed"
+        android:usesCleartextTraffic="true">
+
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="${AMAP_API_KEY}" />
 
         <activity
             android:name=".HistoryActivity"
             android:exported="false" />
 
         <activity
+            android:name=".PhotoGalleryActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".VideoReplayActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".OfflineMapActivity"
+            android:exported="false" />
 
         <activity
             android:name=".StatusActivity"
@@ -127,10 +142,18 @@
 
         <receiver
             android:name=".BluetoothTriggerReceiver"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".PowerTriggerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
             </intent-filter>
         </receiver>
 

@@ -2,17 +2,26 @@ package com.thomas.carspeed
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.OrientationEventListener
+import android.view.Surface
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.annotation.OptIn as AndroidXOptIn
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -29,10 +38,26 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private lateinit var btnClose: Button
 
     private var idlePreviewProvider: ProcessCameraProvider? = null
+    private var idlePreviewUseCase: Preview? = null
     private var idlePreviewRequested = false
     private var startAfterNotificationPermission = false
     private var recordingStartRequestedAtMs = 0L
+    private var targetRotation = Surface.ROTATION_0
+    private var orientationListener: OrientationEventListener? = null
     private val uiHandler = Handler(Looper.getMainLooper())
+
+    private val focusCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            DashcamService.updatePreviewFocusTelemetry(
+                result.get(CaptureResult.LENS_FOCUS_DISTANCE),
+                result.get(CaptureResult.CONTROL_AF_STATE)
+            )
+        }
+    }
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -55,6 +80,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera_fullscreen)
+        targetRotation = CameraRotation.displayRotation(this)
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -86,11 +112,13 @@ class CameraFullscreenActivity : AppCompatActivity() {
         }
         uiHandler.removeCallbacks(uiTicker)
         uiHandler.post(uiTicker)
+        startOrientationListener()
     }
 
     override fun onPause() {
         super.onPause()
         uiHandler.removeCallbacks(uiTicker)
+        stopOrientationListener()
         if (!DashcamService.isRecording(this)) {
             stopIdlePreview()
         }
@@ -109,6 +137,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         if (DashcamService.isRecording(this)) {
             idlePreviewRequested = false
             idlePreviewProvider = null
+            idlePreviewUseCase = null
         } else {
             stopIdlePreview()
         }
@@ -152,6 +181,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         return false
     }
 
+    @AndroidXOptIn(ExperimentalCamera2Interop::class)
     private fun startIdlePreview() {
         if (!hasCameraPermission() || DashcamService.isRecording(this)) return
         idlePreviewRequested = true
@@ -162,11 +192,16 @@ class CameraFullscreenActivity : AppCompatActivity() {
                 try {
                     val provider = providerFuture.get()
                     idlePreviewProvider = provider
-                    val preview = Preview.Builder().build().also { preview ->
+                    val previewBuilder = Preview.Builder()
+                        .setTargetRotation(targetRotation)
+                    Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(focusCaptureCallback)
+                    val preview = previewBuilder.build().also { preview ->
                         preview.setSurfaceProvider(previewView.surfaceProvider)
                     }
                     provider.unbindAll()
                     provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview)
+                    idlePreviewUseCase = preview
+                    applyTargetRotation()
                 } catch (e: RuntimeException) {
                     Toast.makeText(this, getString(R.string.camera_open_failed, e.message ?: "unknown"), Toast.LENGTH_SHORT).show()
                 }
@@ -194,6 +229,30 @@ class CameraFullscreenActivity : AppCompatActivity() {
         idlePreviewRequested = false
         idlePreviewProvider?.unbindAll()
         idlePreviewProvider = null
+        idlePreviewUseCase = null
+    }
+
+    private fun startOrientationListener() {
+        orientationListener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                val rotation = CameraRotation.rotationFromOrientationDegrees(orientation) ?: return
+                if (rotation != targetRotation) {
+                    targetRotation = rotation
+                    applyTargetRotation()
+                }
+            }
+        }.also { listener ->
+            if (listener.canDetectOrientation()) listener.enable()
+        }
+    }
+
+    private fun stopOrientationListener() {
+        orientationListener?.disable()
+        orientationListener = null
+    }
+
+    private fun applyTargetRotation() {
+        idlePreviewUseCase?.targetRotation = targetRotation
     }
 
     private fun syncUi() {

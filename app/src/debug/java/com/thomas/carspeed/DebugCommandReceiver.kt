@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.BatteryManager
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
@@ -39,20 +41,25 @@ class DebugCommandReceiver : BroadcastReceiver() {
             COMMAND_OPEN_SETTINGS -> openActivity(context, DashcamSettingsActivity::class.java, command)
             COMMAND_OPEN_CAMERA_FULLSCREEN -> openActivity(context, CameraFullscreenActivity::class.java, command)
             COMMAND_OPEN_HISTORY -> openActivity(context, HistoryActivity::class.java, command)
+            COMMAND_OPEN_PHOTOS -> openActivity(context, PhotoGalleryActivity::class.java, command)
             COMMAND_OPEN_LATEST_VIDEO -> openLatestVideo(context, command)
             COMMAND_OPEN_STATUS -> openActivity(context, StatusActivity::class.java, command)
             COMMAND_OPEN_HUD -> openActivity(context, SpeedHudActivity::class.java, command)
             COMMAND_BACKGROUND_APP -> backgroundApp(context, command)
             COMMAND_START_RECORDING -> runAction(command) { DashcamService.startRecording(context) }
             COMMAND_STOP_RECORDING -> runAction(command) { DashcamService.stopRecording(context) }
-            COMMAND_TAKE_PHOTO -> runAction(command) { DashcamService.takePhoto(context) }
+            COMMAND_TAKE_PHOTO -> runAction(command) { CameraRecordActivity.takePhoto(context) }
+            COMMAND_SYNC_AUTO_TRIGGER -> syncAutoTrigger(context, command)
             COMMAND_START_HUD -> runAction(command) { OverlayController.start(context) }
             COMMAND_STOP_HUD -> runAction(command) { OverlayController.stop(context) }
             COMMAND_SET_SETTINGS -> setSettings(context, intent, command)
             COMMAND_DUMP_STATE -> dumpState(context, command)
             COMMAND_LIST_VIDEOS -> listVideos(context, command)
+            COMMAND_LIST_PHOTOS -> listPhotos(context, command)
+            COMMAND_LIST_BLUETOOTH -> listBluetooth(context, command)
             COMMAND_LIST_CAMERA_MODES -> listCameraModes(context, command)
             COMMAND_CLEAR_VIDEOS -> clearVideos(context, command)
+            COMMAND_SIMULATE_POWER_DISCONNECTED -> runAction(command) { PowerTriggerReceiver.handlePowerDisconnected(context) }
             else -> resultJson(command, ok = false).put("error", "未知命令：$command")
         }
     }
@@ -68,6 +75,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
                     COMMAND_OPEN_SETTINGS,
                     COMMAND_OPEN_CAMERA_FULLSCREEN,
                     COMMAND_OPEN_HISTORY,
+                    COMMAND_OPEN_PHOTOS,
                     COMMAND_OPEN_LATEST_VIDEO,
                     COMMAND_OPEN_STATUS,
                     COMMAND_OPEN_HUD,
@@ -75,13 +83,17 @@ class DebugCommandReceiver : BroadcastReceiver() {
                     COMMAND_START_RECORDING,
                     COMMAND_STOP_RECORDING,
                     COMMAND_TAKE_PHOTO,
+                    COMMAND_SYNC_AUTO_TRIGGER,
                     COMMAND_START_HUD,
                     COMMAND_STOP_HUD,
                     COMMAND_SET_SETTINGS,
                     COMMAND_DUMP_STATE,
                     COMMAND_LIST_VIDEOS,
+                    COMMAND_LIST_PHOTOS,
+                    COMMAND_LIST_BLUETOOTH,
                     COMMAND_LIST_CAMERA_MODES,
-                    COMMAND_CLEAR_VIDEOS
+                    COMMAND_CLEAR_VIDEOS,
+                    COMMAND_SIMULATE_POWER_DISCONNECTED
                 )
             )
         ).put("example", "adb shell am broadcast -a $ACTION_COMMAND --es $EXTRA_COMMAND $COMMAND_DUMP_STATE")
@@ -101,17 +113,21 @@ class DebugCommandReceiver : BroadcastReceiver() {
     }
 
     private fun openLatestVideo(context: Context, command: String): JSONObject {
-        val video = VideoStorage.latestVideoFile(context)
+        val trip = VideoStorage.videoTrips(context).maxByOrNull { it.lastModified }
             ?: return resultJson(command, ok = false).put("error", context.getString(R.string.video_replay_no_video))
         context.startActivity(
             Intent(context, VideoReplayActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                putExtra(VideoReplayActivity.EXTRA_VIDEO_PATH, video.absolutePath)
+                putStringArrayListExtra(
+                    VideoReplayActivity.EXTRA_VIDEO_PATHS,
+                    ArrayList(trip.segments.map { it.absolutePath })
+                )
             }
         )
         return resultJson(command)
             .put("activity", VideoReplayActivity::class.java.simpleName)
-            .put("video", video.absolutePath)
+            .put("trip", trip.title)
+            .put("segments", JSONArray(trip.segments.map { it.absolutePath }))
     }
 
     private fun backgroundApp(context: Context, command: String): JSONObject {
@@ -163,15 +179,108 @@ class DebugCommandReceiver : BroadcastReceiver() {
             editor.putBoolean(DashcamSettings.PREF_VOICE_PHOTO, intent.getBooleanExtra("voice_photo", false))
         }
         if (intent.hasExtra("auto_start_recording")) {
+            val enabled = intent.getBooleanExtra("auto_start_recording", false)
             editor.putBoolean(
                 DashcamSettings.PREF_AUTO_START_RECORDING,
-                intent.getBooleanExtra("auto_start_recording", false)
+                enabled
+            )
+            editor.putBoolean(TriggerSettings.PREF_START_ON_APP_OPEN, enabled)
+        }
+        if (intent.hasExtra("auto_trigger_start_on_connect")) {
+            editor.putBoolean(
+                TriggerSettings.PREF_START_ON_BT_CONNECTED,
+                intent.getBooleanExtra("auto_trigger_start_on_connect", false)
+            )
+            editor.putBoolean(
+                TriggerSettings.PREF_AUTO_TRIGGER_START_ON_CONNECT,
+                intent.getBooleanExtra("auto_trigger_start_on_connect", false)
+            )
+        }
+        if (intent.hasExtra("auto_trigger_start_on_bluetooth_speed")) {
+            editor.putBoolean(
+                TriggerSettings.PREF_START_ON_BT_CONNECTED_AND_SPEED,
+                intent.getBooleanExtra("auto_trigger_start_on_bluetooth_speed", false)
+            )
+        }
+        if (intent.hasExtra("auto_trigger_stop_on_power_disconnected")) {
+            editor.putBoolean(
+                TriggerSettings.PREF_STOP_ON_POWER_DISCONNECTED,
+                intent.getBooleanExtra("auto_trigger_stop_on_power_disconnected", false)
+            )
+        }
+        if (intent.hasExtra("auto_trigger_stop_on_bluetooth_disconnected")) {
+            editor.putBoolean(
+                TriggerSettings.PREF_STOP_ON_BT_DISCONNECTED,
+                intent.getBooleanExtra("auto_trigger_stop_on_bluetooth_disconnected", false)
+            )
+        }
+        if (intent.hasExtra("auto_trigger_stop_on_bluetooth_stationary")) {
+            editor.putBoolean(
+                TriggerSettings.PREF_STOP_ON_BT_DISCONNECTED_AND_STATIONARY,
+                intent.getBooleanExtra("auto_trigger_stop_on_bluetooth_stationary", false)
+            )
+        }
+        if (intent.hasExtra("manual_focus_enabled")) {
+            editor.putBoolean(DashcamSettings.PREF_MANUAL_FOCUS_ENABLED, intent.getBooleanExtra("manual_focus_enabled", false))
+        }
+        if (intent.hasExtra("focus_percent")) {
+            editor.putInt(
+                DashcamSettings.PREF_FOCUS_PERCENT,
+                intent.getIntExtra("focus_percent", DashcamSettings.DEFAULT_FOCUS_PERCENT)
+                    .coerceIn(0, 100)
+            )
+        }
+        if (intent.hasExtra("hdr_mode")) {
+            editor.putInt(
+                DashcamSettings.PREF_HDR_MODE,
+                intent.getIntExtra("hdr_mode", DashcamSettings.HDR_MODE_OFF)
+                    .coerceIn(DashcamSettings.HDR_MODE_OFF, DashcamSettings.HDR_MODE_SCHEDULE)
+            )
+        }
+        if (intent.hasExtra("hdr_start_hour")) {
+            editor.putInt(
+                DashcamSettings.PREF_HDR_START_MINUTE,
+                intent.getIntExtra("hdr_start_hour", DashcamSettings.DEFAULT_HDR_START_MINUTE / 60).coerceIn(0, 23) * 60
+            )
+        }
+        if (intent.hasExtra("hdr_end_hour")) {
+            editor.putInt(
+                DashcamSettings.PREF_HDR_END_MINUTE,
+                intent.getIntExtra("hdr_end_hour", DashcamSettings.DEFAULT_HDR_END_MINUTE / 60).coerceIn(0, 23) * 60
             )
         }
         if (intent.hasExtra("watermark_address")) {
             editor.putBoolean(DashcamSettings.PREF_WATERMARK_ADDRESS, intent.getBooleanExtra("watermark_address", false))
         }
-        editor.apply()
+        if (intent.hasExtra("watermark_focus")) {
+            editor.putBoolean(DashcamSettings.PREF_WATERMARK_FOCUS, intent.getBooleanExtra("watermark_focus", false))
+        }
+        if (intent.hasExtra("radar_alert_enabled")) {
+            editor.putBoolean(RadarAlertSettingsStore.PREF_RADAR_ALERT_ENABLED, intent.getBooleanExtra("radar_alert_enabled", true))
+        }
+        if (intent.hasExtra("radar_thresholds")) {
+            editor.putString(
+                RadarAlertSettingsStore.PREF_RADAR_ALERT_THRESHOLDS,
+                RadarAlertSettingsStore.formatThresholds(
+                    RadarAlertSettingsStore.parseThresholds(intent.getStringExtra("radar_thresholds").orEmpty())
+                )
+            )
+        }
+        if (intent.hasExtra("radar_lead_seconds")) {
+            editor.putInt(
+                RadarAlertSettingsStore.PREF_RADAR_ALERT_LEAD_SECONDS,
+                intent.getIntExtra("radar_lead_seconds", RadarAlertSettingsStore.DEFAULT_LEAD_SECONDS)
+                    .coerceIn(RadarAlertSettingsStore.MIN_LEAD_SECONDS, RadarAlertSettingsStore.MAX_LEAD_SECONDS)
+            )
+        }
+        if (intent.hasExtra("radar_speech_rate_percent")) {
+            editor.putInt(
+                RadarAlertSettingsStore.PREF_RADAR_ALERT_SPEECH_RATE_PERCENT,
+                intent.getIntExtra("radar_speech_rate_percent", RadarAlertSettingsStore.DEFAULT_SPEECH_RATE_PERCENT)
+                    .coerceIn(RadarAlertSettingsStore.MIN_SPEECH_RATE_PERCENT, RadarAlertSettingsStore.MAX_SPEECH_RATE_PERCENT)
+            )
+        }
+        editor.commit()
         if (DashcamService.instance != null) {
             DashcamService.refreshSettings(context)
         }
@@ -189,7 +298,12 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .put("hudRunning", OverlayController.isRunning(context))
             .put("permissions", permissionsJson(context))
             .put("settings", settingsJson(context))
+            .put("telemetry", telemetryJson())
             .put("videoSummary", videoSummaryJson(context))
+            .put("photoSummary", photoSummaryJson(context))
+            .put("radarAlert", radarAlertJson())
+            .put("voicePhoto", voicePhotoJson(context))
+            .put("power", powerJson(context))
             .put("debugDir", debugDir(context).absolutePath)
         writeDebugJson(context, "state.json", state)
         return state
@@ -217,6 +331,15 @@ class DebugCommandReceiver : BroadcastReceiver() {
         return result
     }
 
+    private fun listPhotos(context: Context, command: String): JSONObject {
+        val photos = photosJson(context)
+        val result = resultJson(command)
+            .put("count", photos.length())
+            .put("photos", photos)
+        writeDebugJson(context, "photos.json", result)
+        return result
+    }
+
     private fun listCameraModes(context: Context, command: String): JSONObject {
         val modes = JSONArray()
         CameraCapabilities.debugModes(context).forEach { mode ->
@@ -237,13 +360,41 @@ class DebugCommandReceiver : BroadcastReceiver() {
         return result
     }
 
+    private fun listBluetooth(context: Context, command: String): JSONObject {
+        val settings = TriggerSettings.load(context)
+        val devices = JSONArray()
+        BluetoothDeviceList.debugDevices(context, settings).forEach { device ->
+            devices.put(
+                JSONObject()
+                    .put("name", device.name)
+                    .put("address", device.address)
+                    .put("selected", device.selected)
+                    .put("bonded", device.bonded)
+                    .put("connected", device.connected)
+            )
+        }
+        val result = resultJson(command)
+            .put("permission", BluetoothDeviceList.hasPermission(context))
+            .put("autoTriggerEnabled", settings.enabled)
+            .put("selectedAddresses", JSONArray(settings.bluetoothAddresses.toList()))
+            .put("connectedSelectedAddresses", JSONArray(TriggerConnectionState.connectedSelectedAddresses(context, settings).toList()))
+            .put("devices", devices)
+        writeDebugJson(context, "bluetooth.json", result)
+        return result
+    }
+
     private fun clearVideos(context: Context, command: String): JSONObject {
-        val before = VideoStorage.videoFiles(context).size
+        val before = VideoStorage.videoTrips(context).size
         val deletedFiles = VideoStorage.deleteAllVideos(context)
         return resultJson(command)
-            .put("videosBefore", before)
+            .put("tripsBefore", before)
             .put("deletedFiles", deletedFiles)
-            .put("videosAfter", VideoStorage.videoFiles(context).size)
+            .put("tripsAfter", VideoStorage.videoTrips(context).size)
+    }
+
+    private fun syncAutoTrigger(context: Context, command: String): JSONObject {
+        AutoTriggerController.sync(context, stopUnavailable = true)
+        return dumpState(context, command)
     }
 
     private fun permissionsJson(context: Context): JSONObject {
@@ -262,46 +413,164 @@ class DebugCommandReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
         val watermarks = DashcamSettings.load(context)
         val triggerSettings = TriggerSettings.load(context)
+        val hdrSettings = DashcamHdrSettings.load(context)
+        val radarSettings = RadarAlertSettingsStore.load(context)
         return JSONObject()
             .put("segmentMinutes", prefs.getInt(DashcamSettings.PREF_SEGMENT_MINUTES, DashcamSettings.DEFAULT_SEGMENT_MINUTES))
             .put("loopStorageGb", prefs.getInt(DashcamSettings.PREF_LOOP_STORAGE_GB, DashcamSettings.DEFAULT_LOOP_STORAGE_GB))
             .put("recordAudio", watermarks.recordAudio)
             .put("voicePhoto", watermarks.voicePhotoEnabled)
             .put("autoStartRecording", watermarks.autoStartRecording)
+            .put("manualFocusEnabled", CameraFocus.isManualEnabled(context))
+            .put("focusPercent", CameraFocus.percent(context))
+            .put("hdrMode", hdrSettings.mode)
+            .put("hdrStart", DashcamHdrSettings.formatMinute(hdrSettings.startMinute))
+            .put("hdrEnd", DashcamHdrSettings.formatMinute(hdrSettings.endMinute))
+            .put("hdrRequestedNow", DashcamHdrSettings.shouldEnableNow(context))
+            .put("hdrActive", DashcamService.isHdrActive())
             .put("autoTriggerEnabled", triggerSettings.enabled)
+            .put("autoTriggerStartOnAppOpen", triggerSettings.startOnAppOpen)
+            .put("autoTriggerStartOnConnect", triggerSettings.startOnBluetoothConnected)
+            .put("autoTriggerStartOnBluetoothSpeed", triggerSettings.startOnBluetoothConnectedAndSpeed)
+            .put("autoTriggerStopOnPowerDisconnected", triggerSettings.stopOnPowerDisconnected)
+            .put("autoTriggerStopOnBluetoothDisconnected", triggerSettings.stopOnBluetoothDisconnected)
+            .put("autoTriggerStopOnBluetoothStationary", triggerSettings.stopOnBluetoothDisconnectedAndStationary)
+            .put("radarAlertEnabled", radarSettings.enabled)
+            .put("radarAlertThresholds", JSONArray(radarSettings.thresholdsSeconds))
+            .put("radarAlertLeadSeconds", radarSettings.leadSeconds)
+            .put("radarAlertSpeechRatePercent", radarSettings.speechRatePercent)
+            .put("autoTriggerBluetoothPermission", BluetoothDeviceList.hasPermission(context))
             .put("autoTriggerBluetoothAddresses", JSONArray(triggerSettings.bluetoothAddresses.toList()))
+            .put(
+                "autoTriggerConnectedBluetoothAddresses",
+                JSONArray(TriggerConnectionState.connectedSelectedAddresses(context, triggerSettings).toList())
+            )
             .put("parkingStopEnabled", watermarks.parkingStopEnabled)
             .put("parkingStopMinutes", watermarks.parkingStopMinutes)
             .put("watermarkAddress", watermarks.showAddress)
+            .put("watermarkFocus", watermarks.showFocus)
+    }
+
+    private fun telemetryJson(): JSONObject {
+        val telemetry = DashcamService.currentTelemetry()
+        return JSONObject()
+            .put("speedKmh", telemetry.speedKmh.toDouble())
+            .putNullable("latitude", telemetry.latitude)
+            .putNullable("longitude", telemetry.longitude)
+            .putNullable("focusDistanceDiopters", telemetry.focusDistanceDiopters)
+            .putNullable("autofocusState", telemetry.autofocusState)
+    }
+
+    private fun radarAlertJson(): JSONObject {
+        val state = RadarAlertController.currentState()
+        return JSONObject()
+            .put("enabled", state.enabled)
+            .put("active", state.active)
+            .put("thresholdsSeconds", JSONArray(state.thresholdsSeconds))
+            .put("leadSeconds", state.leadSeconds)
+            .put("speechRatePercent", state.speechRatePercent)
+            .putNullable("lastError", state.lastError)
+            .putNullable("lastCameraType", state.lastCameraType)
+            .putNullable("lastCameraDistanceMeters", state.lastCameraDistanceMeters)
+            .putNullable("lastCameraEtaSeconds", state.lastCameraEtaSeconds)
+            .putNullable("lastCameraSpeedLimit", state.lastCameraSpeedLimit)
+            .putNullable("lastSpokenText", state.lastSpokenText)
+            .put("lastSpokenAtMs", state.lastSpokenAtMs)
+    }
+
+    private fun voicePhotoJson(context: Context): JSONObject {
+        val settings = DashcamSettings.load(context)
+        val state = VoicePhotoMonitor.currentState()
+        val recognizerState = VoicePhotoRecognizer.currentState()
+        return JSONObject()
+            .put("enabled", settings.voicePhotoEnabled)
+            .put("recordAudioRequested", settings.recordAudio)
+            .put("audioPermission", hasPermission(context, Manifest.permission.RECORD_AUDIO))
+            .put("recordAudioEffective", settings.recordAudio && !settings.voicePhotoEnabled && hasPermission(context, Manifest.permission.RECORD_AUDIO))
+            .put("preferredEngine", "vosk")
+            .putNullable("lastEngine", state.lastEngine)
+            .put("modelState", recognizerState.modelState)
+            .put("modelReady", recognizerState.modelReady)
+            .putNullable("modelPath", recognizerState.modelPath)
+            .putNullable("recognizerOwner", recognizerState.activeOwner)
+            .put("recognizerListening", recognizerState.listening)
+            .putNullable("recognizerLastText", recognizerState.lastText)
+            .putNullable("recognizerLastCommand", recognizerState.lastCommand)
+            .putNullable("recognizerLastError", recognizerState.lastError)
+            .put("previewListening", state.previewListening)
+            .put("serviceListening", state.serviceListening)
+            .putNullable("lastOwner", state.lastOwner)
+            .putNullable("lastErrorCode", state.lastErrorCode)
+            .putNullable("lastErrorLabel", state.lastErrorLabel)
+            .putNullable("lastHeardText", state.lastHeardText)
+            .put("lastTriggeredAtMs", state.lastTriggeredAtMs)
+            .put("lastStartedAtMs", state.lastStartedAtMs)
+    }
+
+    private fun powerJson(context: Context): JSONObject {
+        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val manager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+            ?: BatteryManager.BATTERY_STATUS_UNKNOWN
+        return JSONObject()
+            .put("charging", status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
+            .put("batteryPercent", manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
     }
 
     private fun videoSummaryJson(context: Context): JSONObject {
-        val videos = VideoStorage.videoFiles(context)
-        val totalBytes = videos.sumOf { video -> VideoStorage.companionFilesFor(video).sumOf { it.length() } }
+        val trips = VideoStorage.videoTrips(context)
+        val totalBytes = trips.sumOf { trip -> VideoStorage.companionFilesFor(trip).sumOf { it.length() } }
         return JSONObject()
-            .put("count", videos.size)
+            .put("count", trips.size)
             .put("totalBytes", totalBytes)
             .put("dir", VideoStorage.videoDir(context).absolutePath)
     }
 
+    private fun photoSummaryJson(context: Context): JSONObject {
+        val photos = VideoStorage.photoFiles(context)
+        return JSONObject()
+            .put("count", photos.size)
+            .put("totalBytes", photos.sumOf { it.length() })
+            .put("dir", VideoStorage.photoDir(context).absolutePath)
+    }
+
     private fun videosJson(context: Context): JSONArray {
         val array = JSONArray()
-        VideoStorage.videoFiles(context).sortedByDescending { it.lastModified() }.forEach { video ->
-            val companions = VideoStorage.companionFilesFor(video)
+        VideoStorage.videoTrips(context).sortedByDescending { it.lastModified }.forEach { trip ->
+            val companions = VideoStorage.companionFilesFor(trip)
             array.put(
                 JSONObject()
-                    .put("name", video.name)
-                    .put("path", video.absolutePath)
-                    .put("bytes", video.length())
-                    .put("modified", formatTime(video.lastModified()))
-                    .put("hasSubtitle", VideoStorage.subtitleFileFor(video).exists())
-                    .put("hasTrack", VideoStorage.trackFileFor(video).exists())
-                    .put("favorite", VideoStorage.isFavorite(video))
-                    .put("autoCleanupManaged", VideoStorage.isAutoGeneratedVideoFile(video) && !VideoStorage.isFavorite(video))
+                    .put("name", trip.title)
+                    .put("dir", trip.directory.absolutePath)
+                    .put("segmentCount", trip.segments.size)
+                    .put("segments", JSONArray(trip.segments.map { it.absolutePath }))
+                    .put("bytes", companions.sumOf { it.length() })
+                    .put("modified", formatTime(trip.lastModified))
+                    .put("hasSubtitle", trip.segments.any { VideoStorage.subtitleFileFor(it).exists() })
+                    .put("hasTrack", trip.segments.any { VideoStorage.trackFileFor(it).exists() })
+                    .put("favorite", VideoStorage.isFavorite(trip))
                     .put("groupBytes", companions.sumOf { it.length() })
             )
         }
         return array
+    }
+
+    private fun photosJson(context: Context): JSONArray {
+        val array = JSONArray()
+        VideoStorage.photoFiles(context).sortedByDescending { it.lastModified() }.forEach { photo ->
+            array.put(
+                JSONObject()
+                    .put("name", photo.name)
+                    .put("path", photo.absolutePath)
+                    .put("bytes", photo.length())
+                    .put("modified", formatTime(photo.lastModified()))
+            )
+        }
+        return array
+    }
+
+    private fun JSONObject.putNullable(key: String, value: Any?): JSONObject {
+        return put(key, value ?: JSONObject.NULL)
     }
 
     private fun hasPermission(context: Context, permission: String): Boolean {
@@ -338,6 +607,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
         private const val COMMAND_OPEN_SETTINGS = "open_settings"
         private const val COMMAND_OPEN_CAMERA_FULLSCREEN = "open_camera_fullscreen"
         private const val COMMAND_OPEN_HISTORY = "open_history"
+        private const val COMMAND_OPEN_PHOTOS = "open_photos"
         private const val COMMAND_OPEN_LATEST_VIDEO = "open_latest_video"
         private const val COMMAND_OPEN_STATUS = "open_status"
         private const val COMMAND_OPEN_HUD = "open_hud"
@@ -345,12 +615,16 @@ class DebugCommandReceiver : BroadcastReceiver() {
         private const val COMMAND_START_RECORDING = "start_recording"
         private const val COMMAND_STOP_RECORDING = "stop_recording"
         private const val COMMAND_TAKE_PHOTO = "take_photo"
+        private const val COMMAND_SYNC_AUTO_TRIGGER = "sync_auto_trigger"
         private const val COMMAND_START_HUD = "start_hud"
         private const val COMMAND_STOP_HUD = "stop_hud"
         private const val COMMAND_SET_SETTINGS = "set_settings"
         private const val COMMAND_DUMP_STATE = "dump_state"
         private const val COMMAND_LIST_VIDEOS = "list_videos"
+        private const val COMMAND_LIST_PHOTOS = "list_photos"
+        private const val COMMAND_LIST_BLUETOOTH = "list_bluetooth"
         private const val COMMAND_LIST_CAMERA_MODES = "list_camera_modes"
         private const val COMMAND_CLEAR_VIDEOS = "clear_videos"
+        private const val COMMAND_SIMULATE_POWER_DISCONNECTED = "simulate_power_disconnected"
     }
 }

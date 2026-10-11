@@ -1,13 +1,13 @@
 package com.thomas.carspeed
 
 import android.content.Intent
-import android.graphics.Bitmap
-import android.media.ThumbnailUtils
+import android.location.Address
+import android.location.Geocoder
 import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
-import android.util.Size
 import android.view.Gravity
 import android.view.View
 import android.widget.ArrayAdapter
@@ -27,10 +27,16 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class HistoryActivity : AppCompatActivity() {
 
-    private val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    private val geocodeExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val historyExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val addressCache = mutableMapOf<String, String>()
+    private val pendingAddressKeys = mutableSetOf<String>()
 
     private lateinit var spSortField: Spinner
     private lateinit var btnSortOrder: Button
@@ -43,6 +49,8 @@ class HistoryActivity : AppCompatActivity() {
 
     private var currentField: HistorySortField = HistorySortField.START_TIME
     private var ascending: Boolean = false
+    @Volatile private var renderRequestId: Int = 0
+    private var currentVideoItems: List<VideoListItem> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,6 +78,12 @@ class HistoryActivity : AppCompatActivity() {
         btnExportGpx.setOnClickListener { exportLatestGpx() }
         btnDeleteAllVideos.setOnClickListener { confirmDeleteAllVideos() }
         render()
+    }
+
+    override fun onDestroy() {
+        geocodeExecutor.shutdownNow()
+        historyExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun setupSortUi() {
@@ -123,40 +137,43 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun replayVideo(video: File) {
+    private fun replayTrip(trip: VideoStorage.VideoTrip) {
         startActivity(
             Intent(this, VideoReplayActivity::class.java).apply {
-                putExtra(VideoReplayActivity.EXTRA_VIDEO_PATH, video.absolutePath)
+                putStringArrayListExtra(
+                    VideoReplayActivity.EXTRA_VIDEO_PATHS,
+                    ArrayList(trip.segments.map { it.absolutePath })
+                )
             }
         )
     }
 
-    private fun confirmDeleteVideo(video: File) {
+    private fun confirmDeleteVideo(trip: VideoStorage.VideoTrip) {
         AlertDialog.Builder(this)
             .setTitle(R.string.video_delete_one)
-            .setMessage(video.name)
+            .setMessage(trip.title)
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = VideoStorage.deleteVideoGroup(video)
+                val deleted = VideoStorage.deleteVideoTrip(trip)
                 Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                renderVideoList()
+                render()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
     private fun confirmDeleteAllVideos() {
-        val videos = VideoStorage.videoFiles(this)
-        if (videos.isEmpty()) {
+        val trips = currentVideoItems.map { it.trip }
+        if (trips.isEmpty()) {
             Toast.makeText(this, R.string.video_replay_no_video, Toast.LENGTH_SHORT).show()
             return
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.video_delete_all)
-            .setMessage(getString(R.string.video_delete_all_confirm, videos.size))
+            .setMessage(getString(R.string.video_delete_all_confirm, trips.size))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
                 val deleted = VideoStorage.deleteAllVideos(this)
                 Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                renderVideoList()
+                render()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -171,19 +188,62 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun render() {
-        renderVideoList()
-        val records = DriveRecordStore.loadRecords(this)
+        val requestId = ++renderRequestId
+        val sortField = currentField
+        val sortAscending = ascending
+        showLoadingState()
+        val appContext = applicationContext
+        historyExecutor.execute {
+            val videoItems = VideoStorage.videoTrips(appContext)
+                .map { trip -> buildVideoListItem(trip) }
+                .sortedWith(
+                    compareByDescending<VideoListItem> { it.favorite }
+                        .thenByDescending { it.trip.lastModified }
+                )
+            if (requestId != renderRequestId) return@execute
+            val totalBytes = videoItems.sumOf { it.totalBytes }
+            val storedRecords = DriveRecordStore.loadRecords(appContext)
+            val records = storedRecords.ifEmpty { videoTrackRecords(videoItems) }
+            val sortedRecords = HistorySort.sort(records, sortField, sortAscending)
+            val historyText = historyText(storedRecords.isEmpty(), sortedRecords, sortField, sortAscending)
+            mainHandler.post {
+                if (requestId != renderRequestId || isFinishing || isDestroyed) return@post
+                renderVideoList(videoItems, totalBytes)
+                tvHistory.text = historyText
+            }
+        }
+    }
+
+    private fun showLoadingState() {
+        currentVideoItems = emptyList()
+        btnDeleteAllVideos.isEnabled = false
+        tvVideoSummary.text = "正在加载录像…"
+        layoutVideoList.removeAllViews()
+        layoutVideoList.addView(TextView(this).apply {
+            text = "正在扫描驾驶记录…"
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 13f
+        })
+        tvHistory.text = "正在加载历史驾驶记录…"
+    }
+
+    private fun historyText(
+        fromVideoTracks: Boolean,
+        records: List<DriveRecord>,
+        sortField: HistorySortField,
+        sortAscending: Boolean
+    ): String {
         if (records.isEmpty()) {
-            tvHistory.text = getString(R.string.history_empty)
-            return
+            return getString(R.string.history_empty) +
+                "\n\n记录明细以前只来自 HUD 行驶记录；现在录像结束会写入记录。旧视频如果没有轨迹文件，也无法补算。"
         }
 
-        val sorted = HistorySort.sort(records, currentField, ascending)
+        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val text = buildString {
-            appendLine("历史驾驶记录（最多100条）")
-            appendLine("排序字段: ${fieldLabel(currentField)}  顺序: ${if (ascending) "升序" else "降序"}")
+            appendLine(if (fromVideoTracks) "录像行程记录（由 GPS 轨迹补算）" else "历史驾驶记录（最多100条）")
+            appendLine("排序字段: ${fieldLabel(sortField)}  顺序: ${if (sortAscending) "升序" else "降序"}")
             appendLine("====================")
-            sorted.forEachIndexed { idx, r ->
+            records.forEachIndexed { idx, r ->
                 appendLine("#${idx + 1}")
                 appendLine("启动时间: ${fmt.format(Date(r.startTimeMs))}")
                 appendLine("结束时间: ${fmt.format(Date(r.endTimeMs))}")
@@ -205,32 +265,81 @@ class HistoryActivity : AppCompatActivity() {
                 appendLine("--------------------")
             }
         }
-        tvHistory.text = text
+        return text
     }
 
-    private fun renderVideoList() {
-        val videos = VideoStorage.videoFiles(this).sortedWith(
-            compareByDescending<File> { VideoStorage.isFavorite(it) }
-                .thenByDescending { it.lastModified() }
+    private fun videoTrackRecords(videoItems: List<VideoListItem>): List<DriveRecord> {
+        return videoItems.mapNotNull { item ->
+            val track = item.track ?: return@mapNotNull null
+            val points = track.points
+            if (points.isEmpty()) return@mapNotNull null
+            val summary = item.trackSummary ?: TrackMetrics.summary(points)
+            val maxPoint = points.maxByOrNull { it.speedKmh }
+            val startTimeMs = track.startTimeMs.takeIf { it > 0L } ?: points.first().timeMs
+            val endTimeMs = points.last().timeMs.takeIf { it > 0L } ?: (startTimeMs + summary.durationMs)
+            DriveRecord(
+                startTimeMs = startTimeMs,
+                endTimeMs = endTimeMs,
+                durationMs = summary.durationMs,
+                maxSpeedKmh = summary.maxSpeedKmh,
+                distanceMeters = summary.totalDistanceMeters,
+                averageSpeedKmh = summary.averageSpeedKmh,
+                maxSpeedLatitude = maxPoint?.latitude,
+                maxSpeedLongitude = maxPoint?.longitude,
+                maxSpeedAccuracyMeters = maxPoint?.accuracyMeters,
+                averageAccuracyMeters = summary.averageAccuracyMeters,
+                goodFixRatio = summary.goodFixRatio,
+                routePoints = points.map { point ->
+                    DriveRoutePoint(
+                        timeMs = point.timeMs,
+                        latitude = point.latitude,
+                        longitude = point.longitude,
+                        speedKmh = point.speedKmh,
+                        accuracyMeters = point.accuracyMeters,
+                        bearingDegrees = point.bearingDegrees
+                    )
+                }
+            )
+        }
+    }
+
+    private fun buildVideoListItem(trip: VideoStorage.VideoTrip): VideoListItem {
+        val track = VideoTrackStorage.readMergedTrack(trip.segments)
+        val points = track?.points.orEmpty()
+        val companions = VideoStorage.companionFilesFor(trip)
+        return VideoListItem(
+            trip = trip,
+            favorite = VideoStorage.isFavorite(trip),
+            totalBytes = companions.sumOf { it.length() },
+            hasTrack = track != null || trip.segments.any { VideoStorage.trackFileFor(it).exists() },
+            hasSubtitle = trip.segments.any { VideoStorage.subtitleFileFor(it).exists() },
+            track = track,
+            trackSummary = points.takeIf { it.isNotEmpty() }?.let { TrackMetrics.summary(it) },
+            startPoint = points.firstOrNull(),
+            endPoint = points.lastOrNull()
         )
-        val totalBytes = videos.sumOf { VideoStorage.companionFilesFor(it).sumOf { file -> file.length() } }
-        tvVideoSummary.text = getString(R.string.video_history_summary, videos.size, formatBytes(totalBytes))
+    }
+
+    private fun renderVideoList(items: List<VideoListItem>, totalBytes: Long) {
+        currentVideoItems = items
+        tvVideoSummary.text = getString(R.string.video_history_summary, items.size, formatBytes(totalBytes))
         layoutVideoList.removeAllViews()
-        if (videos.isEmpty()) {
+        if (items.isEmpty()) {
             layoutVideoList.addView(TextView(this).apply {
                 text = getString(R.string.video_history_empty)
                 setTextColor(getColorCompat(R.color.text_primary))
                 textSize = 13f
             })
         } else {
-            videos.forEach { video ->
-                layoutVideoList.addView(videoCard(video))
+            items.forEach { item ->
+                layoutVideoList.addView(videoCard(item))
             }
         }
-        btnDeleteAllVideos.isEnabled = videos.isNotEmpty()
+        btnDeleteAllVideos.isEnabled = items.isNotEmpty()
     }
 
-    private fun videoCard(video: File): View {
+    private fun videoCard(item: VideoListItem): View {
+        val trip = item.trip
         val density = resources.displayMetrics.density
         val card = MaterialCardView(this).apply {
             radius = 16f * density
@@ -238,7 +347,7 @@ class HistoryActivity : AppCompatActivity() {
             setCardBackgroundColor(getColorCompat(R.color.surface_primary))
             isClickable = true
             isFocusable = true
-            setOnClickListener { replayVideo(video) }
+            setOnClickListener { replayTrip(trip) }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -254,8 +363,9 @@ class HistoryActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(132), dp(82))
         }
         val image = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            setImageBitmap(loadThumbnail(video))
+            alpha = 0.28f
+            scaleType = ImageView.ScaleType.CENTER
+            setImageResource(android.R.drawable.ic_menu_slideshow)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -283,21 +393,25 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         content.addView(TextView(this).apply {
-            text = video.nameWithoutExtension
+            text = trip.title
             setTextColor(getColorCompat(R.color.text_primary))
             textSize = 14f
             maxLines = 2
         })
         content.addView(TextView(this).apply {
-            text = videoMetaLabel(video)
+            text = videoMetaLabel(item)
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = 12f
         })
         content.addView(TextView(this).apply {
-            text = if (VideoStorage.isFavorite(video)) {
+            text = videoRouteLabel(item, this)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 12f
+            maxLines = 2
+        })
+        content.addView(TextView(this).apply {
+            text = if (item.favorite) {
                 getString(R.string.video_favorite_badge)
-            } else if (!VideoStorage.isAutoGeneratedVideoFile(video)) {
-                getString(R.string.video_protected_badge)
             } else {
                 getString(R.string.video_play_hint)
             }
@@ -312,28 +426,130 @@ class HistoryActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(6) }
         }
-        actions.addView(actionText(getString(if (VideoStorage.isFavorite(video)) R.string.video_unfavorite else R.string.video_favorite)) {
-            VideoStorage.setFavorite(video, !VideoStorage.isFavorite(video))
-            renderVideoList()
+        actions.addView(actionText(getString(if (item.favorite) R.string.video_unfavorite else R.string.video_favorite)) {
+            VideoStorage.setFavorite(trip, !item.favorite)
+            render()
         })
-        actions.addView(actionText(getString(R.string.video_rename)) { showRenameDialog(video) })
-        actions.addView(actionText(getString(R.string.video_delete_one)) { confirmDeleteVideo(video) })
+        if (trip.segments.size == 1) {
+            actions.addView(actionText(getString(R.string.video_rename)) { showRenameDialog(trip.firstVideo) })
+        } else {
+            actions.addView(actionText(getString(R.string.video_segments_count, trip.segments.size)) { replayTrip(trip) })
+        }
+        actions.addView(actionText(getString(R.string.video_delete_one)) { confirmDeleteVideo(trip) })
         content.addView(actions)
         row.addView(content)
         card.addView(row)
         return card
     }
 
-    private fun videoMetaLabel(video: File): String {
-        val companions = VideoStorage.companionFilesFor(video)
-        val totalBytes = companions.sumOf { it.length() }
-        val hasTrack = VideoStorage.trackFileFor(video).exists()
-        val hasSubtitle = VideoStorage.subtitleFileFor(video).exists()
+    private fun videoMetaLabel(item: VideoListItem): String {
         val extras = listOfNotNull(
-            if (hasTrack) "轨迹" else null,
-            if (hasSubtitle) "字幕" else null
+            if (item.hasTrack) "轨迹" else null,
+            if (item.hasSubtitle) "字幕" else null
         ).ifEmpty { listOf("仅视频") }.joinToString("+")
-        return "${formatBytes(totalBytes)}  $extras"
+        val distance = item.trackSummary?.totalDistanceMeters?.takeIf { it > 0f }?.let { "GPS ${formatDistance(it)}" }
+        val segments = if (item.trip.segments.size > 1) getString(R.string.video_segments_count, item.trip.segments.size) else null
+        return listOfNotNull(segments, formatBytes(item.totalBytes), distance, extras).joinToString("  ·  ")
+    }
+
+    private fun videoRouteLabel(item: VideoListItem, target: TextView? = null, schedule: Boolean = true): String {
+        val start = item.startPoint ?: return "路线：暂无 GPS 起终点"
+        val end = item.endPoint ?: return "路线：暂无 GPS 起终点"
+        val startKey = addressKey(start)
+        val endKey = addressKey(end)
+        val startAddress = cachedAddress(startKey)
+        val endAddress = cachedAddress(endKey)
+        if (startAddress != null && endAddress != null) {
+            return "路线：$startAddress 到 $endAddress"
+        }
+        if (schedule) {
+            scheduleAddressResolve(start, startKey, item, target)
+            scheduleAddressResolve(end, endKey, item, target)
+        }
+        return "路线：解析中"
+    }
+
+    private fun scheduleAddressResolve(point: VideoTrackPoint, key: String, item: VideoListItem, target: TextView?) {
+        if (cachedAddress(key) != null || key in pendingAddressKeys) return
+        pendingAddressKeys += key
+        geocodeExecutor.execute {
+            val label = resolveShortAddress(point)
+            getSharedPreferences(PREF_GEO_CACHE, MODE_PRIVATE)
+                .edit()
+                .putString(key, label)
+                .apply()
+            mainHandler.post {
+                pendingAddressKeys -= key
+                addressCache[key] = label
+                target?.text = videoRouteLabel(item, target = null, schedule = false)
+            }
+        }
+    }
+
+    private fun cachedAddress(key: String): String? {
+        return addressCache[key]
+            ?: getSharedPreferences(PREF_GEO_CACHE, MODE_PRIVATE).getString(key, null)?.also { addressCache[key] = it }
+    }
+
+    private fun addressKey(point: VideoTrackPoint): String {
+        return String.format(Locale.US, "geo_%.5f_%.5f", point.latitude, point.longitude)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveShortAddress(point: VideoTrackPoint): String {
+        return try {
+            val address = Geocoder(this, Locale.CHINA)
+                .getFromLocation(point.latitude, point.longitude, 1)
+                ?.firstOrNull()
+            shortAddress(address, point)
+        } catch (_: RuntimeException) {
+            coordinateLabel(point)
+        } catch (_: java.io.IOException) {
+            coordinateLabel(point)
+        }
+    }
+
+    private fun shortAddress(address: Address?, point: VideoTrackPoint): String {
+        if (address == null) return coordinateLabel(point)
+        val province = cleanAddressPart(address.adminArea)
+        val city = cleanAddressPart(address.locality ?: address.subAdminArea ?: address.adminArea)
+        val district = cleanAddressPart(address.subLocality ?: address.subAdminArea)
+            ?.takeIf { it != city && it != province }
+        val place = listOf(
+            address.featureName,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) address.premises else null,
+            address.thoroughfare,
+            address.getAddressLine(0)
+        ).mapNotNull { raw ->
+            cleanAddressPart(raw)
+                ?.replace("中国", "")
+                ?.replace(province.orEmpty(), "")
+                ?.replace(city.orEmpty(), "")
+                ?.replace(district.orEmpty(), "")
+                ?.trim()
+                ?.takeIf { it.length >= 2 && it != city && it != district && !it.all { ch -> ch.isDigit() } }
+        }.firstOrNull()
+
+        val label = listOfNotNull(city, district, place)
+            .distinct()
+            .joinToString("")
+            .ifBlank { coordinateLabel(point) }
+        return shortenEndpoint(label)
+    }
+
+    private fun cleanAddressPart(value: String?): String? {
+        return value
+            ?.replace(Regex("[\\s,，]+"), "")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    private fun shortenEndpoint(label: String): String {
+        return if (label.length > 18) label.take(17) + "…" else label
+    }
+
+    private fun coordinateLabel(point: VideoTrackPoint): String {
+        return String.format(Locale.US, "%.5f,%.5f", point.latitude, point.longitude)
     }
 
     private fun actionText(text: String, action: () -> Unit): TextView {
@@ -366,26 +582,11 @@ class HistoryActivity : AppCompatActivity() {
                     Toast.makeText(this, R.string.video_rename_failed, Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, R.string.video_rename_done, Toast.LENGTH_SHORT).show()
-                    renderVideoList()
+                    render()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    private fun loadThumbnail(video: File): Bitmap? {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ThumbnailUtils.createVideoThumbnail(video, Size(dp(264), dp(164)), null)
-            } else {
-                @Suppress("DEPRECATION")
-                ThumbnailUtils.createVideoThumbnail(video.absolutePath, MediaStore.Video.Thumbnails.MINI_KIND)
-            }
-        } catch (_: RuntimeException) {
-            null
-        } catch (_: java.io.IOException) {
-            null
-        }
     }
 
     private fun formatBytes(bytes: Long): String {
@@ -417,11 +618,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun formatDistance(meters: Float): String {
-        return if (meters >= 1000f) {
-            String.format("%.2f km", meters / 1000f)
-        } else {
-            String.format("%.0f m", meters)
-        }
+        return TrackMetrics.formatDistance(meters)
     }
 
     private fun formatGpsQuality(record: DriveRecord): String {
@@ -438,8 +635,21 @@ class HistoryActivity : AppCompatActivity() {
         return String.format("%02d:%02d:%02d", h, m, s)
     }
 
+    private data class VideoListItem(
+        val trip: VideoStorage.VideoTrip,
+        val favorite: Boolean,
+        val totalBytes: Long,
+        val hasTrack: Boolean,
+        val hasSubtitle: Boolean,
+        val track: VideoTrack?,
+        val trackSummary: TrackSummary?,
+        val startPoint: VideoTrackPoint?,
+        val endPoint: VideoTrackPoint?
+    )
+
     companion object {
         private const val PREF_HISTORY_SORT_FIELD = "history_sort_field"
         private const val PREF_HISTORY_SORT_ASC = "history_sort_asc"
+        private const val PREF_GEO_CACHE = "history_geo_cache"
     }
 }

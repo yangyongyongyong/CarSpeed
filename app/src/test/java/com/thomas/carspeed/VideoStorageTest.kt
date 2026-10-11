@@ -162,4 +162,33 @@ class VideoStorageTest {
             dir.deleteRecursively()
         }
     }
+
+    @Test
+    fun cleanup_plan_deletes_whole_trip_folder_as_one_group() {
+        val dir = Files.createTempDirectory("carspeed-trip-cleanup-test").toFile()
+        try {
+            val trip = dir.resolve("carspeed-trip-20261010-100000").apply { mkdirs() }
+            val first = trip.resolve("carspeed-20261010-100000.mp4").apply { writeBytes(ByteArray(80)) }
+            val second = trip.resolve("carspeed-20261010-100500.mp4").apply { writeBytes(ByteArray(80)) }
+            val secondTrack = trip.resolve("carspeed-20261010-100500.track.json").apply { writeBytes(ByteArray(5)) }
+            val newer = dir.resolve("carspeed-20261010-110000.mp4").apply { writeBytes(ByteArray(20)) }
+            first.setLastModified(1_000L)
+            second.setLastModified(1_100L)
+            secondTrack.setLastModified(1_101L)
+            newer.setLastModified(2_000L)
+
+            val plan = VideoStorage.planCleanup(
+                files = VideoStorage.managedVideoFiles(dir),
+                limitBytes = 100L,
+                usableSpaceBytes = 1_000L,
+                requiredFreeBytes = 0L,
+                minFreeBytes = 50L
+            )
+
+            assertEquals(setOf(first, second, secondTrack), plan.filesToDelete.toSet())
+            assertEquals(20L, plan.projectedManagedBytes)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

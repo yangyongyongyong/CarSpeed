@@ -3,23 +3,40 @@ package com.thomas.carspeed
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
+import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.OrientationEventListener
+import android.view.Surface
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.annotation.OptIn as AndroidXOptIn
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class CameraRecordActivity : AppCompatActivity() {
     private lateinit var toolbar: MaterialToolbar
@@ -28,21 +45,47 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var tvPreviewTimer: TextView
     private lateinit var tvStatus: TextView
     private lateinit var tvSavedPath: TextView
+    private lateinit var cbManualFocus: CheckBox
+    private lateinit var tvFocusInlineLabel: TextView
+    private lateinit var sbInlineFocus: SeekBar
     private lateinit var btnRecord: Button
     private lateinit var btnPhoto: Button
+    private lateinit var btnPhotos: Button
     private lateinit var btnSettings: Button
     private lateinit var btnHistory: Button
     private lateinit var btnStatus: Button
     private lateinit var btnHud: Button
 
     private var idlePreviewProvider: ProcessCameraProvider? = null
+    private var idleCamera: Camera? = null
+    private var idlePreviewUseCase: Preview? = null
+    private var idleImageCapture: ImageCapture? = null
     private var idlePreviewRequested = false
     private var autoStartRequested = false
     private var autoStartConsumed = false
     private var startAfterNotificationPermission = false
     private var recordingStartRequestedAtMs = 0L
     private var lastRecordingUiState = false
+    private var voicePermissionRequested = false
+    private var pendingPhotoRequest = false
+    private var targetRotation = Surface.ROTATION_0
+    private var orientationListener: OrientationEventListener? = null
+    private var updatingFocusControls = false
     private val uiHandler = Handler(Looper.getMainLooper())
+    private val photoExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    private val focusCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            DashcamService.updatePreviewFocusTelemetry(
+                result.get(CaptureResult.LENS_FOCUS_DISTANCE),
+                result.get(CaptureResult.CONTROL_AF_STATE)
+            )
+        }
+    }
 
     private val uiTicker = object : Runnable {
         override fun run() {
@@ -74,6 +117,7 @@ class CameraRecordActivity : AppCompatActivity() {
                 Toast.makeText(this, R.string.voice_permission_denied, Toast.LENGTH_SHORT).show()
             }
             DashcamService.refreshSettings(this)
+            refreshVoiceRecognition()
         }
 
     private val requestNotificationPermission =
@@ -89,7 +133,9 @@ class CameraRecordActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
         setContentView(R.layout.activity_camera_record)
+        targetRotation = CameraRotation.displayRotation(this)
         autoStartRequested = intent.getBooleanExtra(EXTRA_AUTO_START_RECORDING, false) ||
             (intent?.action == Intent.ACTION_MAIN && DashcamSettings.load(this).autoStartRecording)
 
@@ -99,8 +145,12 @@ class CameraRecordActivity : AppCompatActivity() {
         tvPreviewTimer = findViewById(R.id.tvPreviewTimer)
         tvStatus = findViewById(R.id.tvCameraStatus)
         tvSavedPath = findViewById(R.id.tvSavedPath)
+        cbManualFocus = findViewById(R.id.cbManualFocus)
+        tvFocusInlineLabel = findViewById(R.id.tvFocusInlineLabel)
+        sbInlineFocus = findViewById(R.id.sbInlineFocus)
         btnRecord = findViewById(R.id.btnRecordVideo)
         btnPhoto = findViewById(R.id.btnTakePhoto)
+        btnPhotos = findViewById(R.id.btnOpenPhotos)
         btnSettings = findViewById(R.id.btnOpenSettings)
         btnHistory = findViewById(R.id.btnOpenHistory)
         btnStatus = findViewById(R.id.btnOpenStatus)
@@ -109,15 +159,29 @@ class CameraRecordActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
         previewView.setOnClickListener { startActivity(Intent(this, CameraFullscreenActivity::class.java)) }
         btnRecord.setOnClickListener { toggleRecording() }
-        btnPhoto.setOnClickListener { DashcamService.takePhoto(this) }
+        btnPhoto.setOnClickListener { takePhotoFromUi() }
+        btnPhotos.setOnClickListener { startActivity(Intent(this, PhotoGalleryActivity::class.java)) }
         btnSettings.setOnClickListener { startActivity(Intent(this, DashcamSettingsActivity::class.java)) }
         btnHistory.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         btnStatus.setOnClickListener { startActivity(Intent(this, StatusActivity::class.java)) }
         btnHud.setOnClickListener { startActivity(Intent(this, SpeedHudActivity::class.java)) }
+        setupFocusControls()
 
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         ensureCameraPermission()
         updatePreviewOverlay()
+        if (intent.getBooleanExtra(EXTRA_TAKE_PHOTO, false) || pendingExternalPhotoRequest) {
+            pendingExternalPhotoRequest = false
+            pendingPhotoRequest = true
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_TAKE_PHOTO, false)) {
+            pendingPhotoRequest = true
+            takePhotoFromUi()
+        }
     }
 
     override fun onResume() {
@@ -129,7 +193,11 @@ class CameraRecordActivity : AppCompatActivity() {
             scheduleIdlePreviewRestart()
         }
         syncUi()
+        syncFocusControlsFromPrefs()
         maybeAutoStartFromIntent()
+        AutoTriggerController.sync(this)
+        startOrientationListener()
+        refreshVoiceRecognition()
         uiHandler.removeCallbacks(uiTicker)
         uiHandler.post(uiTicker)
     }
@@ -137,6 +205,7 @@ class CameraRecordActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         uiHandler.removeCallbacks(uiTicker)
+        stopOrientationListener()
         if (!DashcamService.isRecording(this)) {
             stopIdlePreview()
         }
@@ -156,13 +225,17 @@ class CameraRecordActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         uiHandler.removeCallbacks(uiTicker)
+        photoExecutor.shutdown()
         if (DashcamService.isRecording(this)) {
             idlePreviewRequested = false
             idlePreviewProvider = null
+            idleCamera = null
+            idlePreviewUseCase = null
         } else {
             stopIdlePreview()
         }
         DashcamService.setPreviewSurfaceProvider(null)
+        if (instance === this) instance = null
     }
 
     private fun ensureCameraPermission() {
@@ -227,6 +300,7 @@ class CameraRecordActivity : AppCompatActivity() {
         return false
     }
 
+    @AndroidXOptIn(ExperimentalCamera2Interop::class)
     private fun startIdlePreview() {
         if (!hasCameraPermission() || DashcamService.isRecording(this)) return
         idlePreviewRequested = true
@@ -237,12 +311,27 @@ class CameraRecordActivity : AppCompatActivity() {
                 try {
                     val provider = providerFuture.get()
                     idlePreviewProvider = provider
-                    val preview = Preview.Builder().build().also { preview ->
+                    val previewBuilder = Preview.Builder()
+                        .setTargetRotation(targetRotation)
+                    Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(focusCaptureCallback)
+                    val preview = previewBuilder.build().also { preview ->
                         preview.setSurfaceProvider(previewView.surfaceProvider)
                     }
+                    val imageCapture = ImageCapture.Builder()
+                        .setTargetRotation(targetRotation)
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build()
                     provider.unbindAll()
-                    provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview)
+                    idleCamera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
+                    idlePreviewUseCase = preview
+                    idleImageCapture = imageCapture
+                    applyTargetRotation()
+                    applyFocusToCurrentCamera()
                     tvStatus.setText(R.string.camera_ready)
+                    if (pendingPhotoRequest) {
+                        pendingPhotoRequest = false
+                        previewView.postDelayed({ takePhotoFromUi() }, 300L)
+                    }
                 } catch (e: RuntimeException) {
                     tvStatus.text = getString(R.string.camera_open_failed, e.message ?: "unknown")
                 }
@@ -270,6 +359,99 @@ class CameraRecordActivity : AppCompatActivity() {
         idlePreviewRequested = false
         idlePreviewProvider?.unbindAll()
         idlePreviewProvider = null
+        idleCamera = null
+        idlePreviewUseCase = null
+        idleImageCapture = null
+    }
+
+    private fun setupFocusControls() {
+        sbInlineFocus.min = 0
+        sbInlineFocus.max = 100
+        cbManualFocus.isChecked = CameraFocus.isManualEnabled(this)
+        sbInlineFocus.progress = CameraFocus.percent(this)
+        updateFocusUi()
+
+        cbManualFocus.setOnCheckedChangeListener { _, isChecked ->
+            if (updatingFocusControls) return@setOnCheckedChangeListener
+            CameraFocus.save(this, isChecked, sbInlineFocus.progress, commit = true)
+            updateFocusUi()
+            applyFocusToCurrentCamera()
+        }
+        sbInlineFocus.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (updatingFocusControls) return
+                val fixed = progress.coerceIn(0, 100)
+                CameraFocus.save(this@CameraRecordActivity, cbManualFocus.isChecked, fixed)
+                updateFocusUi()
+                if (fromUser) applyFocusToCurrentCamera()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                CameraFocus.save(this@CameraRecordActivity, cbManualFocus.isChecked, sbInlineFocus.progress, commit = true)
+                applyFocusToCurrentCamera()
+            }
+        })
+    }
+
+    private fun updateFocusUi() {
+        val manual = cbManualFocus.isChecked
+        val supportsManual = CameraFocus.supportsManualFocus(idleCamera) || idleCamera == null || DashcamService.isRecording(this)
+        cbManualFocus.isEnabled = supportsManual
+        sbInlineFocus.isEnabled = manual && supportsManual
+        tvFocusInlineLabel.text = when {
+            !supportsManual -> getString(R.string.focus_unsupported_label)
+            manual -> getString(R.string.focus_label, sbInlineFocus.progress, focusDistanceLabel(sbInlineFocus.progress))
+            else -> getString(R.string.focus_auto_label)
+        }
+    }
+
+    private fun syncFocusControlsFromPrefs() {
+        updatingFocusControls = true
+        cbManualFocus.isChecked = CameraFocus.isManualEnabled(this)
+        sbInlineFocus.progress = CameraFocus.percent(this)
+        updatingFocusControls = false
+        updateFocusUi()
+    }
+
+    private fun applyFocusToCurrentCamera() {
+        CameraFocus.apply(this, idleCamera)
+        updateFocusUi()
+        if (DashcamService.isRecording(this)) {
+            DashcamService.refreshSettings(this)
+        }
+    }
+
+    private fun focusDistanceLabel(percent: Int): String {
+        return when (percent.coerceIn(0, 100)) {
+            0 -> getString(R.string.focus_far_label)
+            100 -> getString(R.string.focus_near_label)
+            else -> "$percent%"
+        }
+    }
+
+    private fun startOrientationListener() {
+        orientationListener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                val rotation = CameraRotation.rotationFromOrientationDegrees(orientation) ?: return
+                if (rotation != targetRotation) {
+                    targetRotation = rotation
+                    applyTargetRotation()
+                }
+            }
+        }.also { listener ->
+            if (listener.canDetectOrientation()) listener.enable()
+        }
+    }
+
+    private fun stopOrientationListener() {
+        orientationListener?.disable()
+        orientationListener = null
+    }
+
+    private fun applyTargetRotation() {
+        idlePreviewUseCase?.targetRotation = targetRotation
+        idleImageCapture?.targetRotation = targetRotation
     }
 
     private fun syncUi() {
@@ -279,7 +461,7 @@ class CameraRecordActivity : AppCompatActivity() {
         val activeRecordingUiState = recording || startPending
         btnRecord.isEnabled = hasCameraPermission()
         btnRecord.setText(if (activeRecordingUiState) R.string.video_stop_recording else R.string.video_start_recording)
-        btnPhoto.isEnabled = recording
+        btnPhoto.isEnabled = hasCameraPermission()
         tvStatus.setText(
             when {
                 recording -> R.string.video_recording_background
@@ -291,6 +473,7 @@ class CameraRecordActivity : AppCompatActivity() {
         updatePreviewOverlay()
         if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
             scheduleIdlePreviewRestart()
+            refreshVoiceRecognition()
         }
         lastRecordingUiState = activeRecordingUiState
     }
@@ -326,6 +509,61 @@ class CameraRecordActivity : AppCompatActivity() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun takePhotoFromUi() {
+        if (!hasCameraPermission()) {
+            requestCameraPermission.launch(Manifest.permission.CAMERA)
+            return
+        }
+        if (DashcamService.isRecording(this) || isRecordingStartPending()) {
+            DashcamService.takePhoto(this)
+            return
+        }
+        val capture = idleImageCapture
+        if (capture == null) {
+            pendingPhotoRequest = true
+            scheduleIdlePreviewRestart()
+            Toast.makeText(this, R.string.camera_opening, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val outputFile = VideoStorage.photoOutputFile(this)
+        val tempFile = VideoStorage.tempPhotoFile(this)
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+        capture.takePicture(
+            outputOptions,
+            photoExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    PhotoWatermark.apply(this@CameraRecordActivity, tempFile, mode)
+                    val published = VideoStorage.publishPhotoToGallery(this@CameraRecordActivity, tempFile, outputFile.name)
+                    tempFile.delete()
+                    MediaScannerConnection.scanFile(this@CameraRecordActivity, arrayOf(published.absolutePath), arrayOf("image/jpeg"), null)
+                    runOnUiThread {
+                        Toast.makeText(this@CameraRecordActivity, R.string.photo_saved, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    runOnUiThread {
+                        Toast.makeText(this@CameraRecordActivity, R.string.photo_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
+    }
+
+    private fun refreshVoiceRecognition() {
+        val enabled = DashcamSettings.load(this).voicePhotoEnabled
+        if (!hasAudioPermission()) {
+            if (enabled && !voicePermissionRequested) {
+                voicePermissionRequested = true
+                requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            return
+        }
+        DashcamService.refreshSettings(this)
+    }
+
     private fun formatDuration(ms: Long): String {
         val totalSec = (ms / 1000L).coerceAtLeast(0L)
         val h = totalSec / 3600L
@@ -336,7 +574,32 @@ class CameraRecordActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_AUTO_START_RECORDING = "auto_start_recording"
+        const val EXTRA_TAKE_PHOTO = "take_photo"
         private const val PREVIEW_REBIND_DELAY_MS = 700L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
+        @Volatile
+        private var instance: CameraRecordActivity? = null
+
+        @Volatile
+        private var pendingExternalPhotoRequest = false
+
+        fun takePhoto(context: android.content.Context) {
+            if (DashcamService.isRecording(context)) {
+                DashcamService.takePhoto(context)
+                return
+            }
+            val activity = instance
+            if (activity != null) {
+                activity.runOnUiThread { activity.takePhotoFromUi() }
+                return
+            }
+            pendingExternalPhotoRequest = true
+            context.startActivity(
+                Intent(context, CameraRecordActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra(EXTRA_TAKE_PHOTO, true)
+                }
+            )
+        }
     }
 }

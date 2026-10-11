@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+val amapApiKey = (project.findProperty("AMAP_API_KEY") as String?)
+    ?: localProperties.getProperty("AMAP_API_KEY")
+    ?: ""
 
 android {
     namespace = "com.thomas.carspeed"
@@ -11,10 +22,11 @@ android {
         applicationId = "com.thomas.carspeed"
         minSdk = 26
         targetSdk = 36
-        versionCode = 119
-        versionName = "1.3.5"
+        versionCode = 151
+        versionName = "1.5.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["AMAP_API_KEY"] = amapApiKey
     }
 
     buildTypes {
@@ -50,6 +62,9 @@ dependencies {
     implementation("androidx.camera:camera-video:1.4.2")
     implementation("androidx.camera:camera-view:1.4.2")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+    implementation("com.amap.api:navi-3dmap:10.0.600_3dmap10.0.600")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
 
     testImplementation("junit:junit:4.13.2")
 

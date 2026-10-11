@@ -34,6 +34,15 @@ data class VideoMode(
     }
 }
 
+data class VideoResolution(
+    val qualityKey: String,
+    val width: Int,
+    val height: Int
+) {
+    val label: String
+        get() = VideoMode(qualityKey, width, height, 30).label.substringBefore(" · ")
+}
+
 object CameraCapabilities {
     const val QUALITY_8K = "8K"
     const val QUALITY_UHD = "UHD"
@@ -42,6 +51,7 @@ object CameraCapabilities {
     const val QUALITY_SD = "SD"
     const val SOURCE_ENCODER_PROFILE = "encoder_profile"
     const val SOURCE_CAMERA2_OUTPUT = "camera2_output"
+    const val SOURCE_USER_REQUEST = "user_request"
 
     private data class ProfileQuery(val fallbackKey: String, val profileQuality: Int)
 
@@ -65,12 +75,62 @@ object CameraCapabilities {
         val selectedHeight = prefs.getInt(DashcamSettings.PREF_VIDEO_HEIGHT, 0)
         val selectedFps = prefs.getInt(DashcamSettings.PREF_VIDEO_FPS, 30)
         val modes = supportedVideoModes(context)
-        return modes.firstOrNull {
+        modes.firstOrNull {
             it.width == selectedWidth && it.height == selectedHeight && it.fps == selectedFps
+        }?.let { return it }
+
+        val resolutionSupported = selectedWidth > 0 && selectedHeight > 0 &&
+            modes.any { it.width == selectedWidth && it.height == selectedHeight }
+        if (resolutionSupported) {
+            return VideoMode(
+                qualityKey = qualityKeyFor(selectedWidth, selectedHeight, selectedKey),
+                width = selectedWidth,
+                height = selectedHeight,
+                fps = selectedFps,
+                source = SOURCE_USER_REQUEST
+            )
         }
+
+        val requestedPixels = selectedWidth.toLong() * selectedHeight.toLong()
+        return modes
+            .filter { requestedPixels <= 0L || it.width.toLong() * it.height.toLong() <= requestedPixels }
+            .maxWithOrNull(compareBy<VideoMode> { it.width.toLong() * it.height.toLong() }.thenBy { -kotlin.math.abs(it.fps - selectedFps) })
             ?: modes.firstOrNull { it.qualityKey == selectedKey && it.fps == selectedFps }
             ?: modes.firstOrNull { it.qualityKey == selectedKey }
             ?: modes.first()
+    }
+
+    fun resolutionOptions(context: Context): List<VideoResolution> {
+        val detected = supportedVideoModes(context).map { VideoResolution(it.qualityKey, it.width, it.height) }
+        val common = listOf(
+            VideoResolution(QUALITY_UHD, 3840, 2160),
+            VideoResolution(QUALITY_FHD, 1920, 1080),
+            VideoResolution(QUALITY_HD, 1280, 720),
+            VideoResolution(QUALITY_SD, 720, 480)
+        )
+        return (common + detected)
+            .distinctBy { "${it.width}x${it.height}" }
+            .sortedWith(compareByDescending<VideoResolution> { it.width * it.height })
+    }
+
+    fun fpsOptions(context: Context, width: Int, height: Int): List<Int> {
+        val detected = supportedVideoModes(context)
+            .filter { it.width == width && it.height == height }
+            .map { it.fps }
+        return (detected + listOf(30, 60))
+            .filter { it > 0 }
+            .distinct()
+            .sorted()
+    }
+
+    fun fallbackCandidates(context: Context, requested: VideoMode): List<VideoMode> {
+        val supported = supportedVideoModes(context)
+        val sameResolution = supported.filter { it.width == requested.width && it.height == requested.height }
+        val notLarger = supported.filter {
+            it.width.toLong() * it.height.toLong() <= requested.width.toLong() * requested.height.toLong()
+        }
+        return (listOf(requested) + sameResolution + notLarger + supported)
+            .distinctBy { "${it.width}x${it.height}:${it.fps}" }
     }
 
     fun toCameraXQuality(mode: VideoMode): Quality {

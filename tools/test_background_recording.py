@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""ADB smoke test: recording continues after CarSpeed is sent to background."""
+"""ADB smoke test for background dashcam recording and voice control service.
+
+This catches regressions where Activity lifecycle teardown stops voice control, or
+where backgrounding the app stops CameraX recording through a stale preview
+surface.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +18,15 @@ PACKAGE = "com.thomas.carspeed"
 RECEIVER = f"{PACKAGE}/com.thomas.carspeed.DebugCommandReceiver"
 ACTION = "com.thomas.carspeed.debug.COMMAND"
 DEBUG_DIR = f"/sdcard/Android/data/{PACKAGE}/files/debug"
-VIDEO_DIR = f"/sdcard/Android/data/{PACKAGE}/files/Movies/CarSpeed"
+VIDEO_DIR = "/sdcard/Movies/CarSpeed"
 
 
 def adb(*args: str) -> str:
-    return subprocess.check_output(["adb", *args], text=True, stderr=subprocess.STDOUT)
+    try:
+        return subprocess.check_output(["adb", *args], text=True, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as error:
+        command_text = " ".join(["adb", *args])
+        raise RuntimeError(f"ADB command failed: {command_text}\n{error.output}") from error
 
 
 def command(cmd: str) -> None:
@@ -36,6 +45,25 @@ def list_videos() -> dict:
 def dump_state() -> dict:
     command("dump_state")
     return read_json("state.json")
+
+
+def assert_condition(condition: bool, message: str, state: dict | None = None) -> None:
+    if condition:
+        return
+    details = ""
+    if state is not None:
+        details = "\n" + json.dumps(state, ensure_ascii=False, indent=2)
+    raise AssertionError(f"{message}{details}")
+
+
+def assert_voice_listening(state: dict, expected_recording: bool) -> None:
+    voice = state.get("voicePhoto", {})
+    assert_condition(state.get("recording") is expected_recording, "unexpected recording state", state)
+    assert_condition(state.get("dashcamServiceAlive") is True, "DashcamService is not alive", state)
+    assert_condition(voice.get("preferredEngine") == "vosk", "voice engine is not Vosk", state)
+    assert_condition(voice.get("recognizerOwner") == "service", "voice recognizer is not service-owned", state)
+    assert_condition(voice.get("recognizerListening") is True, "voice recognizer is not listening", state)
+    assert_condition(voice.get("serviceListening") is True, "service voice flag is false", state)
 
 
 def remove_group(video_name: str) -> None:
@@ -69,14 +97,28 @@ def main() -> int:
         "android.intent.category.LAUNCHER",
     )
     time.sleep(1)
+    command("stop_recording")
+    time.sleep(1)
+
+    idle_foreground = dump_state()
+    assert_voice_listening(idle_foreground, expected_recording=False)
+
+    command("background_app")
+    time.sleep(3)
+    idle_background = dump_state()
+    assert_voice_listening(idle_background, expected_recording=False)
+
     before = {video["name"] for video in list_videos().get("videos", [])}
     time.sleep(1)
     command("start_recording")
     time.sleep(2)
+    recording_started = dump_state()
+    assert_voice_listening(recording_started, expected_recording=True)
+
     command("background_app")
     time.sleep(max(1, args.record_seconds))
     state = dump_state()
-    still_recording = bool(state.get("recording"))
+    assert_voice_listening(state, expected_recording=True)
     command("stop_recording")
     time.sleep(3)
     after_videos = list_videos().get("videos", [])
@@ -86,8 +128,12 @@ def main() -> int:
             remove_group(video["name"])
 
     result = {
-        "ok": still_recording and bool(new_videos),
-        "recordingWhileBackground": still_recording,
+        "ok": bool(new_videos),
+        "idleForegroundVoice": idle_foreground.get("voicePhoto", {}),
+        "idleBackgroundVoice": idle_background.get("voicePhoto", {}),
+        "recordingStartedVoice": recording_started.get("voicePhoto", {}),
+        "recordingWhileBackground": state.get("recording"),
+        "recordingBackgroundVoice": state.get("voicePhoto", {}),
         "newVideos": new_videos,
         "cleanup": args.cleanup,
     }

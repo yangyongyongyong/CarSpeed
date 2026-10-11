@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.widget.Toast
 
 class BluetoothTriggerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -30,10 +31,38 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
         if (!TriggerRules.shouldArmForBluetooth(settings, address)) return
         val normalizedAddress = TriggerSettings.normalizeAddress(address)
         val savedName = normalizedAddress?.let { settings.bluetoothNamesByAddress[it] }
+        val displayName = name ?: savedName
 
         when (action) {
-            BluetoothDevice.ACTION_ACL_CONNECTED -> TriggerMonitorService.arm(context, address, name ?: savedName)
-            BluetoothDevice.ACTION_ACL_DISCONNECTED -> TriggerMonitorService.disarm(context, address)
+            BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                TriggerConnectionState.markConnected(context, address)
+                if (DashcamService.isRecording(context)) {
+                    TriggerMonitorService.cancelDisconnectedStop(context, null)
+                } else if (TriggerRules.shouldStartRecordingOnBluetoothConnected(settings, address)) {
+                    DashcamService.startRecording(context)
+                    if (OverlayController.canStart(context) && !OverlayController.isRunning(context)) {
+                        OverlayController.start(context)
+                    }
+                } else if (TriggerRules.shouldArmStartRecordingAfterBluetoothConnectedAndSpeed(settings, address)) {
+                    TriggerMonitorService.arm(context, address, displayName)
+                }
+            }
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                TriggerConnectionState.markDisconnected(context, address)
+                val connectedSelected = TriggerConnectionState.connectedSelectedAddresses(context, settings)
+                if (DashcamService.isRecording(context)) {
+                    if (TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, connectedSelected)) {
+                        Toast.makeText(context, R.string.trigger_bluetooth_disconnected_stop, Toast.LENGTH_SHORT).show()
+                        DashcamService.stopRecording(context)
+                    } else if (TriggerRules.shouldMonitorStopAfterBluetoothDisconnectedAndStationary(settings, connectedSelected)) {
+                        TriggerMonitorService.monitorDisconnectedStop(context, address, displayName)
+                    } else {
+                        TriggerMonitorService.cancelDisconnectedStop(context, null)
+                    }
+                } else {
+                    TriggerMonitorService.disarm(context, address)
+                }
+            }
         }
     }
 }

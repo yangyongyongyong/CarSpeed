@@ -21,12 +21,14 @@ class StatusActivity : AppCompatActivity() {
     private lateinit var tvSummary: TextView
     private lateinit var tvLocationStatus: TextView
     private lateinit var tvCameraStatus: TextView
+    private lateinit var tvMicrophoneStatus: TextView
     private lateinit var tvOverlayStatus: TextView
     private lateinit var tvNotificationStatus: TextView
     private lateinit var tvGpsStatus: TextView
     private lateinit var tvBatteryStatus: TextView
     private lateinit var btnLocation: Button
     private lateinit var btnCamera: Button
+    private lateinit var btnMicrophone: Button
     private lateinit var btnOverlay: Button
     private lateinit var btnNotification: Button
     private lateinit var btnGps: Button
@@ -47,6 +49,11 @@ class StatusActivity : AppCompatActivity() {
             render()
         }
 
+    private val requestMicrophoneLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            render()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_status)
@@ -55,12 +62,14 @@ class StatusActivity : AppCompatActivity() {
         tvSummary = findViewById(R.id.tvSummary)
         tvLocationStatus = findViewById(R.id.tvLocationStatus)
         tvCameraStatus = findViewById(R.id.tvCameraStatus)
+        tvMicrophoneStatus = findViewById(R.id.tvMicrophoneStatus)
         tvOverlayStatus = findViewById(R.id.tvOverlayStatus)
         tvNotificationStatus = findViewById(R.id.tvNotificationStatus)
         tvGpsStatus = findViewById(R.id.tvGpsStatus)
         tvBatteryStatus = findViewById(R.id.tvBatteryStatus)
         btnLocation = findViewById(R.id.btnLocation)
         btnCamera = findViewById(R.id.btnCamera)
+        btnMicrophone = findViewById(R.id.btnMicrophone)
         btnOverlay = findViewById(R.id.btnOverlay)
         btnNotification = findViewById(R.id.btnNotification)
         btnGps = findViewById(R.id.btnGps)
@@ -78,6 +87,9 @@ class StatusActivity : AppCompatActivity() {
         }
         btnCamera.setOnClickListener {
             requestCameraLauncher.launch(Manifest.permission.CAMERA)
+        }
+        btnMicrophone.setOnClickListener {
+            requestMicrophoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
         btnOverlay.setOnClickListener {
             startActivity(
@@ -112,12 +124,13 @@ class StatusActivity : AppCompatActivity() {
     private fun render() {
         val locationOk = OverlayController.hasLocationPermission(this)
         val cameraOk = OverlayController.hasCameraPermission(this)
+        val microphoneOk = hasMicrophonePermission()
         val overlayOk = OverlayController.hasOverlayPermission(this)
         val notificationOk = DashcamNotificationGuard.canShowRecordingNotification(this)
         val gpsOk = isGpsEnabled()
         val batteryOk = isIgnoringBatteryOptimizations()
 
-        val mustHaveOk = locationOk && cameraOk && overlayOk && notificationOk && gpsOk && batteryOk
+        val mustHaveOk = locationOk && cameraOk && microphoneOk && overlayOk && notificationOk && gpsOk && batteryOk
         tvSummary.text = if (mustHaveOk) {
             getString(R.string.status_summary_ready)
         } else {
@@ -133,6 +146,11 @@ class StatusActivity : AppCompatActivity() {
             cameraOk,
             getString(R.string.status_camera_ok),
             getString(R.string.status_camera_bad)
+        )
+        tvMicrophoneStatus.text = statusText(
+            microphoneOk,
+            getString(R.string.status_microphone_ok),
+            getString(R.string.status_microphone_bad)
         )
         tvOverlayStatus.text = statusText(
             overlayOk,
@@ -157,6 +175,7 @@ class StatusActivity : AppCompatActivity() {
 
         btnLocation.isEnabled = !locationOk
         btnCamera.isEnabled = !cameraOk
+        btnMicrophone.isEnabled = !microphoneOk
         btnOverlay.isEnabled = !overlayOk
         btnNotification.isEnabled = !notificationOk
         btnGps.isEnabled = !gpsOk
@@ -174,6 +193,11 @@ class StatusActivity : AppCompatActivity() {
         } catch (_: RuntimeException) {
             false
         }
+    }
+
+    private fun hasMicrophonePermission(): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     private fun isIgnoringBatteryOptimizations(): Boolean {
