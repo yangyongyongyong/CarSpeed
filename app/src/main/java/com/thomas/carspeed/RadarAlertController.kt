@@ -294,6 +294,7 @@ object RadarAlertController {
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
         }
+        AppSpeechGuard.markSpeechStarted()
         AMapNavi.setTtsPlaying(true)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }

@@ -1,20 +1,39 @@
 package com.thomas.carspeed
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoicePhotoRecognizerTest {
     @Test
     fun photo_command_requires_exact_independent_phrase() {
-        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("拍照"))
-        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("拍 照"))
-        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("拍照。"))
+        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("我要拍照"))
+        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("帮我拍照"))
+        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("给我拍照"))
+        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("拍一张"))
+        assertEquals(VoiceCommand.TAKE_PHOTO, VoiceCommandParser.parseCommand("照一张"))
 
+        assertNull(VoiceCommandParser.parseCommand("拍照"))
+        assertNull(VoiceCommandParser.parseCommand("拍 照"))
+        assertNull(VoiceCommandParser.parseCommand("拍照。"))
+        assertNull(VoiceCommandParser.parseCommand("照相"))
         assertNull(VoiceCommandParser.parseCommand("我喜欢拍照"))
         assertNull(VoiceCommandParser.parseCommand("前方三百米拍照"))
+        assertNull(VoiceCommandParser.parseCommand("前方100米有限速拍照"))
+        assertNull(VoiceCommandParser.parseCommand("前方一百米有限速拍照"))
+        assertNull(VoiceCommandParser.parseCommand("限速拍照"))
         assertNull(VoiceCommandParser.parseCommand("[unk] 拍照"))
         assertNull(VoiceCommandParser.parseCommand("拍照吧"))
+    }
+
+    @Test
+    fun app_speech_temporarily_suppresses_photo_commands() {
+        AppSpeechGuard.markSpeechStarted(nowMs = 10_000L)
+
+        assertTrue(AppSpeechGuard.shouldSuppressVoiceCommand(nowMs = 10_500L))
+        assertFalse(AppSpeechGuard.shouldSuppressVoiceCommand(nowMs = 17_000L))
     }
 
     @Test

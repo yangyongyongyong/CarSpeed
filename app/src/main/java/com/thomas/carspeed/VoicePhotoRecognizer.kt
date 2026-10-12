@@ -74,7 +74,7 @@ internal object VoiceCommandParser {
             .replace("?", "")
     }
 
-    private val PHOTO_COMMANDS = listOf("我要拍照", "帮我拍照", "给我拍照", "拍照", "照相", "照一张", "拍一张")
+    private val PHOTO_COMMANDS = listOf("我要拍照", "帮我拍照", "给我拍照", "照一张", "拍一张")
     private val START_RECORDING_COMMANDS = listOf("开始录像", "开始录制", "开始拍摄", "我要录像", "我要录制")
     private val STOP_RECORDING_COMMANDS = listOf("停止录像", "停止录制", "停止拍摄", "结束录像", "结束录制")
     private val RADAR_ALERT_ON_COMMANDS = listOf("测速雷达开")
@@ -83,8 +83,6 @@ internal object VoiceCommandParser {
         "我 要 拍 照",
         "帮 我 拍 照",
         "给 我 拍 照",
-        "拍 照",
-        "照 相",
         "开 始 录 像",
         "开 始 录 制",
         "开 始 拍 摄",
@@ -98,6 +96,20 @@ internal object VoiceCommandParser {
         "测 速 雷 达 开",
         "测 速 雷 达 关"
     )
+}
+
+internal object AppSpeechGuard {
+    private const val COMMAND_SUPPRESSION_WINDOW_MS = 6_000L
+    @Volatile private var lastSpeechStartedAtMs = 0L
+
+    fun markSpeechStarted(nowMs: Long = System.currentTimeMillis()) {
+        lastSpeechStartedAtMs = nowMs
+    }
+
+    fun shouldSuppressVoiceCommand(nowMs: Long = System.currentTimeMillis()): Boolean {
+        val elapsedMs = nowMs - lastSpeechStartedAtMs
+        return elapsedMs in 0..COMMAND_SUPPRESSION_WINDOW_MS
+    }
 }
 
 object VoicePhotoRecognizer {
@@ -223,6 +235,7 @@ object VoicePhotoRecognizer {
         VoicePhotoMonitor.markHeard(owner, text)
         if (!allowCommand) return
         val command = VoiceCommandParser.parseCommand(text) ?: return
+        if (command == VoiceCommand.TAKE_PHOTO && AppSpeechGuard.shouldSuppressVoiceCommand()) return
         if (activeOwner != owner || !shouldAcceptCommand(command)) return
         state = state.copy(lastCommand = command.name)
         VoicePhotoMonitor.markTriggered(owner)
