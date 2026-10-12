@@ -27,7 +27,7 @@
     <string name="video_stop_recording">停止录像</string>
     <string name="video_recording">正在录像，保持手机固定并确保前方视野清晰。</string>
     <string name="video_recording_starting">正在启动录像…</string>
-    <string name="video_recording_background">正在后台录像。切换到导航后，录像服务会继续运行。</string>
+    <string name="video_recording_background">正在后台录像</string>
     <string name="video_background_hint">切到导航或熄屏前请保持通知存在；退到后台时会自动尝试显示车速悬浮窗。</string>
     <string name="video_stopping">正在结束录像…</string>
     <string name="video_saved">录像已保存</string>

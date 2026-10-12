@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
@@ -15,14 +16,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -43,7 +42,6 @@ import com.google.android.material.appbar.MaterialToolbar
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.roundToInt
 
 class CameraRecordActivity : AppCompatActivity() {
     private lateinit var toolbar: MaterialToolbar
@@ -539,14 +537,15 @@ class CameraRecordActivity : AppCompatActivity() {
     }
 
     private fun updateRecordingPreviewSurfaceIfReady() {
+        val mode = CameraCapabilities.selectedVideoMode(this)
         if (!recordingTextureView.isAvailable) return
         if (recordingPreviewSurface != null) {
             updateRecordingPreviewTransform()
             return
         }
         val texture = recordingTextureView.surfaceTexture ?: return
-        val mode = CameraCapabilities.selectedVideoMode(this)
-        texture.setDefaultBufferSize(mode.width, mode.height)
+        val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        texture.setDefaultBufferSize(previewSize.width, previewSize.height)
         updateRecordingPreviewTransform()
         recordingPreviewSurface?.release()
         recordingPreviewSurface = Surface(texture).also { surface ->
@@ -561,29 +560,42 @@ class CameraRecordActivity : AppCompatActivity() {
     }
 
     private fun updateRecordingPreviewTransform() {
-        val parent = recordingTextureView.parent as? View ?: return
-        val parentWidth = parent.width
-        val parentHeight = parent.height
-        if (parentWidth <= 0 || parentHeight <= 0) return
         val mode = CameraCapabilities.selectedVideoMode(this)
-        val previewAspect = mode.width.toFloat() / mode.height.toFloat()
-        val parentAspect = parentWidth.toFloat() / parentHeight.toFloat()
-        val (targetWidth, targetHeight) = if (parentAspect > previewAspect) {
-            (parentHeight * previewAspect).roundToInt() to parentHeight
-        } else {
-            parentWidth to (parentWidth / previewAspect).roundToInt()
-        }
-        val params = recordingTextureView.layoutParams as? FrameLayout.LayoutParams
-        if (params != null && (params.width != targetWidth || params.height != targetHeight || params.gravity != Gravity.CENTER)) {
-            params.width = targetWidth
-            params.height = targetHeight
-            params.gravity = Gravity.CENTER
-            recordingTextureView.layoutParams = params
-        }
+        val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        val viewWidth = recordingTextureView.width.toFloat()
+        val viewHeight = recordingTextureView.height.toFloat()
+        if (viewWidth <= 0f || viewHeight <= 0f) return
         val rotationDegrees = rotationDegreesForTexture()
+        val rotatesByRightAngle = rotationDegrees % 180f != 0f
+        val bufferWidth = previewSize.width.toFloat()
+        val bufferHeight = previewSize.height.toFloat()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
         val matrix = Matrix()
-        matrix.postRotate(rotationDegrees, targetWidth / 2f, targetHeight / 2f)
+        if (rotatesByRightAngle) {
+            val viewRect = RectF(0f, 0f, viewWidth, viewHeight)
+            val bufferRect = RectF(0f, 0f, bufferHeight, bufferWidth)
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+            val scale = maxOf(viewHeight / bufferHeight, viewWidth / bufferWidth)
+            matrix.postScale(scale, scale, centerX, centerY)
+        } else {
+            val defaultScaleX = viewWidth / bufferWidth
+            val defaultScaleY = viewHeight / bufferHeight
+            val contentScale = maxOf(defaultScaleX, defaultScaleY)
+            matrix.setScale(defaultScaleX / contentScale, defaultScaleY / contentScale, centerX, centerY)
+        }
+        matrix.postRotate(rotationDegrees, centerX, centerY)
         recordingTextureView.setTransform(matrix)
+        val values = FloatArray(9)
+        matrix.getValues(values)
+        android.util.Log.i(
+            "CarSpeedPreview",
+            "transform target=$targetRotation display=${CameraRotation.displayRotation(this)} " +
+                "view=${viewWidth.toInt()}x${viewHeight.toInt()} video=${mode.width}x${mode.height} " +
+                "preview=${previewSize.width}x${previewSize.height} rotation=$rotationDegrees " +
+                "matrix=${values.joinToString()}"
+        )
     }
 
     private fun rotationDegreesForTexture(): Float {

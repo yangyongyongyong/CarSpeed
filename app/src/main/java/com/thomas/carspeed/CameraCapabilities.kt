@@ -1,6 +1,7 @@
 package com.thomas.carspeed
 
 import android.content.Context
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.CamcorderProfile
@@ -98,6 +99,20 @@ object CameraCapabilities {
             ?: modes.firstOrNull { it.qualityKey == selectedKey && it.fps == selectedFps }
             ?: modes.firstOrNull { it.qualityKey == selectedKey }
             ?: modes.first()
+    }
+
+    fun mainRecordingPreviewSize(context: Context, videoMode: VideoMode): Size {
+        val cameraId = backCameraId(context) ?: return Size(videoMode.width, videoMode.height)
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val chars = manager.getCameraCharacteristics(cameraId)
+        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            ?: return Size(videoMode.width, videoMode.height)
+        val fourByThree = map.getOutputSizes(SurfaceTexture::class.java)
+            ?.filter { size -> size.width >= 640 && size.height >= 480 }
+            ?.filter { size -> kotlin.math.abs(size.width * 3 - size.height * 4) <= 4 }
+            ?.filter { size -> size.width <= 1920 && size.height <= 1440 }
+            ?.maxByOrNull { size -> size.width * size.height }
+        return fourByThree ?: Size(videoMode.width, videoMode.height)
     }
 
     fun resolutionOptions(context: Context): List<VideoResolution> {
