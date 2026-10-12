@@ -246,6 +246,7 @@ class DashcamService : LifecycleService(), LocationListener {
             segmentDurationMs = segmentDurationMs,
             tripFolderName = activeTripFolderName,
             targetRotation = targetRotation,
+            initialPreviewSurface = recordingPreviewSurface?.takeIf { it.isValid },
             callback = object : SeamlessDashcamRecorder.Callback {
                 override fun onStarted() {
                     mainHandler.post { onSeamlessRecordingStarted() }
@@ -576,6 +577,10 @@ class DashcamService : LifecycleService(), LocationListener {
 
     private fun updatePreviewSurfaceProvider(provider: Preview.SurfaceProvider?) {
         previewUseCase?.setSurfaceProvider(provider)
+    }
+
+    private fun updateRecordingPreviewSurface(surface: Surface?) {
+        seamlessRecorder?.setPreviewSurface(surface)
     }
 
     private fun startOrientationListener() {
@@ -1271,6 +1276,9 @@ class DashcamService : LifecycleService(), LocationListener {
         private var previewSurfaceProvider: Preview.SurfaceProvider? = null
 
         @Volatile
+        private var recordingPreviewSurface: Surface? = null
+
+        @Volatile
         private var telemetrySnapshot = DashcamTelemetry()
 
         fun currentTelemetry(): DashcamTelemetry = telemetrySnapshot
@@ -1303,6 +1311,11 @@ class DashcamService : LifecycleService(), LocationListener {
         fun setPreviewSurfaceProvider(provider: Preview.SurfaceProvider?) {
             previewSurfaceProvider = provider
             instance?.updatePreviewSurfaceProvider(provider)
+        }
+
+        fun setRecordingPreviewSurface(surface: Surface?) {
+            recordingPreviewSurface = surface
+            instance?.updateRecordingPreviewSurface(surface)
         }
 
         fun startRecording(context: Context) {

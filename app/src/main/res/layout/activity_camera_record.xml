@@ -38,6 +38,13 @@
                 android:background="@android:color/black"
                 app:implementationMode="compatible" />
 
+            <TextureView
+                android:id="@+id/recordingTextureView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/black"
+                android:visibility="gone" />
+
             <com.thomas.carspeed.PlateOverlayView
                 android:id="@+id/plateOverlayView"
                 android:layout_width="match_parent"

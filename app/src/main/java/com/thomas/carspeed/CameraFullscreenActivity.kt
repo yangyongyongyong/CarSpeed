@@ -2,6 +2,9 @@ package com.thomas.carspeed
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Matrix
+import android.graphics.RectF
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
@@ -13,6 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.OrientationEventListener
 import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
@@ -31,6 +35,7 @@ import java.util.Locale
 
 class CameraFullscreenActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
+    private lateinit var recordingTextureView: TextureView
     private lateinit var plateOverlayView: PlateOverlayView
     private lateinit var tvTimer: TextView
     private lateinit var tvOverlay: TextView
@@ -45,6 +50,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private var recordingStartRequestedAtMs = 0L
     private var targetRotation = Surface.ROTATION_0
     private var orientationListener: OrientationEventListener? = null
+    private var recordingPreviewSurface: Surface? = null
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private val focusCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
@@ -91,6 +97,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
 
         previewView = findViewById(R.id.fullscreenPreviewView)
+        recordingTextureView = findViewById(R.id.fullscreenRecordingTextureView)
         plateOverlayView = findViewById(R.id.fullscreenPlateOverlayView)
         tvTimer = findViewById(R.id.tvFullscreenTimer)
         tvOverlay = findViewById(R.id.tvFullscreenOverlay)
@@ -102,6 +109,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         btnClose.setOnClickListener { finish() }
         btnRecord.setOnClickListener { toggleRecording() }
         btnPhoto.setOnClickListener { DashcamService.takePhoto(this) }
+        setupRecordingPreviewSurface()
     }
 
     override fun onResume() {
@@ -143,6 +151,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         } else {
             stopIdlePreview()
         }
+        clearRecordingPreviewSurface()
         super.onDestroy()
     }
 
@@ -165,6 +174,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         recordingStartRequestedAtMs = SystemClock.elapsedRealtime()
         stopIdlePreview()
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
+        updateRecordingPreviewSurfaceIfReady()
         DashcamService.startRecording(this)
         syncUi()
     }
@@ -263,6 +273,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         val startPending = isRecordingStartPending()
         btnRecord.setText(if (recording || startPending) R.string.video_stop_recording else R.string.video_start_recording)
         btnPhoto.isEnabled = recording
+        syncRecordingPreviewSurface(recording)
         tvTimer.visibility = if (recording) View.VISIBLE else View.GONE
         if (recording) {
             tvTimer.text = getString(
@@ -272,6 +283,86 @@ class CameraFullscreenActivity : AppCompatActivity() {
         }
         tvOverlay.text = buildOverlayText()
         plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
+    }
+
+    private fun setupRecordingPreviewSurface() {
+        recordingTextureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                updateRecordingPreviewSurfaceIfReady()
+            }
+
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                updateRecordingPreviewTransform()
+            }
+
+            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                clearRecordingPreviewSurface()
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+        }
+    }
+
+    private fun syncRecordingPreviewSurface(recording: Boolean) {
+        recordingTextureView.visibility = if (recording) View.VISIBLE else View.GONE
+        previewView.visibility = if (recording) View.GONE else View.VISIBLE
+        if (recording) {
+            updateRecordingPreviewSurfaceIfReady()
+        } else {
+            clearRecordingPreviewSurface()
+        }
+    }
+
+    private fun updateRecordingPreviewSurfaceIfReady() {
+        if (!recordingTextureView.isAvailable) return
+        if (recordingPreviewSurface != null) {
+            updateRecordingPreviewTransform()
+            return
+        }
+        val texture = recordingTextureView.surfaceTexture ?: return
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        texture.setDefaultBufferSize(mode.width, mode.height)
+        updateRecordingPreviewTransform()
+        recordingPreviewSurface?.release()
+        recordingPreviewSurface = Surface(texture).also { surface ->
+            DashcamService.setRecordingPreviewSurface(surface)
+        }
+    }
+
+    private fun clearRecordingPreviewSurface() {
+        DashcamService.setRecordingPreviewSurface(null)
+        recordingPreviewSurface?.release()
+        recordingPreviewSurface = null
+    }
+
+    private fun updateRecordingPreviewTransform() {
+        val viewWidth = recordingTextureView.width.toFloat()
+        val viewHeight = recordingTextureView.height.toFloat()
+        if (viewWidth <= 0f || viewHeight <= 0f) return
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        val bufferWidth = mode.width.toFloat()
+        val bufferHeight = mode.height.toFloat()
+        val viewRect = RectF(0f, 0f, viewWidth, viewHeight)
+        val bufferRect = RectF(0f, 0f, bufferHeight, bufferWidth)
+        val centerX = viewRect.centerX()
+        val centerY = viewRect.centerY()
+        val matrix = Matrix()
+        bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+        matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+        val scale = maxOf(viewHeight / bufferHeight, viewWidth / bufferWidth)
+        matrix.postScale(scale, scale, centerX, centerY)
+        matrix.postRotate(rotationDegreesForTexture(), centerX, centerY)
+        recordingTextureView.setTransform(matrix)
+    }
+
+    private fun rotationDegreesForTexture(): Float {
+        return when (targetRotation) {
+            Surface.ROTATION_90 -> 90f
+            Surface.ROTATION_180 -> 180f
+            Surface.ROTATION_270 -> 270f
+            else -> 0f
+        }
     }
 
     private fun isRecordingStartPending(): Boolean {

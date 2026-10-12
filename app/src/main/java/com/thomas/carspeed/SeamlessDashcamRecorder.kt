@@ -30,6 +30,7 @@ class SeamlessDashcamRecorder(
     private val segmentDurationMs: Long,
     private val tripFolderName: String?,
     private val targetRotation: Int,
+    initialPreviewSurface: Surface? = null,
     private val callback: Callback
 ) {
     interface Callback {
@@ -50,7 +51,9 @@ class SeamlessDashcamRecorder(
     private var cameraThread: HandlerThread? = null
     private var cameraHandler: Handler? = null
     private var cameraDevice: CameraDevice? = null
+    private var cameraCharacteristics: CameraCharacteristics? = null
     private var captureSession: CameraCaptureSession? = null
+    @Volatile private var previewSurface: Surface? = initialPreviewSurface?.takeIf { it.isValid }
     private var videoEncoder: MediaCodec? = null
     private var encoderInputSurface: Surface? = null
     private var muxer: MediaMuxer? = null
@@ -63,6 +66,7 @@ class SeamlessDashcamRecorder(
     private var splitPending = false
     private var lastKeyFrameRequestElapsedMs = 0L
     private var orientationHintDegrees = 0
+    private var startNotified = false
 
     fun start() {
         try {
@@ -89,6 +93,19 @@ class SeamlessDashcamRecorder(
         runCatching { videoEncoder?.signalEndOfInputStream() }
     }
 
+    fun setPreviewSurface(surface: Surface?) {
+        val nextSurface = surface?.takeIf { it.isValid }
+        if (previewSurface === nextSurface) return
+        previewSurface = nextSurface
+        val handler = cameraHandler ?: return
+        handler.post {
+            if (stopRequested || stopped.get()) return@post
+            val camera = cameraDevice ?: return@post
+            val characteristics = cameraCharacteristics ?: return@post
+            recreateCaptureSession(camera, characteristics)
+        }
+    }
+
     private fun startVideoEncoder() {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, mode.width, mode.height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -108,6 +125,7 @@ class SeamlessDashcamRecorder(
         val manager = appContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val cameraId = backCameraId(manager) ?: throw IllegalStateException("没有可用后置摄像头")
         val characteristics = manager.getCameraCharacteristics(cameraId)
+        cameraCharacteristics = characteristics
         orientationHintDegrees = orientationHint(characteristics, targetRotation)
         manager.openCamera(
             cameraId,
@@ -136,8 +154,12 @@ class SeamlessDashcamRecorder(
     @Suppress("DEPRECATION")
     private fun createCaptureSession(camera: CameraDevice, characteristics: CameraCharacteristics) {
         val surface = encoderInputSurface ?: return
+        val surfaces = buildList {
+            add(surface)
+            previewSurface?.takeIf { it.isValid }?.let { add(it) }
+        }
         camera.createCaptureSession(
-            listOf(surface),
+            surfaces,
             object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     if (stopRequested) return
@@ -145,6 +167,7 @@ class SeamlessDashcamRecorder(
                     try {
                         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(surface)
+                            previewSurface?.takeIf { it.isValid }?.let { addTarget(it) }
                             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
                             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(mode.fps, mode.fps))
                             applyFocusOptions(characteristics)
@@ -162,7 +185,10 @@ class SeamlessDashcamRecorder(
                             },
                             cameraHandler
                         )
-                        callback.onStarted()
+                        if (!startNotified) {
+                            startNotified = true
+                            callback.onStarted()
+                        }
                     } catch (error: Exception) {
                         notifyError(error)
                         stop()
@@ -176,6 +202,13 @@ class SeamlessDashcamRecorder(
             },
             cameraHandler
         )
+    }
+
+    private fun recreateCaptureSession(camera: CameraDevice, characteristics: CameraCharacteristics) {
+        runCatching { captureSession?.stopRepeating() }
+        runCatching { captureSession?.close() }
+        captureSession = null
+        createCaptureSession(camera, characteristics)
     }
 
     private fun CaptureRequest.Builder.applyFocusOptions(characteristics: CameraCharacteristics) {
