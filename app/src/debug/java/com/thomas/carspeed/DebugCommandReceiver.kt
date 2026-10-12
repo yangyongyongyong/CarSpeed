@@ -551,7 +551,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
 
     private fun videoSummaryJson(context: Context): JSONObject {
         val trips = VideoStorage.videoTrips(context)
-        val totalBytes = trips.sumOf { trip -> VideoStorage.companionFilesFor(trip).sumOf { it.length() } }
+        val totalBytes = trips.sumOf { trip -> VideoStorage.companionFilesFor(context, trip).sumOf { it.length() } }
         return JSONObject()
             .put("count", trips.size)
             .put("totalBytes", totalBytes)
@@ -569,7 +569,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
     private fun videosJson(context: Context): JSONArray {
         val array = JSONArray()
         VideoStorage.videoTrips(context).sortedByDescending { it.lastModified }.forEach { trip ->
-            val companions = VideoStorage.companionFilesFor(trip)
+            val companions = VideoStorage.companionFilesFor(context, trip)
             array.put(
                 JSONObject()
                     .put("name", trip.title)
@@ -579,9 +579,9 @@ class DebugCommandReceiver : BroadcastReceiver() {
                     .put("bytes", companions.sumOf { it.length() })
                     .put("modified", formatTime(trip.lastModified))
                     .put("hasSubtitle", trip.segments.any { VideoStorage.subtitleFileFor(it).exists() })
-                    .put("hasTrack", trip.segments.any { VideoStorage.trackFileFor(it).exists() })
-                    .put("favorite", VideoStorage.isFavorite(trip))
-                    .put("hasPlateRecognition", trip.segments.any { VideoStorage.plateFileFor(it).exists() })
+                    .put("hasTrack", trip.segments.any { video -> VideoStorage.trackFilesFor(context, video).any { it.exists() } })
+                    .put("favorite", VideoStorage.isFavorite(context, trip))
+                    .put("hasPlateRecognition", trip.segments.any { video -> VideoStorage.plateFilesFor(context, video).any { it.exists() } })
                     .put("groupBytes", companions.sumOf { it.length() })
             )
         }

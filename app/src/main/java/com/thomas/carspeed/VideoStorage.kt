@@ -501,12 +501,13 @@ object VideoStorage {
 
     fun cleanupLoopStorage(context: Context, limitGb: Int, requiredFreeBytes: Long = 0L): Boolean {
         val dir = videoDir(context)
+        val dirs = videoDirs(context)
         val limitBytes = limitGb.coerceIn(
             DashcamSettings.MIN_LOOP_STORAGE_GB,
             DashcamSettings.MAX_LOOP_STORAGE_GB
         ) * 1024L * 1024L * 1024L
         val plan = planCleanup(
-            files = managedVideoFiles(context, dir),
+            files = dirs.flatMap { managedVideoFiles(context, it) }.distinctBy { it.absolutePath },
             limitBytes = limitBytes,
             usableSpaceBytes = dir.usableSpace,
             requiredFreeBytes = requiredFreeBytes
