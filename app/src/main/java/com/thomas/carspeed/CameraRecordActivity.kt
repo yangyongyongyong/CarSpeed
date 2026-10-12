@@ -571,26 +571,27 @@ class CameraRecordActivity : AppCompatActivity() {
         val mode = CameraCapabilities.selectedVideoMode(this)
         val bufferWidth = mode.width.toFloat()
         val bufferHeight = mode.height.toFloat()
+        val rotationDegrees = rotationDegreesForTexture()
+        val rotatesByRightAngle = rotationDegrees % 180f != 0f
         val viewRect = RectF(0f, 0f, viewWidth, viewHeight)
-        val bufferRect = RectF(0f, 0f, bufferHeight, bufferWidth)
+        val bufferRect = if (rotatesByRightAngle) {
+            RectF(0f, 0f, bufferHeight, bufferWidth)
+        } else {
+            RectF(0f, 0f, bufferWidth, bufferHeight)
+        }
         val centerX = viewRect.centerX()
         val centerY = viewRect.centerY()
         val matrix = Matrix()
         bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
         matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-        val scale = maxOf(viewHeight / bufferHeight, viewWidth / bufferWidth)
+        val scale = maxOf(viewWidth / bufferRect.width(), viewHeight / bufferRect.height())
         matrix.postScale(scale, scale, centerX, centerY)
-        matrix.postRotate(rotationDegreesForTexture(), centerX, centerY)
+        matrix.postRotate(rotationDegrees, centerX, centerY)
         recordingTextureView.setTransform(matrix)
     }
 
     private fun rotationDegreesForTexture(): Float {
-        return when (targetRotation) {
-            Surface.ROTATION_90 -> 90f
-            Surface.ROTATION_180 -> 180f
-            Surface.ROTATION_270 -> 270f
-            else -> 0f
-        }
+        return CameraRotation.previewRotationDegrees(targetRotation)
     }
 
     private fun isRecordingStartPending(): Boolean {

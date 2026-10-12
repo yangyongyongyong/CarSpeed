@@ -274,7 +274,7 @@ class SeamlessDashcamRecorder(
         val cameraId = backCameraId(manager) ?: throw IllegalStateException("没有可用后置摄像头")
         val characteristics = manager.getCameraCharacteristics(cameraId)
         cameraCharacteristics = characteristics
-        orientationHintDegrees = orientationHint(characteristics, targetRotation)
+        orientationHintDegrees = orientationHint(targetRotation)
         hdrSceneModeEnabled = enableHdr && supportsHdrSceneMode(characteristics)
         callback.onHdrStateChanged(hdrSceneModeEnabled)
         manager.openCamera(
@@ -607,20 +607,8 @@ class SeamlessDashcamRecorder(
         } ?: manager.cameraIdList.firstOrNull()
     }
 
-    private fun orientationHint(characteristics: CameraCharacteristics, rotation: Int): Int {
-        val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
-        val displayDegrees = when (rotation) {
-            Surface.ROTATION_90 -> 90
-            Surface.ROTATION_180 -> 180
-            Surface.ROTATION_270 -> 270
-            else -> 0
-        }
-        val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-        return if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
-            (sensorOrientation + displayDegrees) % 360
-        } else {
-            (sensorOrientation - displayDegrees + 360) % 360
-        }
+    private fun orientationHint(rotation: Int): Int {
+        return CameraRotation.recordingOrientationHintDegrees(rotation)
     }
 
     private fun supportsHdrSceneMode(characteristics: CameraCharacteristics): Boolean {

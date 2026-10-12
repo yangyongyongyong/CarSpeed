@@ -38,4 +38,16 @@ object CameraRotation {
             else -> "竖屏"
         }
     }
+
+    fun isLandscape(rotation: Int): Boolean {
+        return rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+    }
+
+    fun previewRotationDegrees(rotation: Int): Float {
+        return 0f
+    }
+
+    fun recordingOrientationHintDegrees(rotation: Int): Int {
+        return 0
+    }
 }
