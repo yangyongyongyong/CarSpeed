@@ -220,6 +220,29 @@ object RadarAlertController {
         val distance = nearest.distanceMeters
         val etaSeconds = RadarAlertPlanner.etaSeconds(distance, speedKmh) ?: return
         val fired = firedThresholdsByCamera[nearest.key].orEmpty()
+        if (RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(nearest, fired)) {
+            val text = RadarAlertPlanner.farUnknownLimitAlertText(distance)
+            val spoke = speak(text)
+            if (spoke) {
+                firedThresholdsByCamera.getOrPut(nearest.key) { mutableSetOf() } += RadarAlertPlanner.FAR_UNKNOWN_LIMIT_ALERT_MARKER
+            }
+            state = state.copy(
+                enabled = settings.enabled,
+                active = true,
+                thresholdsSeconds = settings.thresholdsSeconds,
+                leadSeconds = settings.leadSeconds,
+                speechRatePercent = settings.speechRatePercent,
+                lastError = null,
+                lastCameraType = nearest.cameraType,
+                lastCameraDistanceMeters = distance,
+                lastCameraEtaSeconds = etaSeconds,
+                lastCameraSpeedLimit = nearest.speedLimit,
+                lastRadarDataAtMs = now,
+                lastSpokenText = if (spoke) text else state.lastSpokenText,
+                lastSpokenAtMs = if (spoke) now else state.lastSpokenAtMs
+            )
+            if (spoke) return
+        }
         val dueThresholds = RadarAlertPlanner.dueThresholds(etaSeconds, settings, fired)
         val threshold = RadarAlertPlanner.thresholdToSpeak(dueThresholds, etaSeconds, settings) ?: run {
             state = state.copy(
@@ -271,11 +294,7 @@ object RadarAlertController {
 
     private fun buildAlertText(thresholdSeconds: Int, distanceMeters: Int, speedLimit: Int?): String {
         val limit = speedLimit?.let { "限速${it}" }.orEmpty()
-        val distance = if (distanceMeters >= 1000) {
-            String.format(Locale.CHINA, "%.1f公里", distanceMeters / 1000f)
-        } else {
-            "${distanceMeters.coerceAtLeast(0)}米"
-        }
+        val distance = RadarAlertPlanner.distanceText(distanceMeters)
         return "测速雷达，${thresholdSeconds}秒，${distance}，$limit".trimEnd('，')
     }
 

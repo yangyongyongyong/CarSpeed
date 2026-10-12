@@ -1,5 +1,6 @@
 package com.thomas.carspeed
 
+import java.util.Locale
 import kotlin.math.roundToInt
 
 internal data class RadarCameraSnapshot(
@@ -37,9 +38,11 @@ internal enum class RadarDataWarningType {
 internal object RadarAlertPlanner {
     const val PASS_UNLOCK_MISSING_MS = 8_000L
     const val LOST_UNLOCK_MS = 30_000L
+    const val FAR_UNKNOWN_LIMIT_ALERT_MARKER = -3_000
     private const val MIN_PASS_ZONE_METERS = 30
     private const val PASS_DISTANCE_INCREASE_METERS = 40
     private const val PASS_ZONE_EXTRA_SECONDS = 1
+    private const val FAR_UNKNOWN_LIMIT_DISTANCE_METERS = 3_000
 
     fun selectActiveCamera(
         cameras: List<RadarCameraSnapshot>,
@@ -112,6 +115,24 @@ internal object RadarAlertPlanner {
     fun thresholdsToMark(dueThresholds: List<Int>, spokenThreshold: Int?): Set<Int> {
         if (spokenThreshold == null) return emptySet()
         return dueThresholds.filter { it >= spokenThreshold }.toSet()
+    }
+
+    fun shouldSpeakFarUnknownLimitAlert(camera: RadarCameraSnapshot, fired: Set<Int>): Boolean {
+        return camera.speedLimit == null &&
+            camera.distanceMeters > FAR_UNKNOWN_LIMIT_DISTANCE_METERS &&
+            FAR_UNKNOWN_LIMIT_ALERT_MARKER !in fired
+    }
+
+    fun farUnknownLimitAlertText(distanceMeters: Int): String {
+        return "前方${distanceText(distanceMeters)}有测速雷达，暂无限速信息"
+    }
+
+    fun distanceText(distanceMeters: Int): String {
+        return if (distanceMeters >= 1000) {
+            String.format(Locale.CHINA, "%.1f公里", distanceMeters / 1000f)
+        } else {
+            "${distanceMeters.coerceAtLeast(0)}米"
+        }
     }
 
     fun dataWarningType(

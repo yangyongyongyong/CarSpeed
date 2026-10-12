@@ -94,6 +94,40 @@ class RadarAlertPlannerTest {
     }
 
     @Test
+    fun far_unknown_limit_alert_requires_more_than_three_kilometers_and_no_limit() {
+        assertTrue(
+            RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(
+                camera("unknown", distanceMeters = 3_200, speedLimit = null),
+                fired = emptySet()
+            )
+        )
+        assertNull(RadarAlertPlanner.thresholdToSpeak(emptyList(), etaSeconds = 120, settings = settings))
+        assertEquals("前方3.2公里有测速雷达，暂无限速信息", RadarAlertPlanner.farUnknownLimitAlertText(3_200))
+    }
+
+    @Test
+    fun far_unknown_limit_alert_is_not_repeated_or_used_with_known_limit() {
+        assertTrue(
+            !RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(
+                camera("near", distanceMeters = 3_000, speedLimit = null),
+                fired = emptySet()
+            )
+        )
+        assertTrue(
+            !RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(
+                camera("known", distanceMeters = 3_200, speedLimit = 80),
+                fired = emptySet()
+            )
+        )
+        assertTrue(
+            !RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(
+                camera("fired", distanceMeters = 3_200, speedLimit = null),
+                fired = setOf(RadarAlertPlanner.FAR_UNKNOWN_LIMIT_ALERT_MARKER)
+            )
+        )
+    }
+
+    @Test
     fun network_warning_requires_vehicle_moving() {
         val health = RadarDataHealthState(serviceStartedAtMs = 1_000L, lastDataAtMs = 1_000L)
 
@@ -166,12 +200,12 @@ class RadarAlertPlannerTest {
         )
     }
 
-    private fun camera(key: String, distanceMeters: Int): RadarCameraSnapshot {
+    private fun camera(key: String, distanceMeters: Int, speedLimit: Int? = 80): RadarCameraSnapshot {
         return RadarCameraSnapshot(
             key = key,
             distanceMeters = distanceMeters,
             cameraType = 4,
-            speedLimit = 80
+            speedLimit = speedLimit
         )
     }
 }
