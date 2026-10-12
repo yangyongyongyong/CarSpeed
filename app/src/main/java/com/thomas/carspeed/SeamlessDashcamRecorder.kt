@@ -9,10 +9,13 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.media.AudioFormat
+import android.media.AudioRecord
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.media.MediaRecorder
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -31,6 +34,7 @@ class SeamlessDashcamRecorder(
     private val tripFolderName: String?,
     private val targetRotation: Int,
     initialPreviewSurface: Surface? = null,
+    private val enableAudio: Boolean = false,
     private val callback: Callback
 ) {
     interface Callback {
@@ -42,8 +46,15 @@ class SeamlessDashcamRecorder(
         fun onCaptureResult(result: CaptureResult)
     }
 
+    private data class SegmentStart(
+        val file: File,
+        val startWallMs: Long,
+        val startElapsedMs: Long
+    )
+
     private val appContext = context.applicationContext
     private val drainExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val muxerLock = Any()
     private val stopped = AtomicBoolean(false)
     private val errorNotified = AtomicBoolean(false)
     @Volatile private var stopRequested = false
@@ -56,9 +67,16 @@ class SeamlessDashcamRecorder(
     @Volatile private var previewSurface: Surface? = initialPreviewSurface?.takeIf { it.isValid }
     private var videoEncoder: MediaCodec? = null
     private var encoderInputSurface: Surface? = null
+    @Volatile private var audioMuxingEnabled = false
+    private var audioEncoder: MediaCodec? = null
+    private var audioRecord: AudioRecord? = null
+    private var audioThread: Thread? = null
+    private var audioBufferSize = 0
     private var muxer: MediaMuxer? = null
     private var videoTrackIndex = -1
+    private var audioTrackIndex = -1
     private var videoFormat: MediaFormat? = null
+    @Volatile private var audioFormat: MediaFormat? = null
     private var currentFile: File? = null
     private var currentSegmentStartElapsedMs = 0L
     private var currentSegmentFirstPtsUs: Long? = null
@@ -72,6 +90,7 @@ class SeamlessDashcamRecorder(
         try {
             cameraThread = HandlerThread("CarSpeedSeamlessCamera").also { it.start() }
             cameraHandler = Handler(cameraThread!!.looper)
+            startAudioEncoderIfNeeded()
             startVideoEncoder()
             drainExecutor.execute { drainVideoEncoder() }
             openCamera()
@@ -90,6 +109,7 @@ class SeamlessDashcamRecorder(
         captureSession = null
         runCatching { cameraDevice?.close() }
         cameraDevice = null
+        runCatching { audioRecord?.stop() }
         runCatching { videoEncoder?.signalEndOfInputStream() }
     }
 
@@ -97,13 +117,7 @@ class SeamlessDashcamRecorder(
         val nextSurface = surface?.takeIf { it.isValid }
         if (previewSurface === nextSurface) return
         previewSurface = nextSurface
-        val handler = cameraHandler ?: return
-        handler.post {
-            if (stopRequested || stopped.get()) return@post
-            val camera = cameraDevice ?: return@post
-            val characteristics = cameraCharacteristics ?: return@post
-            recreateCaptureSession(camera, characteristics)
-        }
+        // 录制过程中不动态重配 Camera2 session，避免个别设备 stopRepeating 失败导致编码提前结束。
     }
 
     private fun startVideoEncoder() {
@@ -118,6 +132,123 @@ class SeamlessDashcamRecorder(
         encoderInputSurface = encoder.createInputSurface()
         encoder.start()
         videoEncoder = encoder
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startAudioEncoderIfNeeded() {
+        if (!enableAudio) return
+        try {
+            val minBuffer = AudioRecord.getMinBufferSize(
+                AUDIO_SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            if (minBuffer <= 0) return
+            audioBufferSize = (minBuffer * 2).coerceAtLeast(AUDIO_SAMPLE_RATE / 5 * AUDIO_BYTES_PER_SAMPLE)
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_COUNT).apply {
+                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE)
+            }
+            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
+            audioEncoder = encoder
+            audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                AUDIO_SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                audioBufferSize
+            ).also { recorder ->
+                if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+                    runCatching { recorder.release() }
+                    audioRecord = null
+                    runCatching { encoder.stop() }
+                    runCatching { encoder.release() }
+                    audioEncoder = null
+                    return
+                }
+                recorder.startRecording()
+            }
+            audioMuxingEnabled = true
+            audioThread = Thread({ captureAndEncodeAudio() }, "CarSpeedSeamlessAudio").also { it.start() }
+        } catch (_: Exception) {
+            audioMuxingEnabled = false
+            runCatching { audioRecord?.release() }
+            audioRecord = null
+            runCatching { audioEncoder?.stop() }
+            runCatching { audioEncoder?.release() }
+            audioEncoder = null
+            audioThread = null
+        }
+    }
+
+    private fun captureAndEncodeAudio() {
+        val recorder = audioRecord ?: return
+        val encoder = audioEncoder ?: return
+        val readBuffer = ByteArray(audioBufferSize.coerceAtLeast(1))
+        var samplesRead = 0L
+        val audioStartPtsUs = System.nanoTime() / 1_000L
+        try {
+            while (!stopRequested && !stopped.get()) {
+                val inputIndex = encoder.dequeueInputBuffer(ENCODER_TIMEOUT_US)
+                if (inputIndex >= 0) {
+                    val inputBuffer = encoder.getInputBuffer(inputIndex)
+                    if (inputBuffer != null) {
+                        inputBuffer.clear()
+                        val readSize = recorder.read(readBuffer, 0, minOf(inputBuffer.remaining(), readBuffer.size))
+                        if (readSize > 0) {
+                            inputBuffer.put(readBuffer, 0, readSize)
+                            val ptsUs = audioStartPtsUs + samplesRead * 1_000_000L / AUDIO_SAMPLE_RATE
+                            samplesRead += readSize / AUDIO_BYTES_PER_SAMPLE
+                            encoder.queueInputBuffer(inputIndex, 0, readSize, ptsUs, 0)
+                        }
+                    }
+                }
+                drainAudioEncoder(encoder, waitForOutput = false)
+            }
+            queueAudioEndOfStream(encoder)
+            drainAudioEncoder(encoder, waitForOutput = true)
+        } catch (_: Exception) {
+            audioMuxingEnabled = false
+            // 音频失败不应中断视频；后续分段会继续只写视频轨。
+        }
+    }
+
+    private fun queueAudioEndOfStream(encoder: MediaCodec) {
+        val inputIndex = encoder.dequeueInputBuffer(ENCODER_TIMEOUT_US)
+        if (inputIndex >= 0) {
+            encoder.queueInputBuffer(
+                inputIndex,
+                0,
+                0,
+                System.nanoTime() / 1_000L,
+                MediaCodec.BUFFER_FLAG_END_OF_STREAM
+            )
+        }
+    }
+
+    private fun drainAudioEncoder(encoder: MediaCodec, waitForOutput: Boolean) {
+        val bufferInfo = MediaCodec.BufferInfo()
+        while (true) {
+            val index = encoder.dequeueOutputBuffer(bufferInfo, if (waitForOutput) ENCODER_TIMEOUT_US else 0L)
+            when {
+                index == MediaCodec.INFO_TRY_AGAIN_LATER -> return
+                index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> audioFormat = encoder.outputFormat
+                index >= 0 -> {
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                        bufferInfo.size = 0
+                    }
+                    val encodedData = encoder.getOutputBuffer(index)
+                    if (bufferInfo.size > 0 && encodedData != null) {
+                        writeAudioSample(encodedData, bufferInfo)
+                    }
+                    val eos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                    encoder.releaseOutputBuffer(index, false)
+                    if (eos) return
+                }
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -204,13 +335,6 @@ class SeamlessDashcamRecorder(
         )
     }
 
-    private fun recreateCaptureSession(camera: CameraDevice, characteristics: CameraCharacteristics) {
-        runCatching { captureSession?.stopRepeating() }
-        runCatching { captureSession?.close() }
-        captureSession = null
-        createCaptureSession(camera, characteristics)
-    }
-
     private fun CaptureRequest.Builder.applyFocusOptions(characteristics: CameraCharacteristics) {
         if (CameraFocus.isManualEnabled(appContext)) {
             val maxDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)
@@ -247,9 +371,18 @@ class SeamlessDashcamRecorder(
         } catch (error: Exception) {
             if (!stopRequested) notifyError(error)
         } finally {
+            stopAudioCaptureAndWait()
             closeCurrentSegment()
             releaseResources()
             callback.onStopped()
+        }
+    }
+
+    private fun stopAudioCaptureAndWait() {
+        stopRequested = true
+        runCatching { audioRecord?.stop() }
+        if (Thread.currentThread() !== audioThread) {
+            runCatching { audioThread?.join(AUDIO_THREAD_JOIN_TIMEOUT_MS) }
         }
     }
 
@@ -269,12 +402,21 @@ class SeamlessDashcamRecorder(
         if (bufferInfo.size > 0 && encodedData != null) {
             maybeRequestSplitKeyFrame()
             val isKeyFrame = bufferInfo.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
-            if (splitPending && isKeyFrame && currentSegmentHasSamples) {
-                closeCurrentSegment()
-                openSegment(bufferInfo.presentationTimeUs)
+            var finalizedSegment: File? = null
+            var startedSegment: SegmentStart? = null
+            synchronized(muxerLock) {
+                if (splitPending && isKeyFrame && currentSegmentHasSamples) {
+                    finalizedSegment = closeCurrentSegmentLocked()
+                    startedSegment = openSegmentLocked(bufferInfo.presentationTimeUs)
+                }
+                if (muxer == null) {
+                    if (!isKeyFrame || !canOpenSegmentLocked()) return@synchronized
+                    startedSegment = openSegmentLocked(bufferInfo.presentationTimeUs)
+                }
+                writeVideoSampleLocked(encodedData, bufferInfo)
             }
-            if (muxer == null) openSegment(bufferInfo.presentationTimeUs)
-            writeVideoSample(encodedData, bufferInfo)
+            finalizedSegment?.let { callback.onSegmentFinalized(it) }
+            startedSegment?.let { callback.onSegmentStarted(it.file, it.startWallMs, it.startElapsedMs) }
         }
         encoder.releaseOutputBuffer(index, false)
     }
@@ -294,14 +436,24 @@ class SeamlessDashcamRecorder(
         }
     }
 
-    private fun openSegment(firstPtsUs: Long) {
+    private fun canOpenSegmentLocked(): Boolean {
+        return videoFormat != null && (!audioMuxingEnabled || audioFormat != null)
+    }
+
+    private fun openSegmentLocked(firstPtsUs: Long): SegmentStart {
         val format = videoFormat ?: throw IllegalStateException("编码器尚未输出视频格式")
+        val activeAudioFormat = audioFormat
         val startWallMs = System.currentTimeMillis()
         val file = VideoStorage.privateOutputFile(appContext, startWallMs, tripFolderName)
         file.parentFile?.mkdirs()
         val nextMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         nextMuxer.setOrientationHint(orientationHintDegrees)
         videoTrackIndex = nextMuxer.addTrack(format)
+        audioTrackIndex = if (audioMuxingEnabled && activeAudioFormat != null) {
+            nextMuxer.addTrack(activeAudioFormat)
+        } else {
+            -1
+        }
         nextMuxer.start()
         muxer = nextMuxer
         currentFile = file
@@ -309,10 +461,10 @@ class SeamlessDashcamRecorder(
         currentSegmentFirstPtsUs = firstPtsUs
         currentSegmentHasSamples = false
         splitPending = false
-        callback.onSegmentStarted(file, startWallMs, currentSegmentStartElapsedMs)
+        return SegmentStart(file, startWallMs, currentSegmentStartElapsedMs)
     }
 
-    private fun writeVideoSample(encodedData: java.nio.ByteBuffer, bufferInfo: MediaCodec.BufferInfo) {
+    private fun writeVideoSampleLocked(encodedData: java.nio.ByteBuffer, bufferInfo: MediaCodec.BufferInfo) {
         val activeMuxer = muxer ?: return
         val segmentFirstPts = currentSegmentFirstPtsUs ?: bufferInfo.presentationTimeUs.also { currentSegmentFirstPtsUs = it }
         val sampleInfo = MediaCodec.BufferInfo().apply {
@@ -329,12 +481,39 @@ class SeamlessDashcamRecorder(
         currentSegmentHasSamples = true
     }
 
+    private fun writeAudioSample(encodedData: java.nio.ByteBuffer, bufferInfo: MediaCodec.BufferInfo) {
+        synchronized(muxerLock) {
+            val activeMuxer = muxer ?: return
+            val audioTrack = audioTrackIndex.takeIf { it >= 0 } ?: return
+            val segmentFirstPts = currentSegmentFirstPtsUs ?: return
+            if (bufferInfo.presentationTimeUs < segmentFirstPts) return
+            val sampleInfo = MediaCodec.BufferInfo().apply {
+                set(
+                    bufferInfo.offset,
+                    bufferInfo.size,
+                    bufferInfo.presentationTimeUs - segmentFirstPts,
+                    bufferInfo.flags
+                )
+            }
+            encodedData.position(bufferInfo.offset)
+            encodedData.limit(bufferInfo.offset + bufferInfo.size)
+            activeMuxer.writeSampleData(audioTrack, encodedData, sampleInfo)
+        }
+    }
+
     private fun closeCurrentSegment() {
+        val finalized = synchronized(muxerLock) { closeCurrentSegmentLocked() }
+        finalized?.let { callback.onSegmentFinalized(it) }
+    }
+
+    private fun closeCurrentSegmentLocked(): File? {
         val file = currentFile
         val segmentHasSamples = currentSegmentHasSamples
         val activeMuxer = muxer
         muxer = null
         currentFile = null
+        videoTrackIndex = -1
+        audioTrackIndex = -1
         currentSegmentStartElapsedMs = 0L
         currentSegmentFirstPtsUs = null
         currentSegmentHasSamples = false
@@ -345,11 +524,12 @@ class SeamlessDashcamRecorder(
         }
         if (file != null) {
             if (segmentHasSamples) {
-                callback.onSegmentFinalized(file)
+                return file
             } else {
                 file.delete()
             }
         }
+        return null
     }
 
     private fun releaseResources() {
@@ -357,6 +537,12 @@ class SeamlessDashcamRecorder(
         captureSession = null
         runCatching { cameraDevice?.close() }
         cameraDevice = null
+        runCatching { audioRecord?.release() }
+        audioRecord = null
+        runCatching { audioEncoder?.stop() }
+        runCatching { audioEncoder?.release() }
+        audioEncoder = null
+        audioThread = null
         runCatching { encoderInputSurface?.release() }
         encoderInputSurface = null
         runCatching { videoEncoder?.stop() }
@@ -402,6 +588,11 @@ class SeamlessDashcamRecorder(
     companion object {
         private const val ENCODER_TIMEOUT_US = 10_000L
         private const val KEY_FRAME_REQUEST_INTERVAL_MS = 500L
+        private const val AUDIO_THREAD_JOIN_TIMEOUT_MS = 1_500L
+        private const val AUDIO_SAMPLE_RATE = 44_100
+        private const val AUDIO_CHANNEL_COUNT = 1
+        private const val AUDIO_BYTES_PER_SAMPLE = 2
+        private const val AUDIO_BIT_RATE = 64_000
         private const val MIN_VIDEO_BITRATE = 4_000_000
         private const val MAX_VIDEO_BITRATE = 80_000_000
     }

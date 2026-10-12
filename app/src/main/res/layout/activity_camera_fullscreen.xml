@@ -12,11 +12,10 @@
         android:background="@android:color/black"
         app:implementationMode="performance" />
 
-    <TextureView
+    <android.view.TextureView
         android:id="@+id/fullscreenRecordingTextureView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@android:color/black"
         android:visibility="gone" />
 
     <com.thomas.carspeed.PlateOverlayView

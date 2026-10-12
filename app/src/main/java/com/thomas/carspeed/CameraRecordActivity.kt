@@ -300,11 +300,23 @@ class CameraRecordActivity : AppCompatActivity() {
     private fun startRecordingFromUi() {
         if (!ensureRecordingNotificationVisible()) return
         recordingStartRequestedAtMs = SystemClock.elapsedRealtime()
+        prepareRecordingPreviewForServiceStart()
+        val requestAt = recordingStartRequestedAtMs
+        recordingTextureView.postDelayed({
+            if (recordingStartRequestedAtMs != requestAt) return@postDelayed
+            updateRecordingPreviewSurfaceIfReady()
+            DashcamService.startRecording(this)
+            syncUi()
+        }, RECORDING_PREVIEW_PREPARE_MS)
+        syncUi()
+    }
+
+    private fun prepareRecordingPreviewForServiceStart() {
         stopIdlePreview()
+        recordingTextureView.visibility = View.VISIBLE
+        previewView.visibility = View.GONE
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         updateRecordingPreviewSurfaceIfReady()
-        DashcamService.startRecording(this)
-        syncUi()
     }
 
     private fun ensureRecordingNotificationVisible(): Boolean {
@@ -491,7 +503,7 @@ class CameraRecordActivity : AppCompatActivity() {
             }
         )
         tvSavedPath.text = getString(R.string.video_background_hint)
-        syncRecordingPreviewSurface(recording)
+        syncRecordingPreviewSurface(activeRecordingUiState)
         updatePreviewOverlay()
         plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
         if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
@@ -679,12 +691,20 @@ class CameraRecordActivity : AppCompatActivity() {
         const val EXTRA_AUTO_START_RECORDING = "auto_start_recording"
         const val EXTRA_TAKE_PHOTO = "take_photo"
         private const val PREVIEW_REBIND_DELAY_MS = 700L
+        private const val RECORDING_PREVIEW_PREPARE_MS = 150L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
         @Volatile
         private var instance: CameraRecordActivity? = null
 
         @Volatile
         private var pendingExternalPhotoRequest = false
+
+        fun prepareForServiceRecording() {
+            val activity = instance ?: return
+            activity.runOnUiThread {
+                activity.prepareRecordingPreviewForServiceStart()
+            }
+        }
 
         fun takePhoto(context: android.content.Context) {
             if (DashcamService.isRecording(context)) {

@@ -86,6 +86,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
         setContentView(R.layout.activity_camera_fullscreen)
         targetRotation = CameraRotation.displayRotation(this)
         window.decorView.systemUiVisibility =
@@ -152,6 +153,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
             stopIdlePreview()
         }
         clearRecordingPreviewSurface()
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -172,11 +174,26 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private fun startRecordingFromUi() {
         if (!ensureRecordingNotificationVisible()) return
         recordingStartRequestedAtMs = SystemClock.elapsedRealtime()
+        prepareRecordingPreviewForServiceStart()
+        val requestAt = recordingStartRequestedAtMs
+        recordingTextureView.postDelayed(
+            {
+                if (recordingStartRequestedAtMs != requestAt) return@postDelayed
+                updateRecordingPreviewSurfaceIfReady()
+                DashcamService.startRecording(this)
+                syncUi()
+            },
+            RECORDING_PREVIEW_PREPARE_MS
+        )
+        syncUi()
+    }
+
+    private fun prepareRecordingPreviewForServiceStart() {
         stopIdlePreview()
+        recordingTextureView.visibility = View.VISIBLE
+        previewView.visibility = View.GONE
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         updateRecordingPreviewSurfaceIfReady()
-        DashcamService.startRecording(this)
-        syncUi()
     }
 
     private fun ensureRecordingNotificationVisible(): Boolean {
@@ -273,7 +290,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         val startPending = isRecordingStartPending()
         btnRecord.setText(if (recording || startPending) R.string.video_stop_recording else R.string.video_start_recording)
         btnPhoto.isEnabled = recording
-        syncRecordingPreviewSurface(recording)
+        syncRecordingPreviewSurface(recording || startPending)
         tvTimer.visibility = if (recording) View.VISIBLE else View.GONE
         if (recording) {
             tvTimer.text = getString(
@@ -392,6 +409,17 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     companion object {
         private const val PREVIEW_REBIND_DELAY_MS = 700L
+        private const val RECORDING_PREVIEW_PREPARE_MS = 150L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
+
+        @Volatile
+        private var instance: CameraFullscreenActivity? = null
+
+        fun prepareForServiceRecording() {
+            val activity = instance ?: return
+            activity.runOnUiThread {
+                activity.prepareRecordingPreviewForServiceStart()
+            }
+        }
     }
 }

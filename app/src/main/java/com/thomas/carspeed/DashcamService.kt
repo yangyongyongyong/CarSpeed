@@ -247,6 +247,7 @@ class DashcamService : LifecycleService(), LocationListener {
             tripFolderName = activeTripFolderName,
             targetRotation = targetRotation,
             initialPreviewSurface = recordingPreviewSurface?.takeIf { it.isValid },
+            enableAudio = shouldRecordAudioInSeamlessMode(),
             callback = object : SeamlessDashcamRecorder.Callback {
                 override fun onStarted() {
                     mainHandler.post { onSeamlessRecordingStarted() }
@@ -275,6 +276,11 @@ class DashcamService : LifecycleService(), LocationListener {
         )
         seamlessRecorder = recorder
         recorder.start()
+    }
+
+    private fun shouldRecordAudioInSeamlessMode(): Boolean {
+        val settings = DashcamSettings.load(this)
+        return settings.recordAudio && !settings.voicePhotoEnabled && hasAudioPermission()
     }
 
     private fun onSeamlessRecordingStarted() {
@@ -1319,6 +1325,8 @@ class DashcamService : LifecycleService(), LocationListener {
         }
 
         fun startRecording(context: Context) {
+            CameraRecordActivity.prepareForServiceRecording()
+            CameraFullscreenActivity.prepareForServiceRecording()
             val intent = Intent(context, DashcamService::class.java).apply { action = ACTION_START_RECORDING }
             ContextCompat.startForegroundService(context, intent)
         }
