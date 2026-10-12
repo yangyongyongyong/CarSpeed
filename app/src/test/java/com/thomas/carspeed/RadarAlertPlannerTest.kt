@@ -72,6 +72,30 @@ class RadarAlertPlannerTest {
 
         assertEquals("second", selection.camera?.key)
         assertEquals("second", selection.lock?.key)
+        assertEquals("first", selection.passedCameraKey)
+    }
+
+    @Test
+    fun passed_camera_is_not_reselected_when_distance_starts_increasing() {
+        val lock = RadarCameraLock(
+            key = "first",
+            lastDistanceMeters = 20,
+            closestDistanceMeters = 20,
+            lastSeenAtMs = 1_000L,
+            enteredPassZone = true
+        )
+
+        val selection = RadarAlertPlanner.selectActiveCamera(
+            cameras = listOf(camera("first", distanceMeters = 70)),
+            currentLock = lock,
+            nowMs = 2_000L,
+            speedKmh = 60f,
+            settings = settings
+        )
+
+        assertNull(selection.camera)
+        assertNull(selection.lock)
+        assertEquals("first", selection.passedCameraKey)
     }
 
     @Test

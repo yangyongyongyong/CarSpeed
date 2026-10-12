@@ -20,7 +20,8 @@ internal data class RadarCameraLock(
 
 internal data class RadarCameraSelection(
     val camera: RadarCameraSnapshot?,
-    val lock: RadarCameraLock?
+    val lock: RadarCameraLock?,
+    val passedCameraKey: String? = null
 )
 
 internal data class RadarDataHealthState(
@@ -52,6 +53,8 @@ internal object RadarAlertPlanner {
         settings: RadarAlertSettings
     ): RadarCameraSelection {
         val validCameras = cameras.filter { it.distanceMeters > 0 }
+        var passedCameraKey: String? = null
+        var selectableCameras = validCameras
         if (currentLock != null) {
             val lockedCamera = validCameras.firstOrNull { it.key == currentLock.key }
             if (lockedCamera != null) {
@@ -71,6 +74,8 @@ internal object RadarAlertPlanner {
                         )
                     )
                 }
+                passedCameraKey = currentLock.key
+                selectableCameras = validCameras.filter { it.key != currentLock.key }
             } else {
                 val missingMs = nowMs - currentLock.lastSeenAtMs
                 val passedAfterClose = currentLock.enteredPassZone && missingMs >= PASS_UNLOCK_MISSING_MS
@@ -78,10 +83,12 @@ internal object RadarAlertPlanner {
                 if (!passedAfterClose && !lostForTooLong) {
                     return RadarCameraSelection(camera = null, lock = currentLock)
                 }
+                if (passedAfterClose) passedCameraKey = currentLock.key
             }
         }
 
-        val nearest = validCameras.minByOrNull { it.distanceMeters } ?: return RadarCameraSelection(null, null)
+        val nearest = selectableCameras.minByOrNull { it.distanceMeters }
+            ?: return RadarCameraSelection(null, null, passedCameraKey)
         return RadarCameraSelection(
             camera = nearest,
             lock = RadarCameraLock(
@@ -90,7 +97,8 @@ internal object RadarAlertPlanner {
                 closestDistanceMeters = nearest.distanceMeters,
                 lastSeenAtMs = nowMs,
                 enteredPassZone = isInPassZone(nearest.distanceMeters, speedKmh, settings)
-            )
+            ),
+            passedCameraKey = passedCameraKey
         )
     }
 

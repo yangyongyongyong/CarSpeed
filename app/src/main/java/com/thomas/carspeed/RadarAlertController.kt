@@ -3,7 +3,10 @@ package com.thomas.carspeed
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.amap.api.navi.AMapNavi
@@ -43,6 +46,7 @@ object RadarAlertController {
 
     @Volatile private var state = RadarAlertState()
     @Volatile private var latestSpeedKmh = 0f
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var appContext: Context? = null
     private var navi: AMapNavi? = null
     private var tts: TextToSpeech? = null
@@ -51,6 +55,7 @@ object RadarAlertController {
     private var activeCameraLock: RadarCameraLock? = null
     private var dataHealth = RadarDataHealthState(serviceStartedAtMs = 0L, lastDataAtMs = 0L)
     private val firedThresholdsByCamera = mutableMapOf<String, MutableSet<Int>>()
+    private val passedCameraKeys = mutableSetOf<String>()
 
     private val aimlessListener = object : AimlessModeListener {
         override fun onUpdateTrafficFacility(infos: Array<AMapNaviTrafficFacilityInfo>?) = Unit
@@ -86,6 +91,7 @@ object RadarAlertController {
             activeCameraLock = null
             dataHealth = RadarDataHealthState(serviceStartedAtMs = now, lastDataAtMs = now)
             firedThresholdsByCamera.clear()
+            passedCameraKeys.clear()
             state = state.copy(active = true, lastError = null)
         } catch (error: Exception) {
             state = state.copy(active = false, lastError = error.message ?: error.javaClass.simpleName)
@@ -121,6 +127,7 @@ object RadarAlertController {
         activeCameraLock = null
         dataHealth = RadarDataHealthState(serviceStartedAtMs = 0L, lastDataAtMs = 0L)
         firedThresholdsByCamera.clear()
+        passedCameraKeys.clear()
         AMapNavi.setTtsPlaying(false)
         state = state.copy(active = false)
     }
@@ -204,9 +211,11 @@ object RadarAlertController {
         val speedKmh = latestSpeedKmh.takeIf { it >= MIN_SPEED_FOR_ETA_KMH } ?: return
         val cameras = cameraInfo
             .filter { it.getDistance() > 0 && isSpeedCamera(it.getBroadcastType()) }
-            .map { info ->
+            .mapNotNull { info ->
+                val key = cameraKey(info)
+                if (key in passedCameraKeys) return@mapNotNull null
                 RadarCameraSnapshot(
-                    key = cameraKey(info),
+                    key = key,
                     distanceMeters = info.getDistance(),
                     cameraType = info.getBroadcastType(),
                     speedLimit = info.getLimitSpeed().takeIf { it > 0 }
@@ -220,6 +229,10 @@ object RadarAlertController {
             settings = settings
         )
         activeCameraLock = selection.lock
+        if (selection.passedCameraKey?.let { passedCameraKeys.add(it) } == true) {
+            playPassTone()
+            return
+        }
         val nearest = selection.camera ?: return
 
         val distance = nearest.distanceMeters
@@ -323,6 +336,13 @@ object RadarAlertController {
         AppSpeechGuard.markSpeechStarted()
         AMapNavi.setTtsPlaying(true)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+    }
+
+    private fun playPassTone() {
+        val tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }.getOrNull() ?: return
+        tone.startTone(ToneGenerator.TONE_PROP_ACK, 140)
+        mainHandler.postDelayed({ tone.startTone(ToneGenerator.TONE_PROP_ACK, 140) }, 220L)
+        mainHandler.postDelayed({ tone.release() }, 520L)
     }
 
     private fun ttsAudioAttributes(): AudioAttributes {
