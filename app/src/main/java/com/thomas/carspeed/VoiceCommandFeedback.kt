@@ -1,6 +1,7 @@
 package com.thomas.carspeed
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
@@ -64,6 +65,7 @@ object VoiceCommandFeedback {
             if (ttsReady) {
                 val activeTts = tts ?: return@TextToSpeech
                 activeTts.language = Locale.CHINA
+                activeTts.setAudioAttributes(ttsAudioAttributes())
                 activeTts.setSpeechRate(1.15f)
                 pendingText?.let { text ->
                     pendingText = null
@@ -79,14 +81,24 @@ object VoiceCommandFeedback {
         val utteranceId = "voice-command-${System.currentTimeMillis()}"
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            putString(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC.toString())
+            putString(TextToSpeech.Engine.KEY_PARAM_VOLUME, "1.0")
         }
         AppSpeechGuard.markSpeechStarted()
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
 
     private fun playTone() {
-        val tone = runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) }.getOrNull() ?: return
+        val tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }.getOrNull() ?: return
         tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
         mainHandler.postDelayed({ tone.release() }, 300L)
+    }
+
+    private fun ttsAudioAttributes(): AudioAttributes {
+        return AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .setLegacyStreamType(AudioManager.STREAM_MUSIC)
+            .build()
     }
 }

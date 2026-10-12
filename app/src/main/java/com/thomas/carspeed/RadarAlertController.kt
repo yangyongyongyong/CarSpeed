@@ -1,6 +1,8 @@
 package com.thomas.carspeed
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -167,6 +169,7 @@ object RadarAlertController {
             if (ttsReady) {
                 val activeTts = tts ?: return@TextToSpeech
                 activeTts.language = Locale.CHINA
+                activeTts.setAudioAttributes(ttsAudioAttributes())
                 activeTts.setSpeechRate(settings.speechRate)
                 activeTts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
@@ -314,9 +317,19 @@ object RadarAlertController {
         val utteranceId = "radar-${System.currentTimeMillis()}"
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            putString(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC.toString())
+            putString(TextToSpeech.Engine.KEY_PARAM_VOLUME, "1.0")
         }
         AppSpeechGuard.markSpeechStarted()
         AMapNavi.setTtsPlaying(true)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+    }
+
+    private fun ttsAudioAttributes(): AudioAttributes {
+        return AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .setLegacyStreamType(AudioManager.STREAM_MUSIC)
+            .build()
     }
 }
