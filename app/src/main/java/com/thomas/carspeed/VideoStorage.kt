@@ -62,6 +62,16 @@ object VideoStorage {
         return File(dir, fileNameFor(startTimeMs))
     }
 
+    fun privateOutputFile(
+        context: Context,
+        startTimeMs: Long = System.currentTimeMillis(),
+        tripFolderName: String? = null
+    ): File {
+        val dir = tripFolderName?.let { File(privateVideoDataRoot(context), sanitizeFolderName(it)).apply { mkdirs() } }
+            ?: privateVideoDataRoot(context)
+        return File(dir, fileNameFor(startTimeMs))
+    }
+
     fun videoDir(context: Context): File {
         val baseDir = publicMediaDir(Environment.DIRECTORY_MOVIES) ?: context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
         return File(baseDir, DIR_NAME).apply { mkdirs() }
