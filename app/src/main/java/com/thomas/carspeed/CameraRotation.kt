@@ -53,6 +53,11 @@ object CameraRotation {
     }
 
     fun recordingOrientationHintDegrees(rotation: Int): Int {
-        return 0
+        return when (rotation) {
+            Surface.ROTATION_90 -> 0
+            Surface.ROTATION_180 -> 270
+            Surface.ROTATION_270 -> 180
+            else -> 90
+        }
     }
 }
