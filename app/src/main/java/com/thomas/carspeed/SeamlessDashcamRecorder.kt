@@ -67,6 +67,8 @@ class SeamlessDashcamRecorder(
     @Volatile private var previewSurface: Surface? = initialPreviewSurface?.takeIf { it.isValid }
     private var videoEncoder: MediaCodec? = null
     private var encoderInputSurface: Surface? = null
+    private var captureSessionPreviewSurface: Surface? = null
+    private var captureSessionGeneration = 0
     @Volatile private var audioMuxingEnabled = false
     private var audioEncoder: MediaCodec? = null
     private var audioRecord: AudioRecord? = null
@@ -103,10 +105,12 @@ class SeamlessDashcamRecorder(
     fun stop() {
         if (!stopped.compareAndSet(false, true)) return
         stopRequested = true
+        captureSessionGeneration++
         runCatching { captureSession?.stopRepeating() }
         runCatching { captureSession?.abortCaptures() }
         runCatching { captureSession?.close() }
         captureSession = null
+        captureSessionPreviewSurface = null
         runCatching { cameraDevice?.close() }
         cameraDevice = null
         runCatching { audioRecord?.stop() }
@@ -117,7 +121,16 @@ class SeamlessDashcamRecorder(
         val nextSurface = surface?.takeIf { it.isValid }
         if (previewSurface === nextSurface) return
         previewSurface = nextSurface
-        // 录制过程中不动态重配 Camera2 session，避免个别设备 stopRepeating 失败导致编码提前结束。
+        val handler = cameraHandler ?: return
+        handler.post {
+            if (stopRequested || stopped.get()) return@post
+            val camera = cameraDevice ?: return@post
+            val characteristics = cameraCharacteristics ?: return@post
+            val activePreview = captureSessionPreviewSurface?.takeIf { it.isValid }
+            val desiredPreview = previewSurface?.takeIf { it.isValid }
+            if (activePreview === desiredPreview) return@post
+            createCaptureSession(camera, characteristics)
+        }
     }
 
     private fun startVideoEncoder() {
@@ -285,20 +298,27 @@ class SeamlessDashcamRecorder(
     @Suppress("DEPRECATION")
     private fun createCaptureSession(camera: CameraDevice, characteristics: CameraCharacteristics) {
         val surface = encoderInputSurface ?: return
+        val sessionId = ++captureSessionGeneration
+        val sessionPreviewSurface = previewSurface?.takeIf { it.isValid }
         val surfaces = buildList {
             add(surface)
-            previewSurface?.takeIf { it.isValid }?.let { add(it) }
+            sessionPreviewSurface?.let { add(it) }
         }
         camera.createCaptureSession(
             surfaces,
             object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
-                    if (stopRequested) return
+                    if (stopRequested || sessionId != captureSessionGeneration) {
+                        session.close()
+                        return
+                    }
+                    val previousSession = captureSession
                     captureSession = session
+                    captureSessionPreviewSurface = sessionPreviewSurface
                     try {
                         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(surface)
-                            previewSurface?.takeIf { it.isValid }?.let { addTarget(it) }
+                            sessionPreviewSurface?.let { addTarget(it) }
                             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
                             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(mode.fps, mode.fps))
                             applyFocusOptions(characteristics)
@@ -316,6 +336,7 @@ class SeamlessDashcamRecorder(
                             },
                             cameraHandler
                         )
+                        previousSession?.takeIf { it !== session }?.close()
                         if (!startNotified) {
                             startNotified = true
                             callback.onStarted()
@@ -327,8 +348,14 @@ class SeamlessDashcamRecorder(
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-                    notifyError(IllegalStateException("摄像头录像会话创建失败"))
-                    stop()
+                    session.close()
+                    if (sessionPreviewSurface != null) {
+                        previewSurface = null
+                        createCaptureSession(camera, characteristics)
+                    } else {
+                        notifyError(IllegalStateException("摄像头录像会话创建失败"))
+                        stop()
+                    }
                 }
             },
             cameraHandler
@@ -535,6 +562,7 @@ class SeamlessDashcamRecorder(
     private fun releaseResources() {
         runCatching { captureSession?.close() }
         captureSession = null
+        captureSessionPreviewSurface = null
         runCatching { cameraDevice?.close() }
         cameraDevice = null
         runCatching { audioRecord?.release() }
