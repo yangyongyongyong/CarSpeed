@@ -240,6 +240,8 @@ class DashcamService : LifecycleService(), LocationListener {
             return
         }
 
+        val recordAudio = shouldRecordAudioInRecording()
+        if (recordAudio) stopVoiceRecognition()
         val recorder = SeamlessDashcamRecorder(
             context = this,
             mode = mode,
@@ -247,7 +249,7 @@ class DashcamService : LifecycleService(), LocationListener {
             tripFolderName = activeTripFolderName,
             targetRotation = targetRotation,
             initialPreviewSurface = recordingPreviewSurface?.takeIf { it.isValid },
-            enableAudio = shouldRecordAudioInSeamlessMode(),
+            enableAudio = recordAudio,
             callback = object : SeamlessDashcamRecorder.Callback {
                 override fun onStarted() {
                     mainHandler.post { onSeamlessRecordingStarted() }
@@ -278,9 +280,9 @@ class DashcamService : LifecycleService(), LocationListener {
         recorder.start()
     }
 
-    private fun shouldRecordAudioInSeamlessMode(): Boolean {
+    private fun shouldRecordAudioInRecording(): Boolean {
         val settings = DashcamSettings.load(this)
-        return settings.recordAudio && !settings.voicePhotoEnabled && hasAudioPermission()
+        return settings.recordAudio && hasAudioPermission()
     }
 
     private fun onSeamlessRecordingStarted() {
@@ -683,11 +685,8 @@ class DashcamService : LifecycleService(), LocationListener {
 
     @SuppressLint("MissingPermission")
     private fun enableAudioIfAllowed(pending: PendingRecording): PendingRecording {
-        val settings = DashcamSettings.load(this)
-        if (!settings.recordAudio || settings.voicePhotoEnabled) return pending
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            return pending
-        }
+        if (!shouldRecordAudioInRecording()) return pending
+        stopVoiceRecognition()
         return try {
             pending.withAudioEnabled()
         } catch (_: SecurityException) {
@@ -961,7 +960,7 @@ class DashcamService : LifecycleService(), LocationListener {
             activeRecording?.stop()
             return
         }
-        if (settings.voicePhotoEnabled && hasAudioPermission()) {
+        if (settings.voicePhotoEnabled && hasAudioPermission() && !shouldReserveMicrophoneForRecording(settings)) {
             startVoiceRecognition()
         } else {
             stopVoiceRecognition()
@@ -1081,6 +1080,10 @@ class DashcamService : LifecycleService(), LocationListener {
 
     private fun shouldKeepAliveForVoice(): Boolean {
         return DashcamSettings.load(this).voicePhotoEnabled && hasAudioPermission()
+    }
+
+    private fun shouldReserveMicrophoneForRecording(settings: WatermarkSettings): Boolean {
+        return isRecordingActive() && settings.recordAudio
     }
 
     private fun maybeResolveAddress(location: Location) {

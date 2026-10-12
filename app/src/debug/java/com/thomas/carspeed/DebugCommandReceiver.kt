@@ -518,7 +518,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .put("enabled", settings.voicePhotoEnabled)
             .put("recordAudioRequested", settings.recordAudio)
             .put("audioPermission", hasPermission(context, Manifest.permission.RECORD_AUDIO))
-            .put("recordAudioEffective", settings.recordAudio && !settings.voicePhotoEnabled && hasPermission(context, Manifest.permission.RECORD_AUDIO))
+            .put("recordAudioEffective", settings.recordAudio && hasPermission(context, Manifest.permission.RECORD_AUDIO))
             .put("preferredEngine", "vosk")
             .putNullable("lastEngine", state.lastEngine)
             .put("modelState", recognizerState.modelState)
