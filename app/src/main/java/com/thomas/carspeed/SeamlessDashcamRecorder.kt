@@ -5,6 +5,7 @@ import android.content.Context
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
@@ -35,6 +36,7 @@ class SeamlessDashcamRecorder(
     private val targetRotation: Int,
     initialPreviewSurface: Surface? = null,
     private val enableAudio: Boolean = false,
+    private val enableHdr: Boolean = false,
     private val callback: Callback
 ) {
     interface Callback {
@@ -44,6 +46,7 @@ class SeamlessDashcamRecorder(
         fun onStopped()
         fun onError(error: Throwable)
         fun onCaptureResult(result: CaptureResult)
+        fun onHdrStateChanged(enabled: Boolean) = Unit
     }
 
     private data class SegmentStart(
@@ -86,6 +89,7 @@ class SeamlessDashcamRecorder(
     private var splitPending = false
     private var lastKeyFrameRequestElapsedMs = 0L
     private var orientationHintDegrees = 0
+    private var hdrSceneModeEnabled = false
     private var startNotified = false
 
     fun start() {
@@ -271,6 +275,8 @@ class SeamlessDashcamRecorder(
         val characteristics = manager.getCameraCharacteristics(cameraId)
         cameraCharacteristics = characteristics
         orientationHintDegrees = orientationHint(characteristics, targetRotation)
+        hdrSceneModeEnabled = enableHdr && supportsHdrSceneMode(characteristics)
+        callback.onHdrStateChanged(hdrSceneModeEnabled)
         manager.openCamera(
             cameraId,
             object : CameraDevice.StateCallback() {
@@ -319,7 +325,7 @@ class SeamlessDashcamRecorder(
                         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(surface)
                             sessionPreviewSurface?.let { addTarget(it) }
-                            set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+                            applyHdrOptions()
                             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(mode.fps, mode.fps))
                             applyFocusOptions(characteristics)
                         }.build()
@@ -374,6 +380,15 @@ class SeamlessDashcamRecorder(
             }
         }
         set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+    }
+
+    private fun CaptureRequest.Builder.applyHdrOptions() {
+        if (hdrSceneModeEnabled) {
+            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_USE_SCENE_MODE)
+            set(CaptureRequest.CONTROL_SCENE_MODE, CameraMetadata.CONTROL_SCENE_MODE_HDR)
+        } else {
+            set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+        }
     }
 
     private fun drainVideoEncoder() {
@@ -606,6 +621,11 @@ class SeamlessDashcamRecorder(
         } else {
             (sensorOrientation - displayDegrees + 360) % 360
         }
+    }
+
+    private fun supportsHdrSceneMode(characteristics: CameraCharacteristics): Boolean {
+        return characteristics.get(CameraCharacteristics.CONTROL_AVAILABLE_SCENE_MODES)
+            ?.contains(CameraMetadata.CONTROL_SCENE_MODE_HDR) == true
     }
 
     private fun videoBitRate(mode: VideoMode): Int {

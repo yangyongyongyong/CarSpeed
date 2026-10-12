@@ -250,6 +250,7 @@ class DashcamService : LifecycleService(), LocationListener {
             targetRotation = targetRotation,
             initialPreviewSurface = recordingPreviewSurface?.takeIf { it.isValid },
             enableAudio = recordAudio,
+            enableHdr = activeHdrRequested,
             callback = object : SeamlessDashcamRecorder.Callback {
                 override fun onStarted() {
                     mainHandler.post { onSeamlessRecordingStarted() }
@@ -273,6 +274,13 @@ class DashcamService : LifecycleService(), LocationListener {
 
                 override fun onCaptureResult(result: CaptureResult) {
                     mainHandler.post { updateFocusTelemetry(result) }
+                }
+
+                override fun onHdrStateChanged(enabled: Boolean) {
+                    mainHandler.post {
+                        activeHdrEnabled = enabled
+                        hdrActiveSnapshot = enabled
+                    }
                 }
             }
         )
