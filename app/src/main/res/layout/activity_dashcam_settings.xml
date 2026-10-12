@@ -1,0 +1,478 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/brand_sand"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="24dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@android:color/transparent"
+            app:navigationIcon="@android:drawable/ic_menu_revert"
+            app:title="@string/dashcam_settings_title"
+            app:titleTextColor="@color/text_primary" />
+
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.CarSpeed.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:id="@+id/sectionVideoHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:text="@string/settings_section_video"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:id="@+id/sectionVideoContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="分辨率"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <Spinner
+                        android:id="@+id/spVideoResolution"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="4dp"
+                        android:backgroundTint="@color/surface_secondary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="FPS"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <Spinner
+                        android:id="@+id/spVideoFps"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="4dp"
+                        android:backgroundTint="@color/surface_secondary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/hdr_mode_title"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <Spinner
+                        android:id="@+id/spHdrMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="6dp"
+                        android:backgroundTint="@color/surface_secondary" />
+
+                    <TextView
+                        android:id="@+id/tvHdrStartLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/hdr_start_label_default"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <SeekBar
+                        android:id="@+id/sbHdrStartHour"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:max="23" />
+
+                    <TextView
+                        android:id="@+id/tvHdrEndLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/hdr_end_label_default"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <SeekBar
+                        android:id="@+id/sbHdrEndHour"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:max="23" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/hdr_mode_helper"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <TextView
+                        android:id="@+id/tvLoopStorageLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/loop_storage_label_default"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <SeekBar
+                        android:id="@+id/sbLoopStorage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="100"
+                        android:progress="10" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/loop_storage_helper"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <TextView
+                        android:id="@+id/tvSegmentLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/segment_duration_label_default"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <SeekBar
+                        android:id="@+id/sbSegmentMinutes"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="10"
+                        android:progress="5" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/sectionTriggerHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:text="@string/settings_section_trigger"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:id="@+id/sectionTriggerContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/settings_auto_start_title"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <CheckBox
+                        android:id="@+id/cbAutoStartRecording"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_start_recording_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbAutoTriggerStartOnConnect"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_trigger_start_on_connect_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbAutoTriggerStartOnBluetoothSpeed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_trigger_start_on_bluetooth_speed_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/settings_auto_stop_title"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <CheckBox
+                        android:id="@+id/cbAutoTriggerStopOnPowerDisconnected"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_trigger_stop_on_power_disconnected_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbAutoTriggerStopOnBluetoothDisconnected"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_trigger_stop_on_bluetooth_disconnected_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbAutoTriggerStopOnBluetoothStationary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_trigger_stop_on_bluetooth_stationary_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/bluetooth_car_devices_title"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBluetoothDevices"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/bluetooth_select_devices" />
+
+                    <TextView
+                        android:id="@+id/tvBluetoothDeviceSummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/bluetooth_selected_none"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <CheckBox
+                        android:id="@+id/cbParkingStop"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/parking_stop_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:id="@+id/tvParkingStopLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/parking_stop_label_default"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <SeekBar
+                        android:id="@+id/sbParkingStopMinutes"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="30"
+                        android:progress="3" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/parking_stop_helper"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/sectionFocusHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:text="@string/settings_section_focus"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:id="@+id/sectionFocusContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvFocusLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/focus_auto_label"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <CheckBox
+                        android:id="@+id/cbManualFocus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/manual_focus_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <com.thomas.carspeed.HorizontalOnlySeekBar
+                        android:id="@+id/sbFocus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="100"
+                        android:progress="0" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/focus_helper"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/sectionPlateRecognitionHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:text="@string/settings_section_plate_recognition"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:id="@+id/sectionPlateRecognitionContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <CheckBox
+                        android:id="@+id/cbPlateRecognition"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/plate_recognition_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/plate_recognition_helper"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/sectionWatermarkHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:text="@string/settings_section_watermark"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:id="@+id/sectionWatermarkContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <CheckBox
+                        android:id="@+id/cbRecordAudio"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/record_audio_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbVoicePhoto"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/voice_photo_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkTime"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:checked="true"
+                        android:text="@string/watermark_time_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkSpeed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="@string/watermark_speed_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkGps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="@string/watermark_gps_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkAddress"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/watermark_address_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkVideoMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="@string/watermark_video_mode_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkFocus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/watermark_focus_toggle"
+                        android:textColor="@color/text_primary" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+</ScrollView>

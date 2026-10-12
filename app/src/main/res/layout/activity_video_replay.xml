@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/replayRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/brand_sand"
+    android:orientation="vertical"
+    android:paddingStart="0dp"
+    android:paddingTop="0dp"
+    android:paddingEnd="0dp"
+    android:paddingBottom="0dp">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="@android:color/transparent"
+        android:visibility="gone"
+        app:navigationIcon="@android:drawable/ic_menu_revert"
+        app:title="@string/video_replay_title"
+        app:titleTextColor="@color/text_primary" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/videoCard"
+        style="@style/Widget.CarSpeed.Card"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="0dp"
+        android:layout_weight="1.08"
+        app:cardCornerRadius="0dp">
+
+        <FrameLayout
+            android:id="@+id/videoFrame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/black">
+
+            <TextureView
+                android:id="@+id/videoTextureView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <com.thomas.carspeed.PlateOverlayView
+                android:id="@+id/replayPlateOverlayView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvSubtitleOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:layout_margin="12dp"
+                android:background="@drawable/overlay_chip_dark_bg"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginBottom="64dp"
+                android:padding="10dp"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/layoutReplayControls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:background="#99000000"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/tvReplayPlayPause"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="暂停"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvReplaySpeed"
+                    android:layout_width="48dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="1x"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/seekReplayProgress"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/tvReplayTime"
+                    android:layout_width="82dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/tvReplayFullscreen"
+                    android:layout_width="46dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="全屏"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <FrameLayout
+        android:id="@+id/videoMapDivider"
+        android:layout_width="match_parent"
+        android:layout_height="18dp"
+        android:background="@drawable/video_map_divider_bg"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:layout_width="64dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:background="@drawable/video_map_divider_handle_bg" />
+    </FrameLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/infoCard"
+        style="@style/Widget.CarSpeed.Card"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="0dp"
+        android:layout_weight="1.42"
+        app:cardCornerRadius="0dp">
+
+        <LinearLayout
+            android:id="@+id/infoContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="0dp">
+
+            <FrameLayout
+                android:id="@+id/mapFrame"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <com.thomas.carspeed.MapRouteView
+                    android:id="@+id/mapRouteView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <LinearLayout
+                    android:id="@+id/layoutMapReplayControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:background="#99000000"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="10dp"
+                    android:paddingTop="8dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="8dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvMapReplayPlayPause"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:gravity="center"
+                        android:text="暂停"
+                        android:textColor="@android:color/white"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvMapReplaySpeed"
+                        android:layout_width="48dp"
+                        android:layout_height="40dp"
+                        android:gravity="center"
+                        android:text="1x"
+                        android:textColor="@android:color/white"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <SeekBar
+                        android:id="@+id/seekMapReplayProgress"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/tvMapReplayTime"
+                        android:layout_width="82dp"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutMapBottomOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:background="#55000000"
+                    android:orientation="vertical"
+                    android:paddingStart="6dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="6dp"
+                    android:paddingBottom="4dp">
+
+                    <LinearLayout
+                        android:id="@+id/layoutMapActionControls"
+                        android:layout_width="match_parent"
+                        android:layout_height="28dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnMapViewportAll"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingTop="0dp"
+                            android:paddingBottom="0dp"
+                            android:text="@string/video_replay_map_whole"
+                            android:textColor="@android:color/white"
+                            android:textSize="10sp"
+                            app:backgroundTint="#66000000"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#99FFFFFF"
+                            app:strokeWidth="1dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnMapViewportCurrent"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingTop="0dp"
+                            android:paddingBottom="0dp"
+                            android:text="@string/video_replay_map_current"
+                            android:textColor="@android:color/white"
+                            android:textSize="10sp"
+                            app:backgroundTint="#66000000"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#99FFFFFF"
+                            app:strokeWidth="1dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnMapType"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingTop="0dp"
+                            android:paddingBottom="0dp"
+                            android:text="@string/video_replay_map_road"
+                            android:textColor="@android:color/white"
+                            android:textSize="10sp"
+                            app:backgroundTint="#66000000"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#99FFFFFF"
+                            app:strokeWidth="1dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnOfflineMap"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingTop="0dp"
+                            android:paddingBottom="0dp"
+                            android:text="@string/video_replay_map_offline"
+                            android:textColor="@android:color/white"
+                            android:textSize="10sp"
+                            app:backgroundTint="#66000000"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#99FFFFFF"
+                            app:strokeWidth="1dp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/layoutMapScaleControls"
+                        android:layout_width="match_parent"
+                        android:layout_height="28dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="10dp"
+                            android:includeFontPadding="false"
+                            android:text="@string/video_replay_map_scale_label"
+                            android:textColor="@android:color/white"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/tvMapScale"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:gravity="center_vertical"
+                            android:includeFontPadding="false"
+                            android:textColor="@android:color/white"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnMapScaleOut"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="44dp"
+                            android:layout_height="28dp"
+                            android:includeFontPadding="false"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingStart="0dp"
+                            android:paddingTop="0dp"
+                            android:paddingEnd="0dp"
+                            android:paddingBottom="0dp"
+                            android:text="@string/video_replay_map_scale_out"
+                            android:textColor="@android:color/white"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            app:backgroundTint="#66000000"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#99FFFFFF"
+                            app:strokeWidth="1dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnMapScaleIn"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="44dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:includeFontPadding="false"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minHeight="0dp"
+                            android:minWidth="0dp"
+                            android:paddingStart="0dp"
+                            android:paddingTop="0dp"
+                            android:paddingEnd="0dp"
+                            android:paddingBottom="0dp"
+                            android:text="@string/video_replay_map_scale_in"
+                            android:textColor="@android:color/white"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            app:backgroundTint="#66000000"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#99FFFFFF"
+                            app:strokeWidth="1dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvReplayTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvReplayStats"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/tvReplayPosition"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+            </FrameLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+</LinearLayout>

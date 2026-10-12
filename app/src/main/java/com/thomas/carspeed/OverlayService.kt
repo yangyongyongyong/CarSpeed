@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -113,6 +114,16 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     private var tripStartTimeMs = 0L
     private var waitAtZeroAccumMs = 0L
     private var waitAtZeroStartMs = 0L
+    private var tripDistanceMeters = 0f
+    private val tripRoutePoints = mutableListOf<DriveRoutePoint>()
+    private var tripAccuracySum = 0f
+    private var tripAccuracyCount = 0
+    private var tripGoodFixCount = 0
+    private var maxSpeedLatitude: Double? = null
+    private var maxSpeedLongitude: Double? = null
+    private var maxSpeedAccuracyMeters: Float? = null
+    private var lastRoutePointLocation: Location? = null
+    private var lastRoutePointTimeMs: Long = 0L
 
     private val maxSpeedTimeFormatter = SimpleDateFormat("yyyyMMdd HH:mm:ss", Locale.getDefault())
     private var transparentTextMode = false
@@ -122,6 +133,9 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
     override fun onCreate() {
         super.onCreate()
+        OverlayController.setRunning(this, true)
+        CarSpeedWidgetProvider.updateAll(this)
+        CarSpeedTileService.requestListeningState(this)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -161,6 +175,9 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        OverlayController.setRunning(this, false)
+        CarSpeedWidgetProvider.updateAll(this)
+        CarSpeedTileService.requestListeningState(this)
         sensorManager.unregisterListener(this)
         locationManager?.removeUpdates(this)
         unregisterGnssStatusUpdates()
@@ -264,7 +281,20 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
                     endTimeMs = end,
                     durationMs = end - start,
                     maxSpeedKmh = maxSpeedKmh,
-                    waitDurationMs = waitDurationMs
+                    waitDurationMs = waitDurationMs,
+                    distanceMeters = tripDistanceMeters,
+                    averageSpeedKmh = DriveRecordStore.averageSpeedKmh(
+                        distanceMeters = tripDistanceMeters,
+                        durationMs = end - start,
+                        waitDurationMs = waitDurationMs
+                    ),
+                    maxSpeedLatitude = maxSpeedLatitude,
+                    maxSpeedLongitude = maxSpeedLongitude,
+                    maxSpeedAccuracyMeters = maxSpeedAccuracyMeters,
+                    averageAccuracyMeters = averageTripAccuracyMeters(),
+                    goodFixRatio = goodFixRatio(),
+                    source = DriveRecordStore.SOURCE_OVERLAY,
+                    routePoints = tripRoutePoints.toList()
                 )
             )
         }
@@ -272,6 +302,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tripStartTimeMs = 0L
         waitAtZeroAccumMs = 0L
         waitAtZeroStartMs = 0L
+        resetTripData()
     }
 
     private fun applyOverlayStyle() {
@@ -717,17 +748,12 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         val speedKmh = SpeedRules.toKmhClamped(speedMps)
         val nowMs = System.currentTimeMillis()
 
-        if (filterResult.allowUpdateMaxSpeed) {
-            val maxResult = SpeedRules.updateMaxSpeed(maxSpeedKmh, maxSpeedTimeMs, speedKmh, nowMs)
-            maxSpeedKmh = maxResult.maxSpeedKmh
-            maxSpeedTimeMs = maxResult.maxSpeedTimeMs
-        }
-
         val waitNowMs = SpeedRules.resolveWaitClockNowMs(
             gpsSignalLost = gpsSignalLost,
             lastGpsFixWallTimeMs = lastGpsFixWallTimeMs,
             nowMs = nowMs
         )
+        val wasTripStarted = tripStarted
         val waitState = SpeedRules.updateTripAndWait(
             old = SpeedRules.WaitState(
                 tripStarted = tripStarted,
@@ -742,6 +768,29 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tripStartTimeMs = waitState.tripStartTimeMs
         waitAtZeroAccumMs = waitState.waitAtZeroAccumMs
         waitAtZeroStartMs = waitState.waitAtZeroStartMs
+        val startedNow = !wasTripStarted && tripStarted
+        if (startedNow) resetTripData()
+
+        if (filterResult.allowUpdateMaxSpeed) {
+            val oldMaxSpeedKmh = maxSpeedKmh
+            val maxResult = SpeedRules.updateMaxSpeed(maxSpeedKmh, maxSpeedTimeMs, speedKmh, nowMs)
+            maxSpeedKmh = maxResult.maxSpeedKmh
+            maxSpeedTimeMs = maxResult.maxSpeedTimeMs
+            if (maxResult.maxSpeedKmh > oldMaxSpeedKmh) {
+                maxSpeedLatitude = location.latitude
+                maxSpeedLongitude = location.longitude
+                maxSpeedAccuracyMeters = location.accuracy.takeIf { location.hasAccuracy() }
+            }
+        }
+
+        updateTripRoute(
+            location = location,
+            metrics = computedMetrics,
+            filterResult = filterResult,
+            speedKmh = speedKmh,
+            nowMs = nowMs,
+            startedNow = startedNow
+        )
 
         refreshOverlay()
     }
@@ -751,6 +800,85 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         val distanceMeters: Float,
         val deltaTimeSec: Float
     )
+
+    private fun updateTripRoute(
+        location: Location,
+        metrics: ComputedMotionMetrics,
+        filterResult: SpeedRules.FilterResult,
+        speedKmh: Float,
+        nowMs: Long,
+        startedNow: Boolean
+    ) {
+        if (!tripStarted) return
+
+        if (location.hasAccuracy()) {
+            tripAccuracySum += location.accuracy
+            tripAccuracyCount += 1
+            if (location.accuracy <= GOOD_FIX_ACCURACY_METERS) {
+                tripGoodFixCount += 1
+            }
+        }
+
+        val distance = metrics.distanceMeters
+        val saneDistance = !startedNow &&
+            filterResult.isSampleTrusted &&
+            !distance.isNaN() &&
+            distance in 0.5f..MAX_TRIP_SAMPLE_DISTANCE_METERS &&
+            (!location.hasAccuracy() || location.accuracy <= MAX_TRIP_ACCURACY_METERS)
+        if (saneDistance) {
+            tripDistanceMeters += distance
+        }
+
+        if (shouldAppendRoutePoint(location, nowMs, startedNow)) {
+            appendRoutePoint(location, speedKmh, nowMs)
+        }
+    }
+
+    private fun shouldAppendRoutePoint(location: Location, nowMs: Long, force: Boolean): Boolean {
+        if (tripRoutePoints.size >= MAX_ROUTE_POINTS) return false
+        if (force || tripRoutePoints.isEmpty()) return true
+        val last = lastRoutePointLocation ?: return true
+        if (nowMs - lastRoutePointTimeMs >= ROUTE_POINT_INTERVAL_MS) return true
+        return last.distanceTo(location) >= ROUTE_POINT_DISTANCE_METERS
+    }
+
+    private fun appendRoutePoint(location: Location, speedKmh: Float, nowMs: Long) {
+        tripRoutePoints += DriveRoutePoint(
+            timeMs = location.time.takeIf { it > 0L } ?: nowMs,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            speedKmh = speedKmh,
+            accuracyMeters = location.accuracy.takeIf { location.hasAccuracy() },
+            bearingDegrees = location.bearing.takeIf { location.hasBearing() }
+        )
+        lastRoutePointLocation = Location(location)
+        lastRoutePointTimeMs = nowMs
+    }
+
+    private fun resetTripData() {
+        tripDistanceMeters = 0f
+        tripRoutePoints.clear()
+        tripAccuracySum = 0f
+        tripAccuracyCount = 0
+        tripGoodFixCount = 0
+        maxSpeedLatitude = null
+        maxSpeedLongitude = null
+        maxSpeedAccuracyMeters = null
+        lastRoutePointLocation = null
+        lastRoutePointTimeMs = 0L
+    }
+
+    private fun averageTripAccuracyMeters(): Float? {
+        return if (tripAccuracyCount > 0) tripAccuracySum / tripAccuracyCount else null
+    }
+
+    private fun goodFixRatio(): Float {
+        return if (tripAccuracyCount > 0) {
+            tripGoodFixCount.toFloat() / tripAccuracyCount
+        } else {
+            0f
+        }
+    }
 
     private fun refreshOverlay() {
         val nowRealtimeNs = SystemClock.elapsedRealtimeNanos()
@@ -769,8 +897,20 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             currentEstimateActive = false
         }
 
+        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+        val unit = SpeedDisplay.normalizeUnit(prefs.getString(MainActivity.PREF_SPEED_UNIT, SpeedDisplay.UNIT_KMH))
+        val warningThresholdKmh = prefs.getInt(
+            MainActivity.PREF_SPEED_WARNING_KMH,
+            SpeedDisplay.DEFAULT_WARNING_KMH
+        ).coerceIn(30, 240)
         val speedKmh = SpeedRules.toKmhClamped(speedMps)
-        tvMaxSpeedValue?.text = String.format("%.1f", maxSpeedKmh)
+        val displaySpeed = SpeedDisplay.toDisplaySpeed(speedKmh, unit)
+        val displayMaxSpeed = SpeedDisplay.toDisplaySpeed(maxSpeedKmh, unit)
+        val unitLabel = SpeedDisplay.unitLabel(unit)
+        val warningActive = !gpsSignalLost && speedKmh >= warningThresholdKmh
+
+        tvMaxSpeedValue?.text = String.format("%.1f", displayMaxSpeed)
+        tvMaxSpeedUnit?.text = unitLabel
         tvMaxSpeedTime?.text = if (maxSpeedTimeMs > 0L) {
             "峰值时间 ${maxSpeedTimeFormatter.format(Date(maxSpeedTimeMs))}"
         } else {
@@ -782,20 +922,21 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             "当前速度"
         }
         tvCurrentSpeedValue?.text = if (currentEstimateActive) {
-            String.format("%.1f", speedKmh)
+            String.format("%.1f", displaySpeed)
         } else if (gpsSignalLost) {
             getString(R.string.no_gps_signal)
         } else {
-            String.format("%.1f", speedKmh)
+            String.format("%.1f", displaySpeed)
         }
+        tvCurrentSpeedUnit?.text = unitLabel
         tvGpsSatelliteCount?.text = gpsUsedSatelliteCount?.let {
             getString(R.string.gps_satellite_label_fmt, it)
         } ?: getString(R.string.gps_satellite_unknown)
         applyCurrentSpeedTextStyle(gpsSignalLost)
-        tvDragHandle?.text = if (currentEstimateActive) {
-            getString(R.string.gps_estimate_hint)
-        } else {
-            "拖动移动 · 靠边收起"
+        tvDragHandle?.text = when {
+            warningActive -> getString(R.string.speed_warning_active, warningThresholdKmh)
+            currentEstimateActive -> getString(R.string.gps_estimate_hint)
+            else -> "拖动移动 · 靠边收起"
         }
         val waitNowMs = SpeedRules.resolveWaitClockNowMs(
             gpsSignalLost = gpsSignalLost,
@@ -825,7 +966,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             speedHistory.removeFirst()
         }
 
-        val yMax = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+        val yMax = prefs
             .getInt(MainActivity.PREF_Y_AXIS_MAX_KMH, 300)
             .coerceIn(30, 2000)
             .toFloat()
@@ -833,10 +974,11 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         speedTrendView?.updateData(speedHistory.toList(), yMax, historyWindowMs)
 
         overlayBubble?.text = when {
-            currentEstimateActive -> String.format("%.0f", speedKmh)
+            currentEstimateActive -> String.format("%.0f", displaySpeed)
             gpsSignalLost -> getString(R.string.no_gps_short)
-            else -> String.format("%.0f", speedKmh)
+            else -> String.format("%.0f", displaySpeed)
         }
+        applySpeedWarningStyle(warningActive)
     }
 
     private fun formatDuration(ms: Long): String {
@@ -859,6 +1001,18 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tvCurrentSpeedValue?.setLineSpacing(0f, if (signalLost && !currentEstimateActive) 0.92f else 1f)
         tvCurrentSpeedUnit?.visibility = if (signalLost && !currentEstimateActive) View.INVISIBLE else View.VISIBLE
         tvCurrentSpeedValue?.alpha = if (currentEstimateActive) 0.92f else 1f
+    }
+
+    private fun applySpeedWarningStyle(warningActive: Boolean) {
+        if (!warningActive) {
+            applyDynamicTextColors(transparentTextMode)
+            return
+        }
+        val warning = Color.parseColor("#FF5B5B")
+        tvCurrentSpeedValue?.setTextColor(warning)
+        tvCurrentSpeedUnit?.setTextColor(warning)
+        overlayBubble?.setTextColor(warning)
+        tvDragHandle?.setTextColor(warning)
     }
 
     private fun calculateMaxScaleForBounds(params: WindowManager.LayoutParams): Float {
@@ -959,10 +1113,33 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     }
 
     private fun buildNotification(): Notification {
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val openIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            flags
+        )
+        val historyIntent = PendingIntent.getActivity(
+            this,
+            1,
+            Intent(this, HistoryActivity::class.java),
+            flags
+        )
+        val stopIntent = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, OverlayService::class.java).apply { action = ACTION_STOP },
+            flags
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(getString(R.string.notif_text))
+            .setContentIntent(openIntent)
+            .addAction(android.R.drawable.ic_menu_view, getString(R.string.notif_action_open), openIntent)
+            .addAction(android.R.drawable.ic_menu_recent_history, getString(R.string.notif_action_history), historyIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
             .setOngoing(true)
             .build()
     }
@@ -978,5 +1155,11 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         private const val REACQUIRE_GAP_MS = 5_000L
         private const val REACQUIRE_WARMUP_POINTS = 2
         private const val COMPACT_ROW_ONLY_SCALE = 0.86f
+        private const val MAX_TRIP_SAMPLE_DISTANCE_METERS = 1_000f
+        private const val MAX_TRIP_ACCURACY_METERS = 80f
+        private const val GOOD_FIX_ACCURACY_METERS = 20f
+        private const val MAX_ROUTE_POINTS = 180
+        private const val ROUTE_POINT_INTERVAL_MS = 5_000L
+        private const val ROUTE_POINT_DISTANCE_METERS = 25f
     }
 }

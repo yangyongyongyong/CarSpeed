@@ -1,0 +1,22 @@
+package com.thomas.carspeed
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
+
+class PowerTriggerReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_POWER_DISCONNECTED) return
+        handlePowerDisconnected(context)
+    }
+
+    companion object {
+        fun handlePowerDisconnected(context: Context) {
+            if (!DashcamService.isRecording(context)) return
+            if (!TriggerSettings.load(context).stopOnPowerDisconnected) return
+            Toast.makeText(context, R.string.trigger_power_disconnected_stop, Toast.LENGTH_SHORT).show()
+            DashcamService.stopRecording(context)
+        }
+    }
+}

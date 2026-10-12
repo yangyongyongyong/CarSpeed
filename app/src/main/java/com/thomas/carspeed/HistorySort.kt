@@ -4,7 +4,9 @@ enum class HistorySortField {
     START_TIME,
     END_TIME,
     DURATION,
-    MAX_SPEED
+    MAX_SPEED,
+    DISTANCE,
+    AVERAGE_SPEED
 }
 
 object HistorySort {
@@ -18,6 +20,8 @@ object HistorySort {
             HistorySortField.END_TIME -> compareBy<DriveRecord> { it.endTimeMs }
             HistorySortField.DURATION -> compareBy<DriveRecord> { it.durationMs }
             HistorySortField.MAX_SPEED -> compareBy<DriveRecord> { it.maxSpeedKmh }
+            HistorySortField.DISTANCE -> compareBy<DriveRecord> { it.distanceMeters }
+            HistorySortField.AVERAGE_SPEED -> compareBy<DriveRecord> { it.averageSpeedKmh }
         }
         val sorted = records.sortedWith(comparator)
         return if (ascending) sorted else sorted.asReversed()
