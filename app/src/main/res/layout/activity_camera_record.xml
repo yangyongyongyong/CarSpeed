@@ -19,6 +19,7 @@
         app:titleTextColor="@color/text_primary" />
 
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/previewCard"
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -39,10 +40,11 @@
                 android:background="@android:color/black"
                 app:implementationMode="compatible" />
 
-            <android.view.TextureView
+            <com.thomas.carspeed.AspectRatioTextureView
                 android:id="@+id/recordingTextureView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
+                android:layout_gravity="center"
                 android:visibility="gone" />
 
             <com.thomas.carspeed.PlateOverlayView

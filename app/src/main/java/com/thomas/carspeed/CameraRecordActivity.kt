@@ -42,11 +42,13 @@ import com.google.android.material.appbar.MaterialToolbar
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 
 class CameraRecordActivity : AppCompatActivity() {
     private lateinit var toolbar: MaterialToolbar
+    private lateinit var previewCard: com.google.android.material.card.MaterialCardView
     private lateinit var previewView: PreviewView
-    private lateinit var recordingTextureView: TextureView
+    private lateinit var recordingTextureView: AspectRatioTextureView
     private lateinit var plateOverlayView: PlateOverlayView
     private lateinit var tvPreviewOverlay: TextView
     private lateinit var tvPreviewTimer: TextView
@@ -151,6 +153,7 @@ class CameraRecordActivity : AppCompatActivity() {
             (intent?.action == Intent.ACTION_MAIN && DashcamSettings.load(this).autoStartRecording)
 
         toolbar = findViewById(R.id.toolbar)
+        previewCard = findViewById(R.id.previewCard)
         previewView = findViewById(R.id.previewView)
         recordingTextureView = findViewById(R.id.recordingTextureView)
         plateOverlayView = findViewById(R.id.plateOverlayView)
@@ -529,6 +532,7 @@ class CameraRecordActivity : AppCompatActivity() {
     private fun syncRecordingPreviewSurface(recording: Boolean) {
         recordingTextureView.visibility = if (recording) View.VISIBLE else View.GONE
         previewView.visibility = if (recording) View.GONE else View.VISIBLE
+        updatePreviewCardLayout(recording)
         if (recording) {
             updateRecordingPreviewSurfaceIfReady()
         } else {
@@ -562,6 +566,7 @@ class CameraRecordActivity : AppCompatActivity() {
     private fun updateRecordingPreviewTransform() {
         val mode = CameraCapabilities.selectedVideoMode(this)
         val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        recordingTextureView.setAspectRatio(previewSize.height, previewSize.width)
         val viewWidth = recordingTextureView.width.toFloat()
         val viewHeight = recordingTextureView.height.toFloat()
         if (viewWidth <= 0f || viewHeight <= 0f) return
@@ -579,11 +584,6 @@ class CameraRecordActivity : AppCompatActivity() {
             matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
             val scale = maxOf(viewHeight / bufferHeight, viewWidth / bufferWidth)
             matrix.postScale(scale, scale, centerX, centerY)
-        } else {
-            val defaultScaleX = viewWidth / bufferWidth
-            val defaultScaleY = viewHeight / bufferHeight
-            val contentScale = maxOf(defaultScaleX, defaultScaleY)
-            matrix.setScale(defaultScaleX / contentScale, defaultScaleY / contentScale, centerX, centerY)
         }
         matrix.postRotate(rotationDegrees, centerX, centerY)
         recordingTextureView.setTransform(matrix)
@@ -596,6 +596,27 @@ class CameraRecordActivity : AppCompatActivity() {
                 "preview=${previewSize.width}x${previewSize.height} rotation=$rotationDegrees " +
                 "matrix=${values.joinToString()}"
         )
+    }
+
+    private fun updatePreviewCardLayout(recording: Boolean) {
+        val params = previewCard.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        if (!recording) {
+            if (params.height != 0 || params.weight != 1f) {
+                params.height = 0
+                params.weight = 1f
+                previewCard.layoutParams = params
+            }
+            return
+        }
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        val cardWidth = previewCard.width.takeIf { it > 0 } ?: return
+        val targetHeight = (cardWidth.toFloat() * previewSize.width / previewSize.height).roundToInt()
+        if (params.height != targetHeight || params.weight != 0f) {
+            params.height = targetHeight
+            params.weight = 0f
+            previewCard.layoutParams = params
+        }
     }
 
     private fun rotationDegreesForTexture(): Float {
