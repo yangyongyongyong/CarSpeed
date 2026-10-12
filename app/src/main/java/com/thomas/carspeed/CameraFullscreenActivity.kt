@@ -51,6 +51,8 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private var targetRotation = Surface.ROTATION_0
     private var orientationListener: OrientationEventListener? = null
     private var recordingPreviewSurface: Surface? = null
+    private var resumed = false
+    private var lastRecordingUiState = false
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private val focusCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
@@ -115,6 +117,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         if (DashcamService.isRecording(this)) {
             stopIdlePreview()
@@ -128,6 +131,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         uiHandler.removeCallbacks(uiTicker)
         stopOrientationListener()
         if (!DashcamService.isRecording(this)) {
@@ -262,17 +266,8 @@ class CameraFullscreenActivity : AppCompatActivity() {
     }
 
     private fun startOrientationListener() {
-        orientationListener = object : OrientationEventListener(this) {
-            override fun onOrientationChanged(orientation: Int) {
-                val rotation = CameraRotation.rotationFromOrientationDegrees(orientation) ?: return
-                if (rotation != targetRotation) {
-                    targetRotation = rotation
-                    applyTargetRotation()
-                }
-            }
-        }.also { listener ->
-            if (listener.canDetectOrientation()) listener.enable()
-        }
+        targetRotation = CameraRotation.displayRotation(this)
+        applyTargetRotation()
     }
 
     private fun stopOrientationListener() {
@@ -288,9 +283,10 @@ class CameraFullscreenActivity : AppCompatActivity() {
         val recording = DashcamService.isRecording(this)
         if (recording) recordingStartRequestedAtMs = 0L
         val startPending = isRecordingStartPending()
-        btnRecord.setText(if (recording || startPending) R.string.video_stop_recording else R.string.video_start_recording)
+        val activeRecordingUiState = recording || startPending
+        btnRecord.setText(if (activeRecordingUiState) R.string.video_stop_recording else R.string.video_start_recording)
         btnPhoto.isEnabled = recording
-        syncRecordingPreviewSurface(recording || startPending)
+        syncRecordingPreviewSurface(activeRecordingUiState)
         tvTimer.visibility = if (recording) View.VISIBLE else View.GONE
         if (recording) {
             tvTimer.text = getString(
@@ -300,6 +296,10 @@ class CameraFullscreenActivity : AppCompatActivity() {
         }
         tvOverlay.text = buildOverlayText()
         plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
+        if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
+            scheduleIdlePreviewRestart()
+        }
+        lastRecordingUiState = activeRecordingUiState
     }
 
     private fun setupRecordingPreviewSurface() {
@@ -362,19 +362,22 @@ class CameraFullscreenActivity : AppCompatActivity() {
         val bufferHeight = mode.height.toFloat()
         val rotationDegrees = rotationDegreesForTexture()
         val rotatesByRightAngle = rotationDegrees % 180f != 0f
-        val viewRect = RectF(0f, 0f, viewWidth, viewHeight)
-        val bufferRect = if (rotatesByRightAngle) {
-            RectF(0f, 0f, bufferHeight, bufferWidth)
-        } else {
-            RectF(0f, 0f, bufferWidth, bufferHeight)
-        }
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
         val matrix = Matrix()
-        bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-        matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-        val scale = maxOf(viewWidth / bufferRect.width(), viewHeight / bufferRect.height())
-        matrix.postScale(scale, scale, centerX, centerY)
+        if (rotatesByRightAngle) {
+            val viewRect = RectF(0f, 0f, viewWidth, viewHeight)
+            val bufferRect = RectF(0f, 0f, bufferHeight, bufferWidth)
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+            val scale = minOf(viewHeight / bufferHeight, viewWidth / bufferWidth)
+            matrix.postScale(scale, scale, centerX, centerY)
+        } else {
+            val defaultScaleX = viewWidth / bufferWidth
+            val defaultScaleY = viewHeight / bufferHeight
+            val contentScale = minOf(defaultScaleX, defaultScaleY)
+            matrix.setScale(contentScale / defaultScaleX, contentScale / defaultScaleY, centerX, centerY)
+        }
         matrix.postRotate(rotationDegrees, centerX, centerY)
         recordingTextureView.setTransform(matrix)
     }
@@ -418,6 +421,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
         fun prepareForServiceRecording() {
             val activity = instance ?: return
+            if (!activity.resumed) return
             activity.runOnUiThread {
                 activity.prepareRecordingPreviewForServiceStart()
             }

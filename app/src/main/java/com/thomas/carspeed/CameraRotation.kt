@@ -44,7 +44,12 @@ object CameraRotation {
     }
 
     fun previewRotationDegrees(rotation: Int): Float {
-        return 0f
+        return when (rotation) {
+            Surface.ROTATION_90 -> -90f
+            Surface.ROTATION_180 -> 180f
+            Surface.ROTATION_270 -> 90f
+            else -> 0f
+        }
     }
 
     fun recordingOrientationHintDegrees(rotation: Int): Int {
