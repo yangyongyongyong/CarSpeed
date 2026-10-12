@@ -516,11 +516,13 @@ class HistoryActivity : AppCompatActivity() {
         showLoadingState()
         val appContext = applicationContext
         historyExecutor.execute {
+            val metadataCache = VideoHistoryCache.load(appContext)
             val allTrips = VideoStorage.videoTrips(appContext)
                 .sortedWith(
                     compareByDescending<VideoStorage.VideoTrip> { VideoStorage.isFavorite(appContext, it) }
                         .thenByDescending { it.lastModified }
                 )
+            metadataCache.prune(allTrips.map { it.id }.toSet())
             val scopedTrips = if (favoriteOnly) {
                 allTrips.filter { trip -> VideoStorage.isFavorite(appContext, trip) }
             } else {
@@ -528,7 +530,7 @@ class HistoryActivity : AppCompatActivity() {
             }
             val needsDetailedFilter = filter.requiresDetailedVideoData()
             val allVideoItems = if (needsDetailedFilter) {
-                scopedTrips.map { trip -> buildVideoListItem(appContext, trip) }
+                scopedTrips.map { trip -> buildVideoListItem(appContext, trip, metadataCache) }
             } else {
                 emptyList()
             }
@@ -543,8 +545,9 @@ class HistoryActivity : AppCompatActivity() {
             val videoItems = if (needsDetailedFilter) {
                 allVideoItems.filter { item -> item.trip in pageTrips }
             } else {
-                pageTrips.map { trip -> buildVideoListItem(appContext, trip) }
+                pageTrips.map { trip -> buildVideoListItem(appContext, trip, metadataCache) }
             }
+            metadataCache.save()
             if (requestId != renderRequestId) return@execute
             val totalBytes = videoItems.sumOf { it.totalBytes }
             val storedRecords = DriveRecordStore.loadRecords(appContext)
@@ -644,7 +647,8 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun videoTrackRecords(videoItems: List<VideoListItem>): List<DriveRecord> {
         return videoItems.mapNotNull { item ->
-            val track = item.track ?: return@mapNotNull null
+            val track = item.track
+            if (track == null) return@mapNotNull cachedVideoRecord(item)
             val points = track.points
             if (points.isEmpty()) return@mapNotNull null
             val summary = item.trackSummary ?: TrackMetrics.summary(points)
@@ -678,7 +682,49 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildVideoListItem(context: Context, trip: VideoStorage.VideoTrip): VideoListItem {
+    private fun cachedVideoRecord(item: VideoListItem): DriveRecord? {
+        val summary = item.trackSummary ?: return null
+        if (!item.hasTrack) return null
+        return DriveRecord(
+            startTimeMs = item.startTimeMs,
+            endTimeMs = item.endTimeMs,
+            durationMs = item.durationMs.takeIf { it > 0L } ?: summary.durationMs,
+            maxSpeedKmh = summary.maxSpeedKmh,
+            distanceMeters = item.distanceMeters,
+            averageSpeedKmh = summary.averageSpeedKmh,
+            averageAccuracyMeters = summary.averageAccuracyMeters,
+            goodFixRatio = summary.goodFixRatio,
+            source = DriveRecordStore.SOURCE_VIDEO,
+            routePoints = listOfNotNull(item.startPoint, item.endPoint)
+                .distinctBy { point -> point.elapsedMs to point.timeMs }
+                .map { point ->
+                    DriveRoutePoint(
+                        timeMs = point.timeMs,
+                        latitude = point.latitude,
+                        longitude = point.longitude,
+                        speedKmh = point.speedKmh,
+                        accuracyMeters = point.accuracyMeters,
+                        bearingDegrees = point.bearingDegrees
+                    )
+                }
+        )
+    }
+
+    private fun buildVideoListItem(
+        context: Context,
+        trip: VideoStorage.VideoTrip,
+        metadataCache: VideoHistoryCache.Store
+    ): VideoListItem {
+        val signature = VideoHistoryCache.signatureFor(context, trip)
+        metadataCache.read(trip.id, signature)?.let { cached ->
+            return cached.toVideoListItem(context, trip)
+        }
+        val item = buildVideoListItemUncached(context, trip)
+        metadataCache.write(item.toCacheEntry(trip.id, signature))
+        return item
+    }
+
+    private fun buildVideoListItemUncached(context: Context, trip: VideoStorage.VideoTrip): VideoListItem {
         val track = VideoTrackStorage.readMergedTrack(context, trip.segments)
         val points = track?.points.orEmpty()
         val trackSummary = points.takeIf { it.isNotEmpty() }?.let { TrackMetrics.summary(it) }
@@ -703,6 +749,41 @@ class HistoryActivity : AppCompatActivity() {
             endTimeMs = endTimeMs,
             durationMs = durationMs,
             distanceMeters = trackSummary?.totalDistanceMeters ?: 0f
+        )
+    }
+
+    private fun VideoHistoryCache.Entry.toVideoListItem(context: Context, trip: VideoStorage.VideoTrip): VideoListItem {
+        return VideoListItem(
+            trip = trip,
+            favorite = VideoStorage.isFavorite(context, trip),
+            totalBytes = totalBytes,
+            hasTrack = hasTrack,
+            hasSubtitle = hasSubtitle,
+            track = null,
+            trackSummary = trackSummary,
+            startPoint = startPoint,
+            endPoint = endPoint,
+            startTimeMs = startTimeMs,
+            endTimeMs = endTimeMs,
+            durationMs = durationMs,
+            distanceMeters = distanceMeters
+        )
+    }
+
+    private fun VideoListItem.toCacheEntry(tripId: String, signature: String): VideoHistoryCache.Entry {
+        return VideoHistoryCache.Entry(
+            tripId = tripId,
+            signature = signature,
+            totalBytes = totalBytes,
+            hasTrack = hasTrack,
+            hasSubtitle = hasSubtitle,
+            trackSummary = trackSummary,
+            startPoint = startPoint,
+            endPoint = endPoint,
+            startTimeMs = startTimeMs,
+            endTimeMs = endTimeMs,
+            durationMs = durationMs,
+            distanceMeters = distanceMeters
         )
     }
 
