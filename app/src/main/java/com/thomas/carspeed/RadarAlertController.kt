@@ -142,16 +142,18 @@ object RadarAlertController {
         }
         val text = when (warningType) {
             RadarDataWarningType.NETWORK_UNAVAILABLE -> "网络不可用，测速雷达数据可能无法更新，请注意观察路况"
-            RadarDataWarningType.DATA_STALE -> "测速雷达数据暂未更新，请注意观察路况"
+            RadarDataWarningType.DATA_STALE -> "高德暂未回调测速雷达数据"
         }
-        if (speak(text, nowMs)) {
+        val shouldSpeak = RadarAlertPlanner.shouldSpeakDataWarning(warningType)
+        val spoke = shouldSpeak && speak(text, nowMs)
+        if (spoke || !shouldSpeak) {
             dataHealth = RadarAlertPlanner.markDataWarning(dataHealth, warningType, nowMs)
             state = state.copy(
                 radarDataNetworkAvailable = networkAvailable,
                 lastDataWarningText = text,
                 lastDataWarningAtMs = nowMs,
-                lastSpokenText = text,
-                lastSpokenAtMs = nowMs
+                lastSpokenText = if (spoke) text else state.lastSpokenText,
+                lastSpokenAtMs = if (spoke) nowMs else state.lastSpokenAtMs
             )
         }
     }

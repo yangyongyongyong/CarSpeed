@@ -169,6 +169,10 @@ internal object RadarAlertPlanner {
         }
     }
 
+    fun shouldSpeakDataWarning(warningType: RadarDataWarningType): Boolean {
+        return warningType == RadarDataWarningType.NETWORK_UNAVAILABLE
+    }
+
     private fun canRepeatWarning(lastWarningAtMs: Long, nowMs: Long): Boolean {
         return lastWarningAtMs <= 0L || nowMs - lastWarningAtMs >= DATA_WARNING_REPEAT_MS
     }

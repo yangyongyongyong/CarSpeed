@@ -200,6 +200,12 @@ class RadarAlertPlannerTest {
         )
     }
 
+    @Test
+    fun only_network_unavailable_data_warning_is_spoken() {
+        assertTrue(RadarAlertPlanner.shouldSpeakDataWarning(RadarDataWarningType.NETWORK_UNAVAILABLE))
+        assertTrue(!RadarAlertPlanner.shouldSpeakDataWarning(RadarDataWarningType.DATA_STALE))
+    }
+
     private fun camera(key: String, distanceMeters: Int, speedLimit: Int? = 80): RadarCameraSnapshot {
         return RadarCameraSnapshot(
             key = key,
