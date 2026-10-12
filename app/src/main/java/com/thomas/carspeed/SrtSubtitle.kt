@@ -26,8 +26,12 @@ object SrtSubtitle {
         }
     }
 
-    fun cueAt(cues: List<SrtCue>, elapsedMs: Long): SrtCue? {
-        return cues.firstOrNull { elapsedMs in it.startMs until it.endMs }
+    fun cueAt(cues: List<SrtCue>, elapsedMs: Long, holdGapMs: Long = 0L): SrtCue? {
+        val active = cues.firstOrNull { elapsedMs in it.startMs until it.endMs }
+        if (active != null || holdGapMs <= 0L) return active
+        return cues.asReversed().firstOrNull { cue ->
+            elapsedMs >= cue.endMs && elapsedMs - cue.endMs <= holdGapMs
+        }
     }
 
     private fun parseBlock(block: String, offsetMs: Long, durationMs: Long): SrtCue? {

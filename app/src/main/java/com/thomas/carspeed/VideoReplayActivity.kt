@@ -621,7 +621,7 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     private fun syncSubtitle(elapsedMs: Long) {
-        val cue = SrtSubtitle.cueAt(subtitleCues, elapsedMs)
+        val cue = SrtSubtitle.cueAt(subtitleCues, elapsedMs, SUBTITLE_GAP_HOLD_MS)
         if (cue == null) {
             tvSubtitleOverlay.visibility = View.GONE
         } else {
@@ -904,6 +904,7 @@ class VideoReplayActivity : AppCompatActivity() {
         private const val MAX_VIDEO_MAP_RATIO = 0.85f
         private const val CONTROLS_AUTO_HIDE_MS = 1_500L
         private const val PLATE_REPLAY_HOLD_MS = 1_500L
+        private const val SUBTITLE_GAP_HOLD_MS = 1_500L
         private val PLAYBACK_SPEEDS = floatArrayOf(1f, 1.5f, 2f, 2.5f, 3f, 5f, 10f)
     }
 }
