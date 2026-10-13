@@ -36,9 +36,11 @@ data class ShareSubtitleFields(
     val showTime: Boolean = true,
     val showSpeed: Boolean = true,
     val showGps: Boolean = true,
+    val showSatellites: Boolean = true,
     val showAddress: Boolean = true,
     val showFocus: Boolean = true,
-    val showVideoMode: Boolean = true
+    val showVideoMode: Boolean = true,
+    val showRoadLayer: Boolean = true
 )
 
 object ShareVideoExporter {
@@ -184,8 +186,8 @@ object ShareVideoExporter {
 
     private fun subtitleAt(timeline: ExportTimeline, elapsedMs: Long, fields: ShareSubtitleFields): String? {
         val cue = SrtSubtitle.cueAt(timeline.subtitleCues, elapsedMs) ?: return null
-        val filtered = cue.text.lines().filter { line -> ShareSubtitleFormatter.keepLine(line, fields) }
-        return filtered.joinToString("\n").takeIf { it.isNotBlank() }
+        val filtered = ShareSubtitleFormatter.filter(cue.text, fields)
+        return filtered.takeIf { it.isNotBlank() }
     }
 
     private fun durationMs(video: File): Long {
@@ -539,6 +541,14 @@ object ShareFramePainter {
 }
 
 object ShareSubtitleFormatter {
+    fun filter(text: String, fields: ShareSubtitleFields): String {
+        return text.lines()
+            .flatMap { line -> line.split('|') }
+            .map { it.trim() }
+            .filter { segment -> segment.isNotBlank() && keepLine(segment, fields) }
+            .joinToString("  |  ")
+    }
+
     fun keepLine(line: String, fields: ShareSubtitleFields): Boolean {
         val text = line.trim()
         if (text.isBlank()) return false
@@ -546,8 +556,10 @@ object ShareSubtitleFormatter {
             SubtitleCategory.TIME -> fields.showTime
             SubtitleCategory.SPEED -> fields.showSpeed
             SubtitleCategory.GPS -> fields.showGps
+            SubtitleCategory.SATELLITES -> fields.showSatellites
             SubtitleCategory.FOCUS -> fields.showFocus
             SubtitleCategory.VIDEO_MODE -> fields.showVideoMode
+            SubtitleCategory.ROAD_LAYER -> fields.showRoadLayer
             SubtitleCategory.ADDRESS -> fields.showAddress
         }
     }
@@ -556,14 +568,18 @@ object ShareSubtitleFormatter {
         return when {
             DATE_TIME_REGEX.containsMatchIn(text) -> SubtitleCategory.TIME
             text.contains("km/h", ignoreCase = true) -> SubtitleCategory.SPEED
+            text.startsWith("GPS卫星") -> SubtitleCategory.SATELLITES
             text == "GPS --" || COORDINATE_REGEX.containsMatchIn(text) -> SubtitleCategory.GPS
             text.startsWith("对焦") -> SubtitleCategory.FOCUS
+            text == RoadLayerLabels.ON_BRIDGE ||
+                text == RoadLayerLabels.UNDER_BRIDGE ||
+                text == RoadLayerLabels.TUNNEL -> SubtitleCategory.ROAD_LAYER
             text.contains("fps", ignoreCase = true) || text.contains("HDR", ignoreCase = true) -> SubtitleCategory.VIDEO_MODE
             else -> SubtitleCategory.ADDRESS
         }
     }
 
-    private enum class SubtitleCategory { TIME, SPEED, GPS, ADDRESS, FOCUS, VIDEO_MODE }
+    private enum class SubtitleCategory { TIME, SPEED, GPS, SATELLITES, ADDRESS, FOCUS, VIDEO_MODE, ROAD_LAYER }
 
     private val DATE_TIME_REGEX = Regex("\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}")
     private val COORDINATE_REGEX = Regex("-?\\d{1,3}\\.\\d{4,},\\s*-?\\d{1,3}\\.\\d{4,}")

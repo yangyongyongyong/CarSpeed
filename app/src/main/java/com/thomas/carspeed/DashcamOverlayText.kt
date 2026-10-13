@@ -9,6 +9,7 @@ data class DashcamTelemetry(
     val speedKmh: Float = 0f,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    val satelliteCount: Int? = null,
     val address: String? = null,
     val focusDistanceDiopters: Float? = null,
     val autofocusState: String? = null
@@ -46,8 +47,21 @@ object DashcamOverlayText {
                 "GPS --"
             }
         }
+        if (settings.showSatellites) {
+            val count = telemetry.satelliteCount
+            result += if (count != null) {
+                context.getString(R.string.gps_satellite_label_fmt, count)
+            } else {
+                context.getString(R.string.gps_satellite_unknown)
+            }
+        }
         if (settings.showAddress) {
-            result += telemetry.address ?: context.getString(R.string.watermark_address_pending)
+            val layer = RoadLayerEngine.subtitleLabel()
+            result += telemetry.address?.let { PlaceSubtitle.withLayer(it, layer) }
+                ?: context.getString(R.string.watermark_address_pending)
+        }
+        if (settings.showRoadLayer && !settings.showAddress) {
+            RoadLayerEngine.subtitleLabel()?.let { result += it }
         }
         if (settings.showFocus) {
             result += formatFocus(telemetry, context)

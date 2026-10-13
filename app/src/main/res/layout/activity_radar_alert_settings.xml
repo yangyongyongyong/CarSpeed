@@ -97,6 +97,74 @@
                     android:layout_marginTop="6dp"
                     android:max="220" />
 
+                <CheckBox
+                    android:id="@+id/cbPitchRoadLayer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/radar_pitch_road_layer"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/radar_pitch_road_layer_helper"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                <CheckBox
+                    android:id="@+id/cbSatelliteTunnel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/radar_satellite_tunnel"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/radar_satellite_tunnel_helper"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                <CheckBox
+                    android:id="@+id/cbUnknownRoadElevated"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/radar_unknown_layer_elevated"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:id="@+id/tvRoadLayerStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/radar_road_layer_default_elevated"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/radar_unknown_layer_helper"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                <CheckBox
+                    android:id="@+id/cbRoadDivergenceCorrection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/radar_divergence_correction"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/radar_divergence_correction_helper"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.widget.Button
 import android.widget.CheckBox
@@ -26,7 +28,19 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
     private lateinit var sbRadarLeadSeconds: SeekBar
     private lateinit var tvRadarSpeechRateLabel: TextView
     private lateinit var sbRadarSpeechRate: SeekBar
+    private lateinit var cbPitchRoadLayer: CheckBox
+    private lateinit var cbSatelliteTunnel: CheckBox
+    private lateinit var cbUnknownRoadElevated: CheckBox
+    private lateinit var cbRoadDivergenceCorrection: CheckBox
+    private lateinit var tvRoadLayerStatus: TextView
+    private val uiHandler = Handler(Looper.getMainLooper())
     private var updating = false
+    private val statusRefresh = object : Runnable {
+        override fun run() {
+            renderStatus()
+            uiHandler.postDelayed(this, 1_000L)
+        }
+    }
 
     private val requestLocationPermission =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
@@ -62,6 +76,11 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
         sbRadarLeadSeconds = findViewById(R.id.sbRadarLeadSeconds)
         tvRadarSpeechRateLabel = findViewById(R.id.tvRadarSpeechRateLabel)
         sbRadarSpeechRate = findViewById(R.id.sbRadarSpeechRate)
+        cbPitchRoadLayer = findViewById(R.id.cbPitchRoadLayer)
+        cbSatelliteTunnel = findViewById(R.id.cbSatelliteTunnel)
+        cbUnknownRoadElevated = findViewById(R.id.cbUnknownRoadElevated)
+        cbRoadDivergenceCorrection = findViewById(R.id.cbRoadDivergenceCorrection)
+        tvRoadLayerStatus = findViewById(R.id.tvRoadLayerStatus)
 
         toolbar.setNavigationOnClickListener { finish() }
         setupControls()
@@ -71,7 +90,13 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (RadarAlertSettingsStore.load(this).enabled) RadarAlertService.sync(this)
-        renderStatus()
+        uiHandler.removeCallbacks(statusRefresh)
+        uiHandler.post(statusRefresh)
+    }
+
+    override fun onPause() {
+        uiHandler.removeCallbacks(statusRefresh)
+        super.onPause()
     }
 
     private fun setupControls() {
@@ -150,6 +175,40 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
                 RadarAlertService.sync(this@RadarAlertSettingsActivity)
             }
         })
+
+        cbPitchRoadLayer.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(RadarAlertSettingsStore.PREF_RADAR_PITCH_ROAD_LAYER, checked)
+                .commit()
+        }
+
+        cbSatelliteTunnel.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(RadarAlertSettingsStore.PREF_RADAR_SATELLITE_TUNNEL, checked)
+                .commit()
+        }
+
+        cbUnknownRoadElevated.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(RadarAlertSettingsStore.PREF_RADAR_UNKNOWN_ROAD_LAYER_ELEVATED, checked)
+                .commit()
+            RadarAlertController.onUnknownRoadDefaultChanged(checked)
+            renderStatus()
+        }
+
+        cbRoadDivergenceCorrection.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(RadarAlertSettingsStore.PREF_RADAR_ROAD_DIVERGENCE_CORRECTION, checked)
+                .commit()
+        }
     }
 
     private fun loadSettings() {
@@ -162,6 +221,10 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
         sbRadarSpeechRate.min = RadarAlertSettingsStore.MIN_SPEECH_RATE_PERCENT
         sbRadarSpeechRate.max = RadarAlertSettingsStore.MAX_SPEECH_RATE_PERCENT
         sbRadarSpeechRate.progress = settings.speechRatePercent
+        cbPitchRoadLayer.isChecked = settings.pitchRoadLayerEnabled
+        cbSatelliteTunnel.isChecked = settings.satelliteTunnelEnabled
+        cbUnknownRoadElevated.isChecked = settings.unknownRoadLayerElevated
+        cbRoadDivergenceCorrection.isChecked = settings.roadDivergenceCorrectionEnabled
         updating = false
         updateRadarThresholdLabel(settings.thresholdsSeconds)
         updateRadarLeadLabel(settings.leadSeconds)
@@ -205,6 +268,37 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
             state.active -> getString(R.string.radar_status_on)
             !hasLocationPermission() -> getString(R.string.radar_status_need_location)
             else -> getString(R.string.radar_status_waiting)
+        }
+        tvRoadLayerStatus.text = roadLayerStatusText(settings, state)
+    }
+
+    private fun roadLayerStatusText(settings: RadarAlertSettings, state: RadarAlertState): String {
+        if (settings.enabled && state.active && state.alertRoadInTunnel && !state.roadLayerUsingDefault) {
+            return getString(R.string.radar_road_layer_tunnel)
+        }
+        if (settings.enabled && state.active && !state.attitudeSensorsAvailable) {
+            return getString(R.string.radar_road_layer_no_gyro)
+        }
+        if (settings.enabled && state.active && state.roadLayerCorrectedByDivergence && !state.roadLayerUsingDefault) {
+            return getString(
+                if (state.alertRoadLayerElevated) {
+                    R.string.radar_road_layer_divergence_elevated
+                } else {
+                    R.string.radar_road_layer_divergence_ground
+                }
+            )
+        }
+        val elevated = if (settings.enabled && state.active) {
+            state.alertRoadLayerElevated
+        } else {
+            settings.unknownRoadLayerElevated
+        }
+        val usingDefault = !state.active || state.roadLayerUsingDefault
+        return when {
+            usingDefault && elevated -> getString(R.string.radar_road_layer_default_elevated)
+            usingDefault -> getString(R.string.radar_road_layer_default_ground)
+            elevated -> getString(R.string.radar_road_layer_elevated)
+            else -> getString(R.string.radar_road_layer_ground)
         }
     }
 

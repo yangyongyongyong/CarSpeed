@@ -1,5 +1,6 @@
 package com.thomas.carspeed
 
+import android.content.Intent
 import android.graphics.SurfaceTexture
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
@@ -160,6 +161,7 @@ class VideoReplayActivity : AppCompatActivity() {
         tvMapReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvReplayFullscreen.setOnClickListener { setFullscreen(!fullscreen) }
         mapRouteView.onMapTap = { if (!mapFullscreen) setMapFullscreen(true) }
+        mapRouteView.onPhotoClick = { path -> openRoutePhoto(path) }
         mapRouteView.onScaleChanged = { updateMapControls() }
         mapRouteView.setOverlayControlsVisible(false)
         btnMapViewportAll.setOnClickListener { mapRouteView.showWholeRoute() }
@@ -574,7 +576,7 @@ class VideoReplayActivity : AppCompatActivity() {
                 summary.averageSpeedKmh
             )
         }
-        mapRouteView.setRoute(points, 0L)
+        publishRoute(points, 0L)
     }
 
     private fun renderTrackInfo() {
@@ -592,7 +594,30 @@ class VideoReplayActivity : AppCompatActivity() {
                 summary.averageSpeedKmh
             )
         }
-        mapRouteView.setRoute(points, 0L)
+        publishRoute(points, 0L)
+    }
+
+    private fun publishRoute(points: List<VideoTrackPoint>, elapsedMs: Long) {
+        mapRouteView.setRoute(points, elapsedMs)
+        mapRouteView.setPhotoMarks(
+            RoutePhotoMarks.match(points, routePhotoCandidates(), track?.startTimeMs ?: 0L)
+        )
+    }
+
+    private fun routePhotoCandidates(): List<RoutePhotoCandidate> {
+        return VideoStorage.photoFiles(this).mapNotNull { file ->
+            val timeMs = RoutePhotoMarks.timeFromFileName(file.name) ?: return@mapNotNull null
+            RoutePhotoCandidate(timeMs, file.absolutePath)
+        }
+    }
+
+    private fun openRoutePhoto(path: String) {
+        val file = File(path)
+        if (!file.exists()) {
+            Toast.makeText(this, R.string.photo_preview_missing, Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(Intent(this, PhotoPreviewActivity::class.java).putExtra(PhotoPreviewActivity.EXTRA_PATH, file.absolutePath))
     }
 
     private fun syncRouteToVideo() {

@@ -17,12 +17,16 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 class RadarAlertService : Service(), LocationListener {
     private var locationManager: LocationManager? = null
+    private var roadLayerClient = false
+    private var attitudeSensorsAvailable = false
+    private var lastRoadNotifKey: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +49,7 @@ class RadarAlertService : Service(), LocationListener {
     }
 
     override fun onDestroy() {
+        stopAttitudeWatch()
         stopLocationWatch()
         RadarAlertController.stop()
         super.onDestroy()
@@ -53,10 +58,17 @@ class RadarAlertService : Service(), LocationListener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onLocationChanged(location: Location) {
-        if (location.hasSpeed()) {
-            RadarAlertController.updateSpeed(SpeedRules.toKmhClamped(location.speed))
-            RadarAlertController.checkDataAvailability(isNetworkAvailable())
-        }
+        val now = SystemClock.elapsedRealtime()
+        RoadLayerEngine.onGpsFix(
+            now,
+            location.accuracy.takeIf { location.hasAccuracy() },
+            location.bearing.takeIf { location.hasBearing() }
+        )
+        if (!location.hasSpeed()) return
+        val speedKmh = SpeedRules.toKmhClamped(location.speed)
+        RadarAlertController.updateSpeed(speedKmh)
+        RadarAlertController.checkDataAvailability(isNetworkAvailable())
+        RoadLayerEngine.onSpeed(now, speedKmh)
     }
 
     private fun startIfEnabled(): Boolean {
@@ -69,10 +81,36 @@ class RadarAlertService : Service(), LocationListener {
             stopSelf()
             return false
         }
+        startAttitudeWatch()
         startForeground(NOTIFICATION_ID, buildNotification())
         startLocationWatch()
         RadarAlertController.refresh(this)
         return true
+    }
+
+    private fun startAttitudeWatch() {
+        if (!roadLayerClient) {
+            roadLayerClient = true
+            attitudeSensorsAvailable = RoadLayerEngine.start(this)
+            RoadLayerEngine.setDecisionListener { decision -> publishRoadLayerNotification(decision) }
+        }
+        RadarAlertController.setAttitudeSensorsAvailable(RoadLayerEngine.sensorsAvailable)
+        attitudeSensorsAvailable = RoadLayerEngine.sensorsAvailable
+    }
+
+    private fun stopAttitudeWatch() {
+        if (!roadLayerClient) return
+        roadLayerClient = false
+        RoadLayerEngine.setDecisionListener(null)
+        RoadLayerEngine.setAmapElevatedFlag(RoadLayerAlertGate.ELEVATED_NONE)
+        RoadLayerEngine.stop()
+    }
+
+    private fun publishRoadLayerNotification(decision: RoadLayerDecision) {
+        val key = "${decision.alertLayer}:${decision.usingDefault}:${decision.correctedByDivergence}"
+        if (key == lastRoadNotifKey) return
+        lastRoadNotifKey = key
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun startLocationWatch() {
@@ -135,11 +173,37 @@ class RadarAlertService : Service(), LocationListener {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setContentTitle(getString(R.string.radar_notif_title))
-            .setContentText(getString(R.string.radar_notif_text))
+            .setContentText(roadNotificationText())
             .setContentIntent(openIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
+            .addAction(android.R.drawable.ic_lock_power_off, getString(R.string.notif_action_exit_background), AppBackgroundExit.pendingIntent(this))
             .setOngoing(true)
             .build()
+    }
+
+    private fun roadNotificationText(): String {
+        if (!attitudeSensorsAvailable) return getString(R.string.radar_road_layer_no_gyro)
+        val state = RadarAlertController.currentState()
+        if (state.active && state.alertRoadInTunnel && !state.roadLayerUsingDefault) {
+            return getString(R.string.radar_road_layer_tunnel)
+        }
+        if (state.active && state.roadLayerCorrectedByDivergence && !state.roadLayerUsingDefault) {
+            return getString(
+                if (state.alertRoadLayerElevated) {
+                    R.string.radar_road_layer_divergence_elevated
+                } else {
+                    R.string.radar_road_layer_divergence_ground
+                }
+            )
+        }
+        val elevated = if (state.active) state.alertRoadLayerElevated else RadarAlertSettingsStore.load(this).unknownRoadLayerElevated
+        val usingDefault = !state.active || state.roadLayerUsingDefault
+        return when {
+            usingDefault && elevated -> getString(R.string.radar_road_layer_default_elevated)
+            usingDefault -> getString(R.string.radar_road_layer_default_ground)
+            elevated -> getString(R.string.radar_road_layer_elevated)
+            else -> getString(R.string.radar_road_layer_ground)
+        }
     }
 
     companion object {

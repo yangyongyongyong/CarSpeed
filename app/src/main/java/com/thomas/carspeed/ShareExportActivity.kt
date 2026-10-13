@@ -51,9 +51,11 @@ class ShareExportActivity : AppCompatActivity() {
     private lateinit var cbSubtitleTime: CheckBox
     private lateinit var cbSubtitleSpeed: CheckBox
     private lateinit var cbSubtitleGps: CheckBox
+    private lateinit var cbSubtitleSatellites: CheckBox
     private lateinit var cbSubtitleAddress: CheckBox
     private lateinit var cbSubtitleFocus: CheckBox
     private lateinit var cbSubtitleVideoMode: CheckBox
+    private lateinit var cbSubtitleRoadLayer: CheckBox
     private var videos: List<File> = emptyList()
     private var segmentDurationsMs: List<Long> = emptyList()
     private var segmentOffsetsMs: List<Long> = emptyList()
@@ -181,10 +183,21 @@ class ShareExportActivity : AppCompatActivity() {
             cbSubtitleTime = subtitleCheckBox(getString(R.string.share_export_field_time))
             cbSubtitleSpeed = subtitleCheckBox(getString(R.string.share_export_field_speed))
             cbSubtitleGps = subtitleCheckBox(getString(R.string.share_export_field_gps))
+            cbSubtitleSatellites = subtitleCheckBox(getString(R.string.share_export_field_satellites))
             cbSubtitleAddress = subtitleCheckBox(getString(R.string.share_export_field_address))
             cbSubtitleFocus = subtitleCheckBox(getString(R.string.share_export_field_focus))
             cbSubtitleVideoMode = subtitleCheckBox(getString(R.string.share_export_field_video_mode))
-            listOf(cbSubtitleTime, cbSubtitleSpeed, cbSubtitleGps, cbSubtitleAddress, cbSubtitleFocus, cbSubtitleVideoMode).forEach {
+            cbSubtitleRoadLayer = subtitleCheckBox(getString(R.string.share_export_field_road_layer))
+            listOf(
+                cbSubtitleTime,
+                cbSubtitleSpeed,
+                cbSubtitleGps,
+                cbSubtitleSatellites,
+                cbSubtitleAddress,
+                cbSubtitleFocus,
+                cbSubtitleVideoMode,
+                cbSubtitleRoadLayer
+            ).forEach {
                 subtitleGrid.addView(it)
             }
             box.addView(subtitleGrid)
@@ -383,9 +396,11 @@ class ShareExportActivity : AppCompatActivity() {
                 showTime = cbSubtitleTime.isChecked,
                 showSpeed = cbSubtitleSpeed.isChecked,
                 showGps = cbSubtitleGps.isChecked,
+                showSatellites = cbSubtitleSatellites.isChecked,
                 showAddress = cbSubtitleAddress.isChecked,
                 showFocus = cbSubtitleFocus.isChecked,
-                showVideoMode = cbSubtitleVideoMode.isChecked
+                showVideoMode = cbSubtitleVideoMode.isChecked,
+                showRoadLayer = cbSubtitleRoadLayer.isChecked
             )
         )
     }

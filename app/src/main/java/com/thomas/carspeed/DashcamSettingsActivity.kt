@@ -51,7 +51,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var cbWatermarkTime: CheckBox
     private lateinit var cbWatermarkSpeed: CheckBox
     private lateinit var cbWatermarkGps: CheckBox
+    private lateinit var cbWatermarkSatellites: CheckBox
     private lateinit var cbWatermarkAddress: CheckBox
+    private lateinit var cbWatermarkRoadLayer: CheckBox
     private lateinit var cbWatermarkVideoMode: CheckBox
     private lateinit var cbWatermarkFocus: CheckBox
     private lateinit var cbPlateRecognition: CheckBox
@@ -129,7 +131,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbWatermarkTime = findViewById(R.id.cbWatermarkTime)
         cbWatermarkSpeed = findViewById(R.id.cbWatermarkSpeed)
         cbWatermarkGps = findViewById(R.id.cbWatermarkGps)
+        cbWatermarkSatellites = findViewById(R.id.cbWatermarkSatellites)
         cbWatermarkAddress = findViewById(R.id.cbWatermarkAddress)
+        cbWatermarkRoadLayer = findViewById(R.id.cbWatermarkRoadLayer)
         cbWatermarkVideoMode = findViewById(R.id.cbWatermarkVideoMode)
         cbWatermarkFocus = findViewById(R.id.cbWatermarkFocus)
         cbPlateRecognition = findViewById(R.id.cbPlateRecognition)
@@ -170,7 +174,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
             cbWatermarkTime,
             cbWatermarkSpeed,
             cbWatermarkGps,
+            cbWatermarkSatellites,
             cbWatermarkAddress,
+            cbWatermarkRoadLayer,
             cbWatermarkVideoMode,
             cbWatermarkFocus,
             cbPlateRecognition
@@ -530,7 +536,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbWatermarkTime.isChecked = settings.showTime
         cbWatermarkSpeed.isChecked = settings.showSpeed
         cbWatermarkGps.isChecked = settings.showGps
+        cbWatermarkSatellites.isChecked = settings.showSatellites
         cbWatermarkAddress.isChecked = settings.showAddress
+        cbWatermarkRoadLayer.isChecked = settings.showRoadLayer
         cbWatermarkVideoMode.isChecked = settings.showVideoMode
         cbWatermarkFocus.isChecked = settings.showFocus
         cbPlateRecognition.isChecked = settings.plateRecognitionEnabled
@@ -596,7 +604,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
             .putBoolean(DashcamSettings.PREF_WATERMARK_TIME, cbWatermarkTime.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_SPEED, cbWatermarkSpeed.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_GPS, cbWatermarkGps.isChecked)
+            .putBoolean(DashcamSettings.PREF_WATERMARK_SATELLITES, cbWatermarkSatellites.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_ADDRESS, cbWatermarkAddress.isChecked)
+            .putBoolean(DashcamSettings.PREF_WATERMARK_ROAD_LAYER, cbWatermarkRoadLayer.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_VIDEO_MODE, cbWatermarkVideoMode.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_FOCUS, cbWatermarkFocus.isChecked)
             .putBoolean(DashcamSettings.PREF_PLATE_RECOGNITION_ENABLED, cbPlateRecognition.isChecked)

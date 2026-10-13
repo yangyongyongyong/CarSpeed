@@ -11,6 +11,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.amap.api.navi.AMapNavi
 import com.amap.api.navi.AimlessModeListener
+import com.amap.api.navi.ParallelRoadListener
 import com.amap.api.navi.enums.AimLessMode
 import com.amap.api.navi.model.AMapNaviTrafficFacilityInfo
 import com.amap.api.navi.model.AimLessModeCongestionInfo
@@ -34,7 +35,12 @@ data class RadarAlertState(
     val lastDataWarningText: String? = null,
     val lastDataWarningAtMs: Long = 0L,
     val lastSpokenText: String? = null,
-    val lastSpokenAtMs: Long = 0L
+    val lastSpokenAtMs: Long = 0L,
+    val attitudeSensorsAvailable: Boolean = true,
+    val alertRoadLayerElevated: Boolean = true,
+    val alertRoadInTunnel: Boolean = false,
+    val roadLayerUsingDefault: Boolean = true,
+    val roadLayerCorrectedByDivergence: Boolean = false
 )
 
 object RadarAlertController {
@@ -55,7 +61,16 @@ object RadarAlertController {
     private var activeCameraLock: RadarCameraLock? = null
     private var dataHealth = RadarDataHealthState(serviceStartedAtMs = 0L, lastDataAtMs = 0L)
     private val firedThresholdsByCamera = mutableMapOf<String, MutableSet<Int>>()
+    private val etaAnchorByCamera = mutableMapOf<String, EtaAnchor>()
     private val passedCameraKeys = mutableSetOf<String>()
+    private val roadLock = Any()
+    private var alertLayerElevated = true
+    private var alertRoadInTunnel = false
+    private var roadLayerUsingDefault = true
+    private var roadLayerCorrectedByDivergence = false
+    private var elevatedFlag = RoadLayerAlertGate.ELEVATED_NONE
+    private var pendingSwitchSinceMs = 0L
+    private var lastSwitchAtMs = 0L
 
     private val aimlessListener = object : AimlessModeListener {
         override fun onUpdateTrafficFacility(infos: Array<AMapNaviTrafficFacilityInfo>?) = Unit
@@ -69,6 +84,10 @@ object RadarAlertController {
         override fun updateAimlessModeCongestionInfo(aimLessModeCongestionInfo: AimLessModeCongestionInfo?) = Unit
     }
 
+    private val parallelRoadListener = ParallelRoadListener { status ->
+        onParallelRoad(status?.getmElevatedRoadStatusFlag() ?: RoadLayerAlertGate.ELEVATED_NONE)
+    }
+
     fun start(context: Context) {
         val settings = RadarAlertSettingsStore.load(context)
         appContext = context.applicationContext
@@ -79,21 +98,37 @@ object RadarAlertController {
             speechRatePercent = settings.speechRatePercent
         )
         if (!settings.enabled || state.active) return
+        var activeNavi: AMapNavi? = null
         try {
             ensureTts(context.applicationContext, settings)
-            val activeNavi = AMapNavi.getInstance(context.applicationContext)
-            activeNavi.setUseInnerVoice(false, true)
-            activeNavi.addAimlessModeListener(aimlessListener)
-            activeNavi.startGPS(1_000L)
-            activeNavi.startAimlessMode(AimLessMode.CAMERA_DETECTED)
+            activeNavi = AMapNavi.getInstance(context.applicationContext)
+            activeNavi?.setUseInnerVoice(false, true)
+            activeNavi?.addAimlessModeListener(aimlessListener)
+            activeNavi?.addParallelRoadListener(parallelRoadListener)
+            activeNavi?.startGPS(1_000L)
+            activeNavi?.startAimlessMode(AimLessMode.CAMERA_DETECTED)
             navi = activeNavi
+            resetRoadLayer(settings.unknownRoadLayerElevated)
             val now = System.currentTimeMillis()
             activeCameraLock = null
             dataHealth = RadarDataHealthState(serviceStartedAtMs = now, lastDataAtMs = now)
             firedThresholdsByCamera.clear()
+            etaAnchorByCamera.clear()
             passedCameraKeys.clear()
-            state = state.copy(active = true, lastError = null)
+            state = state.copy(
+                active = true,
+                lastError = null,
+                alertRoadLayerElevated = settings.unknownRoadLayerElevated,
+                alertRoadInTunnel = false,
+                roadLayerUsingDefault = true,
+                roadLayerCorrectedByDivergence = false
+            )
         } catch (error: Exception) {
+            runCatching { activeNavi?.stopAimlessMode() }
+            runCatching { activeNavi?.stopGPS() }
+            runCatching { activeNavi?.removeAimlessModeListener(aimlessListener) }
+            runCatching { activeNavi?.removeParallelRoadListener(parallelRoadListener) }
+            navi = null
             state = state.copy(active = false, lastError = error.message ?: error.javaClass.simpleName)
         }
     }
@@ -118,6 +153,7 @@ object RadarAlertController {
         runCatching { navi?.stopAimlessMode() }
         runCatching { navi?.stopGPS() }
         runCatching { navi?.removeAimlessModeListener(aimlessListener) }
+        runCatching { navi?.removeParallelRoadListener(parallelRoadListener) }
         runCatching { tts?.stop() }
         runCatching { tts?.shutdown() }
         navi = null
@@ -127,6 +163,7 @@ object RadarAlertController {
         activeCameraLock = null
         dataHealth = RadarDataHealthState(serviceStartedAtMs = 0L, lastDataAtMs = 0L)
         firedThresholdsByCamera.clear()
+        etaAnchorByCamera.clear()
         passedCameraKeys.clear()
         AMapNavi.setTtsPlaying(false)
         state = state.copy(active = false)
@@ -134,6 +171,108 @@ object RadarAlertController {
 
     fun updateSpeed(speedKmh: Float) {
         latestSpeedKmh = speedKmh.coerceAtLeast(0f)
+        if (state.active) maybeSwitchElevated()
+    }
+
+    fun setAttitudeSensorsAvailable(available: Boolean) {
+        state = state.copy(attitudeSensorsAvailable = available)
+    }
+
+    internal fun updateRoadLayer(decision: RoadLayerDecision) {
+        val changed = synchronized(roadLock) {
+            val elevated = decision.alertLayer == RoadLayer.ELEVATED
+            val tunnel = decision.alertLayer == RoadLayer.TUNNEL
+            val usingDefault = decision.usingDefault
+            val corrected = decision.correctedByDivergence
+            val same = elevated == alertLayerElevated &&
+                tunnel == alertRoadInTunnel &&
+                usingDefault == roadLayerUsingDefault &&
+                corrected == roadLayerCorrectedByDivergence
+            alertLayerElevated = elevated
+            alertRoadInTunnel = tunnel
+            roadLayerUsingDefault = usingDefault
+            roadLayerCorrectedByDivergence = corrected
+            !same
+        }
+        if (!changed) return
+        publishRoadLayer()
+        maybeSwitchElevated()
+    }
+
+    fun onUnknownRoadDefaultChanged(elevated: Boolean) {
+        val shouldSwitch = synchronized(roadLock) {
+            if (!roadLayerUsingDefault) return@synchronized false
+            alertLayerElevated = elevated
+            alertRoadInTunnel = false
+            true
+        }
+        publishRoadLayer()
+        if (shouldSwitch) maybeSwitchElevated()
+    }
+
+    private fun onParallelRoad(flag: Int) {
+        synchronized(roadLock) { elevatedFlag = flag }
+        RoadLayerEngine.setAmapElevatedFlag(flag)
+        maybeSwitchElevated()
+    }
+
+    private fun resetRoadLayer(unknownDefaultsToElevated: Boolean) {
+        synchronized(roadLock) {
+            alertLayerElevated = unknownDefaultsToElevated
+            alertRoadInTunnel = false
+            roadLayerUsingDefault = true
+            roadLayerCorrectedByDivergence = false
+            elevatedFlag = RoadLayerAlertGate.ELEVATED_NONE
+            pendingSwitchSinceMs = 0L
+            lastSwitchAtMs = 0L
+        }
+    }
+
+    private fun publishRoadLayer() {
+        val snapshot = synchronized(roadLock) {
+            LayerPublish(
+                elevated = alertLayerElevated,
+                tunnel = alertRoadInTunnel,
+                usingDefault = roadLayerUsingDefault,
+                corrected = roadLayerCorrectedByDivergence
+            )
+        }
+        state = state.copy(
+            alertRoadLayerElevated = snapshot.elevated,
+            alertRoadInTunnel = snapshot.tunnel,
+            roadLayerUsingDefault = snapshot.usingDefault,
+            roadLayerCorrectedByDivergence = snapshot.corrected
+        )
+    }
+
+    private fun maybeSwitchElevated(nowMs: Long = System.currentTimeMillis()) {
+        val activeNavi = navi ?: return
+        val doSwitch = synchronized(roadLock) {
+            if (!RoadLayerAlertGate.needsSwitch(alertLayerElevated, elevatedFlag)) {
+                pendingSwitchSinceMs = 0L
+                false
+            } else if (nowMs - lastSwitchAtMs < RoadLayerAlertGate.SWITCH_COOLDOWN_MS) {
+                false
+            } else {
+                lastSwitchAtMs = nowMs
+                pendingSwitchSinceMs = nowMs
+                true
+            }
+        }
+        if (doSwitch) {
+            RoadLayerEngine.noteOwnParallelSwitch()
+            runCatching { activeNavi.switchParallelRoad(RoadLayerAlertGate.SWITCH_TYPE_ELEVATED) }
+        }
+    }
+
+    private fun roadSnapshot(): RoadSnapshot {
+        return synchronized(roadLock) {
+            RoadSnapshot(
+                alertElevated = alertLayerElevated,
+                elevatedFlag = elevatedFlag,
+                pendingSwitchSinceMs = pendingSwitchSinceMs
+            )
+        }
     }
 
     fun checkDataAvailability(networkAvailable: Boolean, nowMs: Long = System.currentTimeMillis()) {
@@ -208,6 +347,19 @@ object RadarAlertController {
         val now = System.currentTimeMillis()
         dataHealth = dataHealth.copy(lastDataAtMs = now)
         state = state.copy(lastRadarDataAtMs = now)
+        val road = roadSnapshot()
+        val overlapMode = RoadLayerAlertGate.mode(
+            alertElevated = road.alertElevated,
+            elevatedFlag = road.elevatedFlag,
+            pendingSwitchSinceMs = road.pendingSwitchSinceMs,
+            nowMs = now
+        )
+        if (overlapMode == OverlapAlertMode.SUPPRESS) return
+        val layerPrefix = if (overlapMode == OverlapAlertMode.LAYER) {
+            if (road.alertElevated) "高架" else "地面"
+        } else {
+            null
+        }
         val speedKmh = latestSpeedKmh.takeIf { it >= MIN_SPEED_FOR_ETA_KMH } ?: return
         val cameras = cameraInfo
             .filter { it.getDistance() > 0 && isSpeedCamera(it.getBroadcastType()) }
@@ -236,10 +388,13 @@ object RadarAlertController {
         val nearest = selection.camera ?: return
 
         val distance = nearest.distanceMeters
-        val etaSeconds = RadarAlertPlanner.etaSeconds(distance, speedKmh) ?: return
+        val rawEtaSeconds = RadarAlertPlanner.etaSeconds(distance, speedKmh) ?: return
+        val reconciled = RadarAlertPlanner.reconcileEta(etaAnchorByCamera[nearest.key], rawEtaSeconds, now)
+        val etaSeconds = reconciled.etaSeconds
+        etaAnchorByCamera[nearest.key] = reconciled.anchor
         val fired = firedThresholdsByCamera[nearest.key].orEmpty()
         if (RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(nearest, fired)) {
-            val text = RadarAlertPlanner.farUnknownLimitAlertText(distance)
+            val text = withRoadLayer(layerPrefix, RadarAlertPlanner.farUnknownLimitAlertText(distance))
             val spoke = speak(text)
             if (spoke) {
                 firedThresholdsByCamera.getOrPut(nearest.key) { mutableSetOf() } += RadarAlertPlanner.FAR_UNKNOWN_LIMIT_ALERT_MARKER
@@ -281,7 +436,7 @@ object RadarAlertController {
         firedThresholdsByCamera.getOrPut(nearest.key) { mutableSetOf() } +=
             RadarAlertPlanner.thresholdsToMark(dueThresholds, threshold)
         val speedLimit = nearest.speedLimit
-        val text = buildAlertText(threshold, distance, speedLimit)
+        val text = withRoadLayer(layerPrefix, buildAlertText(threshold, distance, speedLimit))
         val spoke = speak(text)
         state = state.copy(
             enabled = settings.enabled,
@@ -308,6 +463,10 @@ object RadarAlertController {
         val longitude = (info.getCoorX() * 100_000).roundToInt()
         val latitude = (info.getCoorY() * 100_000).roundToInt()
         return "$longitude:$latitude:${info.getBroadcastType()}:${info.getLimitSpeed()}"
+    }
+
+    private fun withRoadLayer(prefix: String?, text: String): String {
+        return if (prefix.isNullOrEmpty()) text else "$prefix，$text"
     }
 
     private fun buildAlertText(thresholdSeconds: Int, distanceMeters: Int, speedLimit: Int?): String {
@@ -344,6 +503,19 @@ object RadarAlertController {
         mainHandler.postDelayed({ tone.startTone(ToneGenerator.TONE_PROP_ACK, 140) }, 220L)
         mainHandler.postDelayed({ tone.release() }, 520L)
     }
+
+    private data class LayerPublish(
+        val elevated: Boolean,
+        val tunnel: Boolean,
+        val usingDefault: Boolean,
+        val corrected: Boolean
+    )
+
+    private data class RoadSnapshot(
+        val alertElevated: Boolean,
+        val elevatedFlag: Int,
+        val pendingSwitchSinceMs: Long
+    )
 
     private fun ttsAudioAttributes(): AudioAttributes {
         return AudioAttributes.Builder()

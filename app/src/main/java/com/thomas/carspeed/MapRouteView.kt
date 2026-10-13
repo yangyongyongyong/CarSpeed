@@ -2,7 +2,10 @@ package com.thomas.carspeed
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.AttributeSet
@@ -21,10 +24,14 @@ import com.amap.api.maps.MapView
 import com.amap.api.maps.offlinemap.OfflineMapManager
 import com.amap.api.maps.offlinemap.OfflineMapProvince
 import com.amap.api.maps.offlinemap.OfflineMapStatus
+import com.amap.api.maps.model.BitmapDescriptor
+import com.amap.api.maps.model.BitmapDescriptorFactory
 import com.amap.api.maps.model.Circle
 import com.amap.api.maps.model.CircleOptions
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.LatLngBounds
+import com.amap.api.maps.model.Marker
+import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
 import java.text.SimpleDateFormat
@@ -56,10 +63,14 @@ class MapRouteView @JvmOverloads constructor(
     private var summary: TrackSummary = TrackSummary(0L, 0f, 0f, 0f, null, 0f)
     private var routeKey: String? = null
     private val routeSegments = mutableListOf<Polyline>()
-    private var playedPolyline: Polyline? = null
+    private val playedPolylines = mutableListOf<Polyline>()
+    private var playedRunScales: List<Float> = emptyList()
     private var currentPulseCircle: Circle? = null
     private var currentCircle: Circle? = null
     private var maxSpeedCircle: Circle? = null
+    private var photoMarks: List<RoutePhotoMark> = emptyList()
+    private val photoMarkers = mutableListOf<Marker>()
+    private var photoMarkerIcon: BitmapDescriptor? = null
     private var fitWholeRoute = false
     private var currentMapType = AMap.MAP_TYPE_NORMAL
     private var userCameraLocked = false
@@ -73,6 +84,7 @@ class MapRouteView @JvmOverloads constructor(
     private var downTouchY = 0f
     var onMapTap: (() -> Unit)? = null
     var onScaleChanged: (() -> Unit)? = null
+    var onPhotoClick: ((String) -> Unit)? = null
 
     init {
         mapView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -106,6 +118,11 @@ class MapRouteView @JvmOverloads constructor(
         renderPlaybackState()
         updateCamera()
         updateStats()
+    }
+
+    internal fun setPhotoMarks(marks: List<RoutePhotoMark>) {
+        photoMarks = marks
+        renderPhotoMarks()
     }
 
     fun resetViewport() {
@@ -243,6 +260,15 @@ class MapRouteView @JvmOverloads constructor(
             }
         }
         aMap.setOnMapClickListener { onMapTap?.invoke() }
+        aMap.setOnMarkerClickListener { marker ->
+            val path = marker.`object` as? String
+            if (path.isNullOrBlank()) {
+                false
+            } else {
+                onPhotoClick?.invoke(path)
+                true
+            }
+        }
     }
 
     private fun buildControls() {
@@ -286,8 +312,7 @@ class MapRouteView @JvmOverloads constructor(
     private fun renderRoute() {
         routeSegments.forEach { it.remove() }
         routeSegments.clear()
-        playedPolyline?.remove()
-        playedPolyline = null
+        clearPlayedRoute()
         currentPulseCircle?.remove()
         currentPulseCircle = null
         currentCircle?.remove()
@@ -297,11 +322,12 @@ class MapRouteView @JvmOverloads constructor(
 
         if (convertedPoints.size < 2) return
         for (i in 1 until convertedPoints.size) {
+            val speedKmh = RouteTrackStyle.segmentSpeedKmh(points[i - 1].speedKmh, points[i].speedKmh)
             routeSegments += aMap.addPolyline(
                 PolylineOptions()
                     .add(convertedPoints[i - 1], convertedPoints[i])
-                    .width(dp(5).toFloat())
-                    .color(speedColor((points[i - 1].speedKmh + points[i].speedKmh) / 2f))
+                    .width(routeWidthPx(RouteTrackStyle.widthScale(speedKmh)))
+                    .color(ROUTE_COLOR)
                     .zIndex(20f)
             )
         }
@@ -317,6 +343,47 @@ class MapRouteView @JvmOverloads constructor(
                     .zIndex(40f)
             )
         }
+        renderPhotoMarks()
+    }
+
+    private fun renderPhotoMarks() {
+        photoMarkers.forEach { it.remove() }
+        photoMarkers.clear()
+        if (photoMarks.isEmpty()) return
+        val icon = photoMarkerIcon()
+        photoMarks.forEach { mark ->
+            val marker = aMap.addMarker(
+                MarkerOptions()
+                    .position(toAmapLatLng(mark.latitude, mark.longitude))
+                    .icon(icon)
+                    .anchor(0.5f, 0.5f)
+                    .zIndex(55f)
+            ) ?: return@forEach
+            marker.setObject(mark.path)
+            marker.isInfoWindowEnable = false
+            photoMarkers += marker
+        }
+    }
+
+    private fun photoMarkerIcon(): BitmapDescriptor {
+        photoMarkerIcon?.let { return it }
+        // 空心小圈，尽量少挡住轨迹。四周透明边距只扩大点击范围。
+        val diameter = dp(10).coerceAtLeast(1)
+        val inset = dp(5)
+        val size = diameter + inset * 2
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val strokeWidth = (1.5f * resources.displayMetrics.density).coerceAtLeast(1.5f)
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(255, 145, 0)
+            style = Paint.Style.STROKE
+            this.strokeWidth = strokeWidth
+        }
+        val radius = (diameter / 2f - strokeWidth / 2f).coerceAtLeast(strokeWidth / 2f)
+        canvas.drawCircle(size / 2f, size / 2f, radius, stroke)
+        val icon = BitmapDescriptorFactory.fromBitmap(bitmap)
+        photoMarkerIcon = icon
+        return icon
     }
 
     private fun renderPlaybackState() {
@@ -324,19 +391,7 @@ class MapRouteView @JvmOverloads constructor(
         val current = VideoTrackSync.pointAt(points, elapsedMs) ?: points.first()
         val currentLatLng = current.toAmapLatLng()
         val playedIndex = VideoTrackSync.lastPlayedIndex(points, elapsedMs).coerceIn(0, convertedPoints.lastIndex)
-        val playedPoints = convertedPoints.take(playedIndex + 1) + currentLatLng
-
-        if (playedPolyline == null) {
-            playedPolyline = aMap.addPolyline(
-                PolylineOptions()
-                    .addAll(playedPoints)
-                    .width(dp(3).toFloat())
-                    .color(Color.WHITE)
-                    .zIndex(30f)
-            )
-        } else {
-            playedPolyline?.points = playedPoints
-        }
+        renderPlayedRoute(playedIndex, currentLatLng)
         if (currentPulseCircle == null) {
             currentPulseCircle = aMap.addCircle(
                 CircleOptions()
@@ -599,7 +654,9 @@ class MapRouteView @JvmOverloads constructor(
         }
     }
 
-    private fun VideoTrackPoint.toAmapLatLng(): LatLng {
+    private fun VideoTrackPoint.toAmapLatLng(): LatLng = toAmapLatLng(latitude, longitude)
+
+    private fun toAmapLatLng(latitude: Double, longitude: Double): LatLng {
         val raw = LatLng(latitude, longitude)
         return if (CoordinateConverter.isAMapDataAvailable(latitude, longitude)) {
             runCatching {
@@ -618,12 +675,64 @@ class MapRouteView @JvmOverloads constructor(
         return "${size}:${first().timeMs}:${last().timeMs}"
     }
 
-    private fun speedColor(speedKmh: Float): Int {
-        return when {
-            speedKmh < 30f -> Color.rgb(79, 214, 151)
-            speedKmh < 80f -> Color.rgb(255, 205, 86)
-            else -> Color.rgb(255, 91, 91)
+    private data class PlayedRun(val scale: Float, val points: MutableList<LatLng>)
+
+    private fun routeWidthPx(scale: Float): Float = dp(ROUTE_BASE_WIDTH_DP).toFloat() * scale
+
+    private fun renderPlayedRoute(playedIndex: Int, currentLatLng: LatLng) {
+        val runs = buildPlayedRuns(playedIndex, currentLatLng)
+        val scales = runs.map { it.scale }
+        if (scales == playedRunScales && playedPolylines.size == runs.size) {
+            if (runs.isNotEmpty()) playedPolylines.last().points = runs.last().points
+            return
         }
+        clearPlayedRoute()
+        runs.forEach { run ->
+            val line = aMap.addPolyline(
+                PolylineOptions()
+                    .addAll(run.points)
+                    .width(routeWidthPx(RouteTrackStyle.playedWidthScale(run.scale)))
+                    .color(Color.WHITE)
+                    .zIndex(30f)
+            ) ?: return@forEach
+            playedPolylines += line
+            playedRunScales = playedRunScales + run.scale
+        }
+    }
+
+    private fun buildPlayedRuns(playedIndex: Int, currentLatLng: LatLng): List<PlayedRun> {
+        if (convertedPoints.isEmpty() || points.isEmpty()) return emptyList()
+        val runs = mutableListOf<PlayedRun>()
+        fun append(latLng: LatLng, scale: Float) {
+            val last = runs.lastOrNull()
+            if (last != null && last.scale == scale) {
+                last.points += latLng
+            } else {
+                val seed = last?.points?.lastOrNull() ?: convertedPoints.first()
+                runs += PlayedRun(scale, mutableListOf(seed, latLng))
+            }
+        }
+        val lastFull = playedIndex.coerceIn(0, convertedPoints.lastIndex)
+        for (i in 1..lastFull) {
+            val speedKmh = RouteTrackStyle.segmentSpeedKmh(points[i - 1].speedKmh, points[i].speedKmh)
+            append(convertedPoints[i], RouteTrackStyle.widthScale(speedKmh))
+        }
+        val ahead = (lastFull + 1).coerceAtMost(points.lastIndex)
+        val partialScale = if (ahead > lastFull) {
+            RouteTrackStyle.widthScale(
+                RouteTrackStyle.segmentSpeedKmh(points[lastFull].speedKmh, points[ahead].speedKmh)
+            )
+        } else {
+            RouteTrackStyle.widthScale(points[lastFull].speedKmh)
+        }
+        append(currentLatLng, partialScale)
+        return runs
+    }
+
+    private fun clearPlayedRoute() {
+        playedPolylines.forEach { it.remove() }
+        playedPolylines.clear()
+        playedRunScales = emptyList()
     }
 
     private fun compactAmapName(name: String): String = AmapOfflineMapStore.compactName(name)
@@ -673,6 +782,8 @@ class MapRouteView @JvmOverloads constructor(
             100000.0
         )
         private const val DEFAULT_VIEWPORT_SCALE_INDEX = 6
+        private const val ROUTE_BASE_WIDTH_DP = 5
+        private val ROUTE_COLOR = Color.rgb(79, 214, 151)
         private const val WEB_MERCATOR_EQUATOR_METERS_PER_PIXEL = 156543.03392
     }
 }

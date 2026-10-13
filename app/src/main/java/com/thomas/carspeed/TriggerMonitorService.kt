@@ -199,6 +199,7 @@ class TriggerMonitorService : Service(), LocationListener {
             .setContentText(text)
             .setContentIntent(openIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
+            .addAction(android.R.drawable.ic_lock_power_off, getString(R.string.notif_action_exit_background), AppBackgroundExit.pendingIntent(this))
             .setOngoing(true)
             .build()
     }

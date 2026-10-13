@@ -4,10 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
-import android.location.Address
-import android.location.Geocoder
 import android.media.MediaMetadataRetriever
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,13 +37,11 @@ import java.util.concurrent.Executors
 
 class HistoryActivity : AppCompatActivity() {
 
-    private val geocodeExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val historyExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val thumbnailExecutor: ExecutorService = Executors.newFixedThreadPool(2)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val addressCache = mutableMapOf<String, String>()
-    private val pendingAddressKeys = mutableSetOf<String>()
     private val thumbnailCache = mutableMapOf<String, Bitmap?>()
+    private var routePhotoTimesMs: List<Long> = emptyList()
 
     private lateinit var spSortField: Spinner
     private lateinit var btnSortOrder: Button
@@ -57,6 +52,12 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var btnVideoPrevPage: Button
     private lateinit var btnVideoNextPage: Button
     private lateinit var btnDeleteAllVideos: Button
+    private lateinit var btnDeleteCurrentPageVideos: MaterialButton
+    private lateinit var btnBatchDelete: MaterialButton
+    private lateinit var layoutBatchActions: LinearLayout
+    private lateinit var btnBatchExit: MaterialButton
+    private lateinit var btnBatchToggleAll: MaterialButton
+    private lateinit var btnBatchDeleteSelected: MaterialButton
     private lateinit var tvVideoSummary: TextView
     private lateinit var tvVideoPage: TextView
     private lateinit var layoutVideoList: LinearLayout
@@ -74,11 +75,14 @@ class HistoryActivity : AppCompatActivity() {
     private var filterMaxDurationMs: Long? = null
     private var filterMinDistanceMeters: Float? = null
     private var filterMaxDistanceMeters: Float? = null
+    private var filterMinPhotoCount: Int? = null
     private var showFavoriteVideosOnly = false
     private var videoPageIndex = 0
     @Volatile private var renderRequestId: Int = 0
     private var currentVideoItems: List<VideoListItem> = emptyList()
     private var currentFilteredVideoTrips: List<VideoStorage.VideoTrip> = emptyList()
+    private var batchDeleteMode = false
+    private val batchSelectedTripIds = mutableSetOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +97,12 @@ class HistoryActivity : AppCompatActivity() {
         btnVideoPrevPage = findViewById(R.id.btnVideoPrevPage)
         btnVideoNextPage = findViewById(R.id.btnVideoNextPage)
         btnDeleteAllVideos = findViewById(R.id.btnDeleteAllVideos)
+        btnDeleteCurrentPageVideos = findViewById(R.id.btnDeleteCurrentPage)
+        btnBatchDelete = findViewById(R.id.btnBatchDelete)
+        layoutBatchActions = findViewById(R.id.layoutBatchActions)
+        btnBatchExit = findViewById(R.id.btnBatchExit)
+        btnBatchToggleAll = findViewById(R.id.btnBatchToggleAll)
+        btnBatchDeleteSelected = findViewById(R.id.btnBatchDeleteSelected)
         tvVideoSummary = findViewById(R.id.tvVideoSummary)
         tvVideoPage = findViewById(R.id.tvVideoPage)
         layoutVideoList = findViewById(R.id.layoutVideoList)
@@ -116,17 +126,19 @@ class HistoryActivity : AppCompatActivity() {
         filterMaxDurationMs = prefs.getLong(PREF_VIDEO_FILTER_MAX_DURATION_MS, 0L).takeIf { it > 0L }
         filterMinDistanceMeters = prefs.getFloat(PREF_VIDEO_FILTER_MIN_DISTANCE_METERS, -1f).takeIf { it >= 0f }
         filterMaxDistanceMeters = prefs.getFloat(PREF_VIDEO_FILTER_MAX_DISTANCE_METERS, -1f).takeIf { it >= 0f }
+        filterMinPhotoCount = prefs.getInt(PREF_VIDEO_FILTER_MIN_PHOTO_COUNT, -1).takeIf { it >= 0 }
 
         setupSortUi()
         setupTimeFilterUi()
         setupFavoriteFilterUi()
         setupPagingUi()
         btnDeleteAllVideos.setOnClickListener { confirmDeleteAllVideos() }
+        btnDeleteCurrentPageVideos.setOnClickListener { confirmDeleteCurrentPageVideos() }
+        setupBatchDeleteUi()
         render()
     }
 
     override fun onDestroy() {
-        geocodeExecutor.shutdownNow()
         historyExecutor.shutdownNow()
         thumbnailExecutor.shutdownNow()
         super.onDestroy()
@@ -286,6 +298,11 @@ class HistoryActivity : AppCompatActivity() {
         content.addView(cbDistance)
         content.addView(distanceRow)
 
+        val cbPhotos = filterCheckBox(getString(R.string.video_filter_photos), filterMinPhotoCount != null)
+        val etPhotos = filterEditText(R.string.video_filter_photos_hint, filterMinPhotoCount?.toString())
+        content.addView(cbPhotos)
+        content.addView(etPhotos)
+
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.video_filter_dialog_title)
             .setView(content)
@@ -300,9 +317,11 @@ class HistoryActivity : AppCompatActivity() {
             val nextMaxDurationMs = if (cbDuration.isChecked) etMaxDuration.text.toString().toLongOrNull()?.times(1000L) else null
             val nextMinDistanceMeters = if (cbDistance.isChecked) etMinDistance.text.toString().toFloatOrNull()?.times(1000f) else null
             val nextMaxDistanceMeters = if (cbDistance.isChecked) etMaxDistance.text.toString().toFloatOrNull()?.times(1000f) else null
+            val nextMinPhotoCount = if (cbPhotos.isChecked) etPhotos.text.toString().toIntOrNull() ?: 0 else null
             if (invalidRange(nextRangeStartMs, nextRangeEndMs) ||
                 invalidRange(nextMinDurationMs, nextMaxDurationMs) ||
-                invalidRange(nextMinDistanceMeters, nextMaxDistanceMeters)
+                invalidRange(nextMinDistanceMeters, nextMaxDistanceMeters) ||
+                (nextMinPhotoCount != null && nextMinPhotoCount < 0)
             ) {
                 Toast.makeText(this, R.string.video_filter_invalid, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -314,6 +333,7 @@ class HistoryActivity : AppCompatActivity() {
             filterMaxDurationMs = nextMaxDurationMs
             filterMinDistanceMeters = nextMinDistanceMeters
             filterMaxDistanceMeters = nextMaxDistanceMeters
+            filterMinPhotoCount = nextMinPhotoCount
             videoPageIndex = 0
             persistTimeFilterPref()
             updateTimeFilterButtons()
@@ -363,6 +383,7 @@ class HistoryActivity : AppCompatActivity() {
             .putLong(PREF_VIDEO_FILTER_MAX_DURATION_MS, filterMaxDurationMs ?: 0L)
             .putFloat(PREF_VIDEO_FILTER_MIN_DISTANCE_METERS, filterMinDistanceMeters ?: -1f)
             .putFloat(PREF_VIDEO_FILTER_MAX_DISTANCE_METERS, filterMaxDistanceMeters ?: -1f)
+            .putInt(PREF_VIDEO_FILTER_MIN_PHOTO_COUNT, filterMinPhotoCount ?: -1)
             .apply()
     }
 
@@ -374,6 +395,7 @@ class HistoryActivity : AppCompatActivity() {
         filterMaxDurationMs = null
         filterMinDistanceMeters = null
         filterMaxDistanceMeters = null
+        filterMinPhotoCount = null
     }
 
     private fun filterCheckBox(textValue: String, checked: Boolean): CheckBox {
@@ -409,7 +431,8 @@ class HistoryActivity : AppCompatActivity() {
             filterSingleDayMs?.let { "单日 ${formatFilterDate(it)}" },
             rangeText(filterRangeStartMs, filterRangeEndMs, "日期"),
             rangeText(filterMinDurationMs, filterMaxDurationMs, "时长") { formatDuration(it) },
-            rangeText(filterMinDistanceMeters, filterMaxDistanceMeters, "里程") { trimNumber(it / 1000f) + "km" }
+            rangeText(filterMinDistanceMeters, filterMaxDistanceMeters, "里程") { trimNumber(it / 1000f) + "km" },
+            filterMinPhotoCount?.let { "抓拍>=${it}张" }
         ).joinToString("；").ifBlank { "不限" }
     }
 
@@ -499,6 +522,120 @@ class HistoryActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun confirmDeleteCurrentPageVideos() {
+        val trips = currentVideoItems.map { it.trip }
+        if (trips.isEmpty()) {
+            Toast.makeText(this, R.string.video_replay_no_video, Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.video_delete_current_page)
+            .setMessage(getString(R.string.video_delete_all_confirm, trips.size))
+            .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
+                val deleted = trips.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
+                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
+                render()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun setupBatchDeleteUi() {
+        btnBatchDelete.setOnClickListener {
+            if (currentVideoItems.isEmpty()) {
+                Toast.makeText(this, R.string.video_replay_no_video, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            batchDeleteMode = !batchDeleteMode
+            batchSelectedTripIds.clear()
+            updateBatchModeViews()
+            render()
+        }
+        btnBatchExit.setOnClickListener {
+            batchDeleteMode = false
+            batchSelectedTripIds.clear()
+            updateBatchModeViews()
+            render()
+        }
+        btnBatchToggleAll.setOnClickListener {
+            val pageIds = currentVideoItems.map { it.trip.id }
+            if (batchSelectedTripIds.containsAll(pageIds)) {
+                batchSelectedTripIds.removeAll(pageIds.toSet())
+            } else {
+                batchSelectedTripIds.addAll(pageIds)
+            }
+            refreshBatchSelectionViews()
+        }
+        btnBatchDeleteSelected.setOnClickListener { confirmDeleteSelectedVideos() }
+    }
+
+    private fun updateBatchModeViews() {
+        layoutBatchActions.visibility = if (batchDeleteMode) View.VISIBLE else View.GONE
+        btnBatchDelete.text = getString(if (batchDeleteMode) R.string.video_batch_exit else R.string.video_batch_delete)
+        btnDeleteAllVideos.visibility = if (batchDeleteMode) View.GONE else View.VISIBLE
+        btnDeleteCurrentPageVideos.visibility = if (batchDeleteMode) View.GONE else View.VISIBLE
+    }
+
+    private fun refreshBatchSelectionViews() {
+        val pageIds = currentVideoItems.map { it.trip.id }
+        val allSelected = pageIds.isNotEmpty() && batchSelectedTripIds.containsAll(pageIds)
+        btnBatchToggleAll.text = getString(
+            if (allSelected) R.string.video_batch_clear_all else R.string.video_batch_select_all
+        )
+        btnBatchDeleteSelected.text = if (batchSelectedTripIds.isEmpty()) {
+            getString(R.string.video_batch_delete_selected)
+        } else {
+            getString(R.string.video_batch_delete_selected) + "（" + batchSelectedTripIds.size + "）"
+        }
+        updateBatchCheckBoxes(layoutVideoList)
+    }
+
+    private fun updateBatchCheckBoxes(viewGroup: android.view.ViewGroup) {
+        for (index in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(index)
+            if (child is CheckBox) {
+                val tripId = (child.tag as? String)?.removePrefix(BATCH_CHECK_TAG_PREFIX)
+                if (tripId != null) {
+                    child.isChecked = tripId in batchSelectedTripIds
+                }
+            } else if (child is android.view.ViewGroup) {
+                updateBatchCheckBoxes(child)
+            }
+        }
+    }
+
+    private fun toggleBatchSelection(item: VideoListItem) {
+        if (item.trip.id in batchSelectedTripIds) {
+            batchSelectedTripIds.remove(item.trip.id)
+        } else {
+            batchSelectedTripIds.add(item.trip.id)
+        }
+        refreshBatchSelectionViews()
+    }
+
+    private fun confirmDeleteSelectedVideos() {
+        if (batchSelectedTripIds.isEmpty()) {
+            Toast.makeText(this, R.string.video_batch_none_selected, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val selected = currentVideoItems.filter { it.trip.id in batchSelectedTripIds }.map { it.trip }
+        if (selected.isEmpty()) {
+            Toast.makeText(this, R.string.video_batch_none_selected, Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.video_delete_selected)
+            .setMessage(getString(R.string.video_delete_selected_confirm, selected.size))
+            .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
+                val deleted = selected.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
+                batchSelectedTripIds.clear()
+                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
+                render()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private fun persistSortPref() {
         getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
             .edit()
@@ -528,6 +665,10 @@ class HistoryActivity : AppCompatActivity() {
             } else {
                 allTrips
             }
+            val photoTimes = VideoStorage.photoFiles(appContext).mapNotNull { file ->
+                RoutePhotoMarks.timeFromFileName(file.name)
+            }
+            routePhotoTimesMs = photoTimes
             val needsDetailedFilter = filter.requiresDetailedVideoData()
             val allVideoItems = if (needsDetailedFilter) {
                 scopedTrips.map { trip -> buildVideoListItem(appContext, trip, metadataCache) }
@@ -565,6 +706,7 @@ class HistoryActivity : AppCompatActivity() {
             mainHandler.post {
                 if (requestId != renderRequestId || isFinishing || isDestroyed) return@post
                 videoPageIndex = pageIndex
+                routePhotoTimesMs = photoTimes
                 currentFilteredVideoTrips = filteredTrips
                 renderVideoList(
                     videoItems,
@@ -847,6 +989,10 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         btnDeleteAllVideos.isEnabled = items.isNotEmpty()
+        btnDeleteCurrentPageVideos.isEnabled = items.isNotEmpty()
+        btnBatchDelete.isEnabled = items.isNotEmpty()
+        updateBatchModeViews()
+        refreshBatchSelectionViews()
     }
 
     private fun videoEmptyTextRes(favoriteOnly: Boolean): Int {
@@ -934,7 +1080,13 @@ class HistoryActivity : AppCompatActivity() {
             setCardBackgroundColor(getColorCompat(R.color.surface_primary))
             isClickable = true
             isFocusable = true
-            setOnClickListener { replayTrip(trip) }
+            setOnClickListener {
+                if (batchDeleteMode) {
+                    toggleBatchSelection(item)
+                } else {
+                    replayTrip(trip)
+                }
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -944,6 +1096,17 @@ class HistoryActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        if (batchDeleteMode) {
+            row.addView(CheckBox(this).apply {
+                tag = BATCH_CHECK_TAG_PREFIX + trip.id
+                isChecked = trip.id in batchSelectedTripIds
+                isClickable = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(8) }
+            })
         }
         val thumbWrap = FrameLayout(this).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
@@ -993,20 +1156,17 @@ class HistoryActivity : AppCompatActivity() {
             textSize = 12f
         })
         content.addView(TextView(this).apply {
-            text = videoRouteLabel(item, this)
-            setTextColor(getColorCompat(R.color.text_secondary))
-            textSize = 12f
-            maxLines = 2
-        })
-        content.addView(TextView(this).apply {
-            text = if (item.favorite) {
-                getString(R.string.video_favorite_badge)
-            } else {
-                getString(R.string.video_play_hint)
-            }
+            text = getString(R.string.video_photo_count, item.photoCount())
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = 12f
         })
+        if (item.favorite) {
+            content.addView(TextView(this).apply {
+                text = getString(R.string.video_favorite_badge)
+                setTextColor(getColorCompat(R.color.text_secondary))
+                textSize = 12f
+            })
+        }
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
@@ -1088,30 +1248,15 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun videoMetaLabel(item: VideoListItem): String {
-        val extras = listOfNotNull(
-            if (item.hasTrack) "轨迹" else null,
-            if (item.hasSubtitle) "字幕" else null
-        ).ifEmpty { listOf("仅视频") }.joinToString("+")
         val distance = item.trackSummary?.totalDistanceMeters?.takeIf { it > 0f }?.let { "GPS ${formatDistance(it)}" }
         val segments = if (item.trip.segments.size > 1) getString(R.string.video_segments_count, item.trip.segments.size) else null
-        return listOfNotNull(segments, formatBytes(item.totalBytes), distance, extras).joinToString("  ·  ")
+        return listOfNotNull(segments, formatBytes(item.totalBytes), distance).joinToString("  ·  ")
     }
 
-    private fun videoRouteLabel(item: VideoListItem, target: TextView? = null, schedule: Boolean = true): String {
-        val start = item.startPoint ?: return "路线：暂无 GPS 起终点"
-        val end = item.endPoint ?: return "路线：暂无 GPS 起终点"
-        val startKey = addressKey(start)
-        val endKey = addressKey(end)
-        val startAddress = cachedAddress(startKey)
-        val endAddress = cachedAddress(endKey)
-        if (startAddress != null && endAddress != null) {
-            return "路线：$startAddress 到 $endAddress"
-        }
-        if (schedule) {
-            scheduleAddressResolve(start, startKey, item, target)
-            scheduleAddressResolve(end, endKey, item, target)
-        }
-        return "路线：解析中"
+    private fun VideoListItem.photoCount(): Int {
+        val start = startPoint?.timeMs?.takeIf { it > 0L } ?: startTimeMs
+        val end = endPoint?.timeMs?.takeIf { it > 0L } ?: endTimeMs
+        return RoutePhotoMarks.countBetween(routePhotoTimesMs, start, end)
     }
 
     private fun hasVideoFilter(): Boolean = currentVideoFilter().hasAny()
@@ -1126,12 +1271,15 @@ class HistoryActivity : AppCompatActivity() {
             minDurationMs = filterMinDurationMs,
             maxDurationMs = filterMaxDurationMs,
             minDistanceMeters = filterMinDistanceMeters,
-            maxDistanceMeters = filterMaxDistanceMeters
+            maxDistanceMeters = filterMaxDistanceMeters,
+            minPhotoCount = filterMinPhotoCount
         )
     }
 
     private fun VideoFilter.requiresDetailedVideoData(): Boolean {
-        return minDurationMs != null || maxDurationMs != null || minDistanceMeters != null || maxDistanceMeters != null
+        return minDurationMs != null || maxDurationMs != null ||
+            minDistanceMeters != null || maxDistanceMeters != null ||
+            minPhotoCount != null
     }
 
     private fun VideoStorage.VideoTrip.matchesLightFilter(filter: VideoFilter): Boolean {
@@ -1149,6 +1297,7 @@ class HistoryActivity : AppCompatActivity() {
         if (filter.maxDurationMs != null && durationMs > filter.maxDurationMs) return false
         if (filter.minDistanceMeters != null && distanceMeters < filter.minDistanceMeters) return false
         if (filter.maxDistanceMeters != null && distanceMeters > filter.maxDistanceMeters) return false
+        if (filter.minPhotoCount != null && photoCount() < filter.minPhotoCount) return false
         return true
     }
 
@@ -1271,89 +1420,6 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun scheduleAddressResolve(point: VideoTrackPoint, key: String, item: VideoListItem, target: TextView?) {
-        if (cachedAddress(key) != null || key in pendingAddressKeys) return
-        pendingAddressKeys += key
-        geocodeExecutor.execute {
-            val label = resolveShortAddress(point)
-            getSharedPreferences(PREF_GEO_CACHE, MODE_PRIVATE)
-                .edit()
-                .putString(key, label)
-                .apply()
-            mainHandler.post {
-                pendingAddressKeys -= key
-                addressCache[key] = label
-                target?.text = videoRouteLabel(item, target = null, schedule = false)
-            }
-        }
-    }
-
-    private fun cachedAddress(key: String): String? {
-        return addressCache[key]
-            ?: getSharedPreferences(PREF_GEO_CACHE, MODE_PRIVATE).getString(key, null)?.also { addressCache[key] = it }
-    }
-
-    private fun addressKey(point: VideoTrackPoint): String {
-        return String.format(Locale.US, "geo_%.5f_%.5f", point.latitude, point.longitude)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun resolveShortAddress(point: VideoTrackPoint): String {
-        return try {
-            val address = Geocoder(this, Locale.CHINA)
-                .getFromLocation(point.latitude, point.longitude, 1)
-                ?.firstOrNull()
-            shortAddress(address, point)
-        } catch (_: RuntimeException) {
-            coordinateLabel(point)
-        } catch (_: java.io.IOException) {
-            coordinateLabel(point)
-        }
-    }
-
-    private fun shortAddress(address: Address?, point: VideoTrackPoint): String {
-        if (address == null) return coordinateLabel(point)
-        val province = cleanAddressPart(address.adminArea)
-        val city = cleanAddressPart(address.locality ?: address.subAdminArea ?: address.adminArea)
-        val district = cleanAddressPart(address.subLocality ?: address.subAdminArea)
-            ?.takeIf { it != city && it != province }
-        val place = listOf(
-            address.featureName,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) address.premises else null,
-            address.thoroughfare,
-            address.getAddressLine(0)
-        ).mapNotNull { raw ->
-            cleanAddressPart(raw)
-                ?.replace("中国", "")
-                ?.replace(province.orEmpty(), "")
-                ?.replace(city.orEmpty(), "")
-                ?.replace(district.orEmpty(), "")
-                ?.trim()
-                ?.takeIf { it.length >= 2 && it != city && it != district && !it.all { ch -> ch.isDigit() } }
-        }.firstOrNull()
-
-        val label = listOfNotNull(city, district, place)
-            .distinct()
-            .joinToString("")
-            .ifBlank { coordinateLabel(point) }
-        return shortenEndpoint(label)
-    }
-
-    private fun cleanAddressPart(value: String?): String? {
-        return value
-            ?.replace(Regex("[\\s,，]+"), "")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() && it != "null" }
-    }
-
-    private fun shortenEndpoint(label: String): String {
-        return if (label.length > 18) label.take(17) + "…" else label
-    }
-
-    private fun coordinateLabel(point: VideoTrackPoint): String {
-        return String.format(Locale.US, "%.5f,%.5f", point.latitude, point.longitude)
-    }
-
     private fun actionText(text: String, action: () -> Unit): TextView {
         return TextView(this).apply {
             this.text = text
@@ -1461,13 +1527,15 @@ class HistoryActivity : AppCompatActivity() {
         val minDurationMs: Long?,
         val maxDurationMs: Long?,
         val minDistanceMeters: Float?,
-        val maxDistanceMeters: Float?
+        val maxDistanceMeters: Float?,
+        val minPhotoCount: Int?
     ) {
         fun hasAny(): Boolean {
             return dayStartMs != null || dayEndMs != null ||
                 rangeStartMs != null || rangeEndMs != null ||
                 minDurationMs != null || maxDurationMs != null ||
-                minDistanceMeters != null || maxDistanceMeters != null
+                minDistanceMeters != null || maxDistanceMeters != null ||
+                minPhotoCount != null
         }
     }
 
@@ -1481,8 +1549,9 @@ class HistoryActivity : AppCompatActivity() {
         private const val PREF_VIDEO_FILTER_MAX_DURATION_MS = "history_video_filter_max_duration_ms"
         private const val PREF_VIDEO_FILTER_MIN_DISTANCE_METERS = "history_video_filter_min_distance_meters"
         private const val PREF_VIDEO_FILTER_MAX_DISTANCE_METERS = "history_video_filter_max_distance_meters"
-        private const val PREF_GEO_CACHE = "history_geo_cache"
+        private const val PREF_VIDEO_FILTER_MIN_PHOTO_COUNT = "history_video_filter_min_photo_count"
         private const val VIDEO_PAGE_SIZE = 5
+        private const val BATCH_CHECK_TAG_PREFIX = "batch_check_"
         private val VIDEO_NAME_REGEX = Regex("carspeed-(\\d{8})-(\\d{6})")
         private val TRIP_NAME_REGEX = Regex("carspeed-trip-(\\d{8})-(\\d{6})")
     }

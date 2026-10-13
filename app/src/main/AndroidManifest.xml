@@ -50,6 +50,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".PhotoPreviewActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".VideoReplayActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
@@ -173,6 +177,10 @@
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".AppBackgroundExitReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".PowerTriggerReceiver"

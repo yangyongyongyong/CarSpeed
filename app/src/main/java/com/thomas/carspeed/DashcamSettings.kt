@@ -6,7 +6,9 @@ data class WatermarkSettings(
     val showTime: Boolean,
     val showSpeed: Boolean,
     val showGps: Boolean,
+    val showSatellites: Boolean,
     val showAddress: Boolean,
+    val showRoadLayer: Boolean,
     val showVideoMode: Boolean,
     val showFocus: Boolean,
     val plateRecognitionEnabled: Boolean,
@@ -21,7 +23,9 @@ object DashcamSettings {
     const val PREF_WATERMARK_TIME = "dashcam_watermark_time"
     const val PREF_WATERMARK_SPEED = "dashcam_watermark_speed"
     const val PREF_WATERMARK_GPS = "dashcam_watermark_gps"
+    const val PREF_WATERMARK_SATELLITES = "dashcam_watermark_satellites"
     const val PREF_WATERMARK_ADDRESS = "dashcam_watermark_address"
+    const val PREF_WATERMARK_ROAD_LAYER = "dashcam_watermark_road_layer"
     const val PREF_WATERMARK_VIDEO_MODE = "dashcam_watermark_video_mode"
     const val PREF_WATERMARK_FOCUS = "dashcam_watermark_focus"
     const val PREF_PLATE_RECOGNITION_ENABLED = "dashcam_plate_recognition_enabled"
@@ -65,7 +69,9 @@ object DashcamSettings {
             showTime = prefs.getBoolean(PREF_WATERMARK_TIME, true),
             showSpeed = prefs.getBoolean(PREF_WATERMARK_SPEED, true),
             showGps = prefs.getBoolean(PREF_WATERMARK_GPS, true),
+            showSatellites = prefs.getBoolean(PREF_WATERMARK_SATELLITES, true),
             showAddress = prefs.getBoolean(PREF_WATERMARK_ADDRESS, false),
+            showRoadLayer = prefs.getBoolean(PREF_WATERMARK_ROAD_LAYER, false),
             showVideoMode = prefs.getBoolean(PREF_WATERMARK_VIDEO_MODE, true),
             showFocus = prefs.getBoolean(PREF_WATERMARK_FOCUS, false),
             plateRecognitionEnabled = prefs.getBoolean(PREF_PLATE_RECOGNITION_ENABLED, false),

@@ -118,6 +118,44 @@ class RadarAlertPlannerTest {
     }
 
     @Test
+    fun sudden_distance_drop_does_not_skip_from_20_seconds_to_5_seconds() {
+        val first = RadarAlertPlanner.reconcileEta(anchor = null, rawEtaSeconds = 20, nowMs = 0L)
+        assertEquals(20, first.etaSeconds)
+
+        val fourSecondsLater = RadarAlertPlanner.reconcileEta(first.anchor, rawEtaSeconds = 5, nowMs = 4_000L)
+        assertEquals(14, fourSecondsLater.etaSeconds)
+        assertEquals(first.anchor, fourSecondsLater.anchor)
+
+        val due = RadarAlertPlanner.dueThresholds(
+            etaSeconds = fourSecondsLater.etaSeconds,
+            settings = settings,
+            fired = setOf(20)
+        )
+        assertTrue(due.isEmpty())
+        assertNull(RadarAlertPlanner.thresholdToSpeak(due, fourSecondsLater.etaSeconds, settings))
+    }
+
+    @Test
+    fun countdown_reaches_the_5_second_alert_after_the_real_wait() {
+        val first = RadarAlertPlanner.reconcileEta(anchor = null, rawEtaSeconds = 22, nowMs = 0L)
+        val stillEarly = RadarAlertPlanner.reconcileEta(first.anchor, rawEtaSeconds = 4, nowMs = 10_000L)
+        val earlyDue = RadarAlertPlanner.dueThresholds(stillEarly.etaSeconds, settings, fired = setOf(20))
+        assertEquals(10, RadarAlertPlanner.thresholdToSpeak(earlyDue, stillEarly.etaSeconds, settings))
+
+        val ready = RadarAlertPlanner.reconcileEta(first.anchor, rawEtaSeconds = 4, nowMs = 15_000L)
+        val due = RadarAlertPlanner.dueThresholds(ready.etaSeconds, settings, fired = setOf(20, 10))
+        assertEquals(5, RadarAlertPlanner.thresholdToSpeak(due, ready.etaSeconds, settings))
+    }
+
+    @Test
+    fun plausible_eta_replaces_the_countdown_anchor() {
+        val first = RadarAlertPlanner.reconcileEta(anchor = null, rawEtaSeconds = 22, nowMs = 0L)
+        val next = RadarAlertPlanner.reconcileEta(first.anchor, rawEtaSeconds = 18, nowMs = 4_000L)
+        assertEquals(18, next.etaSeconds)
+        assertEquals(4_000L, next.anchor.atMs)
+    }
+
+    @Test
     fun far_unknown_limit_alert_requires_more_than_three_kilometers_and_no_limit() {
         assertTrue(
             RadarAlertPlanner.shouldSpeakFarUnknownLimitAlert(

@@ -451,10 +451,25 @@
                         android:textColor="@color/text_primary" />
 
                     <CheckBox
+                        android:id="@+id/cbWatermarkSatellites"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="@string/watermark_satellites_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
                         android:id="@+id/cbWatermarkAddress"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/watermark_address_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <CheckBox
+                        android:id="@+id/cbWatermarkRoadLayer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/watermark_road_layer_toggle"
                         android:textColor="@color/text_primary" />
 
                     <CheckBox

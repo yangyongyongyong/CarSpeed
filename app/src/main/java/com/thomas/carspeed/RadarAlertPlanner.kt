@@ -108,6 +108,22 @@ internal object RadarAlertPlanner {
         return (distanceMeters / speedMps).roundToInt().coerceAtLeast(0)
     }
 
+    /**
+     * 高德距离偶尔会一下子缩短。匀速时到达时间最多跟着真实时间往下走，
+     * 不能刚报完 20 秒、过几秒又报 5 秒。测量值和这条底线差不多时，改信新的测量。
+     */
+    fun reconcileEta(anchor: EtaAnchor?, rawEtaSeconds: Int, nowMs: Long): EtaReconcile {
+        val prior = anchor ?: return EtaReconcile(rawEtaSeconds, EtaAnchor(rawEtaSeconds, nowMs))
+        val elapsedSec = (nowMs - prior.atMs) / 1_000f
+        if (elapsedSec < 0f) return EtaReconcile(rawEtaSeconds, EtaAnchor(rawEtaSeconds, nowMs))
+        val floorEta = (prior.etaSeconds - elapsedSec - ETA_DROP_SLACK_SEC).roundToInt().coerceAtLeast(0)
+        return if (rawEtaSeconds >= floorEta) {
+            EtaReconcile(rawEtaSeconds, EtaAnchor(rawEtaSeconds, nowMs))
+        } else {
+            EtaReconcile(floorEta, prior)
+        }
+    }
+
     fun dueThresholds(etaSeconds: Int, settings: RadarAlertSettings, fired: Set<Int>): List<Int> {
         return settings.thresholdsSeconds.filter { threshold ->
             threshold !in fired && etaSeconds <= threshold + settings.leadSeconds
@@ -196,4 +212,15 @@ internal object RadarAlertPlanner {
 
     const val DATA_STALE_WARNING_MS = 60_000L
     const val DATA_WARNING_REPEAT_MS = 180_000L
+    const val ETA_DROP_SLACK_SEC = 2f
 }
+
+internal data class EtaAnchor(
+    val etaSeconds: Int,
+    val atMs: Long
+)
+
+internal data class EtaReconcile(
+    val etaSeconds: Int,
+    val anchor: EtaAnchor
+)

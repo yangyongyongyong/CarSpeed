@@ -570,11 +570,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
         val callback = object : GnssStatus.Callback() {
             override fun onSatelliteStatusChanged(status: GnssStatus) {
-                var usedInFixCount = 0
-                for (i in 0 until status.satelliteCount) {
-                    if (status.usedInFix(i)) usedInFixCount += 1
-                }
-                gpsUsedSatelliteCount = usedInFixCount
+                gpsUsedSatelliteCount = GnssSatelliteCount.usedInFix(status.satelliteCount, status::usedInFix)
                 refreshOverlay()
             }
 
@@ -1137,9 +1133,11 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(getString(R.string.notif_text))
             .setContentIntent(openIntent)
+            // 系统通知最多展示 3 个操作；「退出后台」必须排在前三个里才会出现。
             .addAction(android.R.drawable.ic_menu_view, getString(R.string.notif_action_open), openIntent)
-            .addAction(android.R.drawable.ic_menu_recent_history, getString(R.string.notif_action_history), historyIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
+            .addAction(android.R.drawable.ic_lock_power_off, getString(R.string.notif_action_exit_background), AppBackgroundExit.pendingIntent(this))
+            .addAction(android.R.drawable.ic_menu_recent_history, getString(R.string.notif_action_history), historyIntent)
             .setOngoing(true)
             .build()
     }

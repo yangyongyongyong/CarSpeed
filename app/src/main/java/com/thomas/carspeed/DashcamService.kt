@@ -15,6 +15,7 @@ import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.location.Address
 import android.location.Geocoder
+import android.location.GnssStatus
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -65,6 +66,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val plateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var roadLayerStarted = false
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
@@ -77,6 +79,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private var activePlateSession: PlateRecognitionSession? = null
     private var activeVideoFile: File? = null
     private var activeSubtitleFile: File? = null
+    private val tripSubtitleFiles = mutableListOf<Pair<File, Long>>()
     private var activeVideoMode: VideoMode? = null
     private var activeHdrEnabled = false
     private var activeHdrRequested = false
@@ -91,10 +94,13 @@ class DashcamService : LifecycleService(), LocationListener {
     private var recordingStartElapsedMs = 0L
     private var tripRecordingStartElapsedMs = 0L
     private var requestedStop = false
+    private var exitAfterStop = false
     private var rollingRestart = false
     private var rollingRestartNeedsRebind = false
     private var lastLocation: Location? = null
     private var lastAddressLocation: Location? = null
+    private var gnssStatusCallback: GnssStatus.Callback? = null
+    private var gpsUsedSatelliteCount: Int? = null
     private var lastAddressText: String? = null
     private var lastGeocodeAtMs = 0L
     private var lastSpeedKmh = 0f
@@ -144,6 +150,8 @@ class DashcamService : LifecycleService(), LocationListener {
         startOrientationListener()
         startForegroundCompat()
         registerLocationUpdates()
+        roadLayerStarted = true
+        RoadLayerEngine.start(this)
     }
 
     override fun onDestroy() {
@@ -152,6 +160,10 @@ class DashcamService : LifecycleService(), LocationListener {
         stopOrientationListener()
         stopRecordingInternal()
         unregisterLocationUpdates()
+        if (roadLayerStarted) {
+            roadLayerStarted = false
+            RoadLayerEngine.stop()
+        }
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
         plateExecutor.shutdown()
@@ -170,17 +182,31 @@ class DashcamService : LifecycleService(), LocationListener {
                 stopRecordingInternal()
                 if (!hadRecording && !shouldKeepAliveForVoice()) stopSelf()
             }
+            ACTION_EXIT -> {
+                exitAfterStop = true
+                stopVoiceRecognition()
+                stopRecordingInternal()
+                if (!isRecordingActive()) stopSelf()
+            }
             ACTION_TAKE_PHOTO -> takePhotoInternal()
             ACTION_REFRESH_SETTINGS -> refreshSettings()
         }
-        return START_STICKY
+        return if (exitAfterStop) START_NOT_STICKY else START_STICKY
     }
 
     override fun onLocationChanged(location: Location) {
         lastLocation = location
+        val now = SystemClock.elapsedRealtime()
+        RoadLayerEngine.onGpsFix(
+            now,
+            location.accuracy.takeIf { location.hasAccuracy() },
+            location.bearing.takeIf { location.hasBearing() }
+        )
+        RoadLayerEngine.consumeSubtitleCorrection()?.let { rewriteRecordedRoadLayer(it) }
         if (location.hasSpeed()) {
             lastSpeedKmh = SpeedRules.toKmhClamped(location.speed)
             updateParkingStop(lastSpeedKmh)
+            RoadLayerEngine.onSpeed(now, lastSpeedKmh)
         }
         updateTelemetrySnapshot()
         appendTrackPoint(location)
@@ -302,6 +328,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun onSeamlessSegmentStarted(file: File, startWallMs: Long, startElapsedMs: Long) {
         activeVideoFile = file
         activeSubtitleFile = VideoStorage.subtitleFileFor(file)
+        rememberSubtitleFile(activeSubtitleFile, startElapsedMs)
         activeVideoStartWallMs = startWallMs
         recordingStartElapsedMs = startElapsedMs
         subtitleIndex = 0
@@ -354,6 +381,11 @@ class DashcamService : LifecycleService(), LocationListener {
         writeTripDriveRecord()
         clearActiveTrip()
         setRecordingState(this, false)
+        if (exitAfterStop) {
+            stopVoiceRecognition()
+            stopSelf()
+            return
+        }
         refreshSettings()
         startForegroundCompat(includeCameraType = false)
         if (!stoppingSelf && !shouldKeepAliveForVoice()) stopSelf()
@@ -642,10 +674,12 @@ class DashcamService : LifecycleService(), LocationListener {
         val startTimeMs = System.currentTimeMillis()
         val outputFile = VideoStorage.outputFile(this, startTimeMs, activeTripFolderName)
         activeVideoFile = outputFile
+        val startElapsedMs = SystemClock.elapsedRealtime()
         activeSubtitleFile = VideoStorage.subtitleFileFor(outputFile)
+        rememberSubtitleFile(activeSubtitleFile, startElapsedMs)
         activeVideoStartWallMs = startTimeMs
         subtitleIndex = 0
-        recordingStartElapsedMs = SystemClock.elapsedRealtime()
+        recordingStartElapsedMs = startElapsedMs
         resetActiveTrack()
         lastPlateFocusElapsedMs = 0L
         val plateEnabled = DashcamSettings.load(this).plateRecognitionEnabled
@@ -755,6 +789,11 @@ class DashcamService : LifecycleService(), LocationListener {
         writeTripDriveRecord()
         clearActiveTrip()
         setRecordingState(this, false)
+        if (exitAfterStop) {
+            stopVoiceRecognition()
+            stopSelf()
+            return
+        }
         refreshSettings()
         startForegroundCompat(includeCameraType = false)
         if (!stoppingSelf && !shouldKeepAliveForVoice()) stopSelf()
@@ -945,6 +984,34 @@ class DashcamService : LifecycleService(), LocationListener {
         activeTripStartWallMs = 0L
         tripRecordingStartElapsedMs = 0L
         activeTripTrackPoints.clear()
+        tripSubtitleFiles.clear()
+    }
+
+    private fun rememberSubtitleFile(file: File?, startElapsedMs: Long) {
+        if (file == null || startElapsedMs <= 0L) return
+        if (tripSubtitleFiles.none { it.first == file }) {
+            tripSubtitleFiles += file to startElapsedMs
+        }
+    }
+
+    private fun rewriteRecordedRoadLayer(correction: DivergenceCorrection) {
+        if (!DashcamSettings.load(this).showRoadLayer) return
+        val label = when (correction.layer) {
+            RoadLayer.ELEVATED -> RoadLayerLabels.ON_BRIDGE
+            RoadLayer.GROUND -> RoadLayerLabels.UNDER_BRIDGE
+            else -> return
+        }
+        tripSubtitleFiles.toList().forEach { (file, startElapsedMs) ->
+            if (!file.exists()) return@forEach
+            val fromElapsedMs = (correction.fromTimeMs - startElapsedMs).coerceAtLeast(0L)
+            try {
+                val original = file.readText(Charsets.UTF_8)
+                val updated = SrtRoadLayerRewrite.rewrite(original, fromElapsedMs, label)
+                if (updated != original) file.writeText(updated, Charsets.UTF_8)
+            } catch (_: Exception) {
+                // 字幕文件正在被系统占用时，下一秒的新字幕仍会使用修正后的层级。
+            }
+        }
     }
 
     private fun buildWatermarkLines(forceTime: Boolean): List<String> {
@@ -953,6 +1020,13 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun refreshSettings() {
+        if (exitAfterStop) {
+            if (!isRecordingActive()) {
+                stopVoiceRecognition()
+                stopSelf()
+            }
+            return
+        }
         applyFocusSetting()
         val settings = DashcamSettings.load(this)
         lastLocation?.let { maybeResolveAddress(it) }
@@ -1118,6 +1192,7 @@ class DashcamService : LifecycleService(), LocationListener {
             speedKmh = lastSpeedKmh,
             latitude = location?.latitude,
             longitude = location?.longitude,
+            satelliteCount = gpsUsedSatelliteCount,
             address = lastAddressText,
             focusDistanceDiopters = lastFocusDistanceDiopters,
             autofocusState = lastAutofocusState
@@ -1137,7 +1212,7 @@ class DashcamService : LifecycleService(), LocationListener {
                 .getFromLocation(location.latitude, location.longitude, 1)
                 ?.firstOrNull()
                 ?: return null
-            formatChinaAddress(address)
+            formatPlace(address)
         } catch (_: IOException) {
             null
         } catch (_: RuntimeException) {
@@ -1145,20 +1220,18 @@ class DashcamService : LifecycleService(), LocationListener {
         }
     }
 
-    private fun formatChinaAddress(address: Address): String {
-        val country = when (address.countryCode?.uppercase(Locale.US)) {
-            "CN" -> "中国大陆"
-            else -> address.countryName ?: "位置"
-        }
-        val parts = listOfNotNull(
-            country,
-            address.adminArea,
-            address.locality ?: address.subAdminArea,
-            address.subLocality,
-            address.thoroughfare,
-            address.featureName
-        ).filter { it.isNotBlank() }
-        return parts.distinct().joinToString(" ")
+    private fun formatPlace(address: Address): String? {
+        val line = if (address.maxAddressLineIndex >= 0) address.getAddressLine(0) else null
+        return PlaceSubtitle.format(
+            adminArea = address.adminArea,
+            subAdminArea = address.subAdminArea,
+            locality = address.locality,
+            subLocality = address.subLocality,
+            thoroughfare = address.thoroughfare,
+            featureName = address.featureName,
+            premises = address.premises,
+            addressLine = line
+        )
     }
 
     private fun registerLocationUpdates() {
@@ -1169,15 +1242,52 @@ class DashcamService : LifecycleService(), LocationListener {
         } catch (_: RuntimeException) {
             // 定位不可用时只是不显示 GPS 水印，不影响录像。
         }
+        registerGnssStatusUpdates(manager)
+    }
+
+    private fun registerGnssStatusUpdates(manager: LocationManager) {
+        if (gnssStatusCallback != null) return
+        val callback = object : GnssStatus.Callback() {
+            override fun onSatelliteStatusChanged(status: GnssStatus) {
+                gpsUsedSatelliteCount = GnssSatelliteCount.usedInFix(status.satelliteCount, status::usedInFix)
+                updateTelemetrySnapshot()
+            }
+
+            override fun onStopped() {
+                gpsUsedSatelliteCount = null
+                updateTelemetrySnapshot()
+            }
+        }
+        try {
+            val registered = manager.registerGnssStatusCallback(callback, Handler(Looper.getMainLooper()))
+            if (registered) gnssStatusCallback = callback
+        } catch (_: SecurityException) {
+            gpsUsedSatelliteCount = null
+        } catch (_: RuntimeException) {
+            gpsUsedSatelliteCount = null
+        }
     }
 
     private fun unregisterLocationUpdates() {
+        unregisterGnssStatusUpdates()
         val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         try {
             manager.removeUpdates(this)
         } catch (_: RuntimeException) {
             // ignore teardown exception
         }
+    }
+
+    private fun unregisterGnssStatusUpdates() {
+        val callback = gnssStatusCallback ?: return
+        gnssStatusCallback = null
+        val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        try {
+            manager.unregisterGnssStatusCallback(callback)
+        } catch (_: RuntimeException) {
+            // ignore teardown exception
+        }
+        gpsUsedSatelliteCount = null
     }
 
     private fun scanFile(file: File, mimeType: String) {
@@ -1256,6 +1366,7 @@ class DashcamService : LifecycleService(), LocationListener {
             .setChronometerCountDown(false)
             .addAction(android.R.drawable.ic_menu_camera, getString(R.string.dashcam_action_photo), photoIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
+            .addAction(android.R.drawable.ic_lock_power_off, getString(R.string.notif_action_exit_background), AppBackgroundExit.pendingIntent(this))
             .setOngoing(recording)
             .build()
     }
@@ -1274,6 +1385,7 @@ class DashcamService : LifecycleService(), LocationListener {
         const val ACTION_STOP_RECORDING = "com.thomas.carspeed.action.DASHCAM_STOP_RECORDING"
         const val ACTION_TAKE_PHOTO = "com.thomas.carspeed.action.DASHCAM_TAKE_PHOTO"
         const val ACTION_REFRESH_SETTINGS = "com.thomas.carspeed.action.DASHCAM_REFRESH_SETTINGS"
+        const val ACTION_EXIT = "com.thomas.carspeed.action.DASHCAM_EXIT"
 
         private const val NOTIFICATION_ID = 2001
         private const val KEY_RECORDING = "dashcam_recording"
@@ -1344,6 +1456,19 @@ class DashcamService : LifecycleService(), LocationListener {
 
         fun stopRecording(context: Context) {
             val intent = Intent(context, DashcamService::class.java).apply { action = ACTION_STOP_RECORDING }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: RuntimeException) {
+                context.startService(intent)
+            }
+        }
+
+        fun exit(context: Context) {
+            if (instance == null) {
+                context.stopService(Intent(context, DashcamService::class.java))
+                return
+            }
+            val intent = Intent(context, DashcamService::class.java).apply { action = ACTION_EXIT }
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (_: RuntimeException) {
