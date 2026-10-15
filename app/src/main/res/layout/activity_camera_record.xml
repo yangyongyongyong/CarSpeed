@@ -258,6 +258,14 @@
                     android:text="@string/radar_settings_short_title" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOpenRadarQuery"
+                    style="@style/Widget.CarSpeed.Button.Text"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/radar_query_short" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenTrack"
                     style="@style/Widget.CarSpeed.Button.Text"
                     android:layout_width="0dp"

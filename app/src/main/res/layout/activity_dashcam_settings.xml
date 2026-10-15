@@ -383,6 +383,31 @@
                     android:orientation="vertical">
 
                     <com.google.android.material.checkbox.MaterialCheckBox
+                        android:id="@+id/cbCueSounds"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:checked="true"
+                        android:text="@string/cue_sounds_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:id="@+id/tvCueVolumeLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/cue_volume_label_default"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <SeekBar
+                        android:id="@+id/sbCueVolume"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:max="100"
+                        android:progress="100" />
+
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbRecordAudio"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -437,6 +462,14 @@
                         android:layout_height="wrap_content"
                         android:checked="true"
                         android:text="@string/watermark_satellites_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <com.google.android.material.checkbox.MaterialCheckBox
+                        android:id="@+id/cbWatermarkRadar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="@string/watermark_radar_toggle"
                         android:textColor="@color/text_primary" />
 
                     <com.google.android.material.checkbox.MaterialCheckBox

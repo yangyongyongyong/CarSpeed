@@ -43,10 +43,7 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
                     if (DashcamService.isRecording(context)) {
                         TriggerMonitorService.cancelDisconnectedStop(context, null)
                     } else if (TriggerRules.shouldStartRecordingOnBluetoothConnected(settings, address)) {
-                        DashcamService.startRecording(context)
-                        if (OverlayController.canStart(context) && !OverlayController.isRunning(context)) {
-                            OverlayController.start(context)
-                        }
+                        BackgroundRecordingStart.start(context)
                     } else if (TriggerRules.shouldArmStartRecordingAfterBluetoothConnectedAndSpeed(settings, address)) {
                         TriggerMonitorService.arm(context, address, displayName)
                     }

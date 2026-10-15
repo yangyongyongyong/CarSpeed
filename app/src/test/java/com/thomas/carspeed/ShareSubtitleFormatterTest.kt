@@ -118,4 +118,38 @@ class ShareSubtitleFormatterTest {
         )
         assertEquals("60.0 km/h  |  杭州市余杭区天目山路", removed)
     }
+
+    @Test
+    fun radar_summary_is_not_treated_as_speed_or_address() {
+        val text = "86.4 km/h  |  测速 100×4 · 120×3  |  杭州市余杭区天目山路"
+        val onlyRadar = ShareSubtitleFormatter.filter(
+            text,
+            ShareSubtitleFields(
+                showTime = false,
+                showSpeed = false,
+                showGps = false,
+                showAddress = false,
+                showFocus = false,
+                showVideoMode = false,
+                showRoadLayer = false,
+                showRadarSummary = true
+            )
+        )
+        assertEquals("测速 100×4 · 120×3", onlyRadar)
+
+        val withoutRadar = ShareSubtitleFormatter.filter(
+            text,
+            ShareSubtitleFields(
+                showTime = false,
+                showSpeed = true,
+                showGps = false,
+                showAddress = false,
+                showFocus = false,
+                showVideoMode = false,
+                showRoadLayer = false,
+                showRadarSummary = false
+            )
+        )
+        assertEquals("86.4 km/h", withoutRadar)
+    }
 }

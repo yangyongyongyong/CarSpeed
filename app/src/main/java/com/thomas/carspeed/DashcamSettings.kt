@@ -8,6 +8,7 @@ data class WatermarkSettings(
     val showStationaryWait: Boolean,
     val showGps: Boolean,
     val showSatellites: Boolean,
+    val showRadarSummary: Boolean,
     val showAddress: Boolean,
     val showRoadLayer: Boolean,
     val showVideoMode: Boolean,
@@ -15,6 +16,7 @@ data class WatermarkSettings(
     val plateRecognitionEnabled: Boolean,
     val recordAudio: Boolean,
     val voicePhotoEnabled: Boolean,
+    val cueSoundsEnabled: Boolean,
     val autoStartRecording: Boolean,
     val parkingStopEnabled: Boolean,
     val parkingStopMinutes: Int
@@ -26,6 +28,7 @@ object DashcamSettings {
     const val PREF_WATERMARK_STATIONARY_WAIT = "dashcam_watermark_stationary_wait"
     const val PREF_WATERMARK_GPS = "dashcam_watermark_gps"
     const val PREF_WATERMARK_SATELLITES = "dashcam_watermark_satellites"
+    const val PREF_WATERMARK_RADAR = "dashcam_watermark_radar"
     const val PREF_WATERMARK_ADDRESS = "dashcam_watermark_address"
     const val PREF_WATERMARK_ROAD_LAYER = "dashcam_watermark_road_layer"
     const val PREF_WATERMARK_VIDEO_MODE = "dashcam_watermark_video_mode"
@@ -33,6 +36,8 @@ object DashcamSettings {
     const val PREF_PLATE_RECOGNITION_ENABLED = "dashcam_plate_recognition_enabled"
     const val PREF_RECORD_AUDIO = "dashcam_record_audio"
     const val PREF_VOICE_PHOTO = "dashcam_voice_photo"
+    const val PREF_CUE_SOUNDS = "dashcam_cue_sounds"
+    const val PREF_CUE_VOLUME_PERCENT = "dashcam_cue_volume_percent"
     const val PREF_AUTO_START_RECORDING = "dashcam_auto_start_recording"
     const val PREF_VIDEO_QUALITY = "dashcam_video_quality"
     const val PREF_VIDEO_WIDTH = "dashcam_video_width"
@@ -55,6 +60,9 @@ object DashcamSettings {
     const val DEFAULT_SEGMENT_MINUTES = 5
     const val MIN_SEGMENT_MINUTES = 1
     const val MAX_SEGMENT_MINUTES = 10
+    const val DEFAULT_CUE_VOLUME_PERCENT = 100
+    const val MIN_CUE_VOLUME_PERCENT = 0
+    const val MAX_CUE_VOLUME_PERCENT = 100
     const val DEFAULT_PARKING_STOP_MINUTES = 3
     const val MIN_PARKING_STOP_MINUTES = 1
     const val MAX_PARKING_STOP_MINUTES = 30
@@ -73,6 +81,7 @@ object DashcamSettings {
             showStationaryWait = prefs.getBoolean(PREF_WATERMARK_STATIONARY_WAIT, true),
             showGps = prefs.getBoolean(PREF_WATERMARK_GPS, true),
             showSatellites = prefs.getBoolean(PREF_WATERMARK_SATELLITES, true),
+            showRadarSummary = prefs.getBoolean(PREF_WATERMARK_RADAR, true),
             showAddress = prefs.getBoolean(PREF_WATERMARK_ADDRESS, false),
             showRoadLayer = prefs.getBoolean(PREF_WATERMARK_ROAD_LAYER, false),
             showVideoMode = prefs.getBoolean(PREF_WATERMARK_VIDEO_MODE, true),
@@ -80,11 +89,23 @@ object DashcamSettings {
             plateRecognitionEnabled = prefs.getBoolean(PREF_PLATE_RECOGNITION_ENABLED, false),
             recordAudio = prefs.getBoolean(PREF_RECORD_AUDIO, false),
             voicePhotoEnabled = prefs.getBoolean(PREF_VOICE_PHOTO, false),
+            cueSoundsEnabled = prefs.getBoolean(PREF_CUE_SOUNDS, true),
             autoStartRecording = prefs.getBoolean(PREF_AUTO_START_RECORDING, false),
             parkingStopEnabled = prefs.getBoolean(PREF_PARKING_STOP_ENABLED, false),
             parkingStopMinutes = prefs.getInt(PREF_PARKING_STOP_MINUTES, DEFAULT_PARKING_STOP_MINUTES)
                 .coerceIn(MIN_PARKING_STOP_MINUTES, MAX_PARKING_STOP_MINUTES)
         )
+    }
+
+    fun cueSoundsEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .getBoolean(PREF_CUE_SOUNDS, true)
+    }
+
+    fun cueVolumePercent(context: Context): Int {
+        return context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .getInt(PREF_CUE_VOLUME_PERCENT, DEFAULT_CUE_VOLUME_PERCENT)
+            .coerceIn(MIN_CUE_VOLUME_PERCENT, MAX_CUE_VOLUME_PERCENT)
     }
 
     fun segmentDurationMs(context: Context): Long {

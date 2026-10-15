@@ -15,7 +15,7 @@ data class AutoTriggerSettings(
     val stopOnBluetoothDisconnectedAndStationary: Boolean = false
 ) {
     val enabled: Boolean
-        get() = startOnAppOpen || startOnAmap || startOnBluetoothConnected || startOnBluetoothConnectedAndSpeed ||
+        get() = startOnAppOpen || startOnBluetoothConnected || startOnBluetoothConnectedAndSpeed ||
             stopOnPowerDisconnected || stopOnBluetoothDisconnected || stopOnBluetoothDisconnectedAndStationary
 
     val usesBluetooth: Boolean

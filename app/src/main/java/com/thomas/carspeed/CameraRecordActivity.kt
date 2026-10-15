@@ -33,7 +33,6 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -67,6 +66,7 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var btnHud: Button
     private lateinit var btnRadar: Button
     private lateinit var btnTrack: Button
+    private lateinit var btnRadarQuery: Button
 
     private var idlePreviewProvider: ProcessCameraProvider? = null
     private var idleCamera: Camera? = null
@@ -174,6 +174,7 @@ class CameraRecordActivity : AppCompatActivity() {
         btnHud = findViewById(R.id.btnOpenHud)
         btnRadar = findViewById(R.id.btnOpenRadar)
         btnTrack = findViewById(R.id.btnOpenTrack)
+        btnRadarQuery = findViewById(R.id.btnOpenRadarQuery)
 
         toolbar.setNavigationOnClickListener { finish() }
         previewView.setOnClickListener { startActivity(Intent(this, CameraFullscreenActivity::class.java)) }
@@ -186,6 +187,7 @@ class CameraRecordActivity : AppCompatActivity() {
         btnHud.setOnClickListener { startActivity(Intent(this, SpeedHudActivity::class.java)) }
         btnRadar.setOnClickListener { startActivity(Intent(this, RadarAlertSettingsActivity::class.java)) }
         btnTrack.setOnClickListener { startActivity(Intent(this, TrackRecordingSettingsActivity::class.java)) }
+        btnRadarQuery.setOnClickListener { startActivity(Intent(this, RadarQueryActivity::class.java)) }
         setupFocusControls()
         setupRecordingPreviewSurface()
 
@@ -221,7 +223,6 @@ class CameraRecordActivity : AppCompatActivity() {
         TrackRecordingController.sync(this, stopUnavailable = true)
         maybeAutoStartFromIntent()
         AutoTriggerController.sync(this)
-        maybePromptAmapWatch()
         startOrientationListener()
         refreshVoiceRecognition()
         uiHandler.removeCallbacks(uiTicker)
@@ -303,22 +304,6 @@ class CameraRecordActivity : AppCompatActivity() {
             startRecordingFromUi()
         }
         syncUi()
-    }
-
-    private fun maybePromptAmapWatch() {
-        if (!TriggerSettings.load(this).startOnAmap) return
-        if (AmapWatchAccess.missing(this) == null) return
-        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
-        if (prefs.getBoolean(PREF_AMAP_WATCH_PROMPTED, false)) return
-        prefs.edit().putBoolean(PREF_AMAP_WATCH_PROMPTED, true).apply()
-        AlertDialog.Builder(this)
-            .setTitle(R.string.amap_watch_prompt_title)
-            .setMessage(R.string.amap_watch_prompt_message)
-            .setPositiveButton(R.string.amap_watch_prompt_go) { _, _ ->
-                AmapWatchAccess.openNextGrant(this)
-            }
-            .setNegativeButton(R.string.amap_watch_prompt_later, null)
-            .show()
     }
 
     private fun startRecordingFromUi() {
@@ -692,6 +677,7 @@ class CameraRecordActivity : AppCompatActivity() {
         val tempFile = VideoStorage.tempPhotoFile(this)
         val mode = CameraCapabilities.selectedVideoMode(this)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+        PhotoShutterSound.play(this)
         capture.takePicture(
             outputOptions,
             photoExecutor,
@@ -738,7 +724,6 @@ class CameraRecordActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_AUTO_START_RECORDING = "auto_start_recording"
         const val EXTRA_TAKE_PHOTO = "take_photo"
-        private const val PREF_AMAP_WATCH_PROMPTED = "amap_watch_prompted"
         private const val PREVIEW_REBIND_DELAY_MS = 700L
         private const val RECORDING_PREVIEW_PREPARE_MS = 150L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L

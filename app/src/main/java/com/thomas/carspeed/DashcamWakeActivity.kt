@@ -17,8 +17,7 @@ class DashcamWakeActivity : AppCompatActivity() {
         if (started) return
         started = true
         startedAtMs = SystemClock.elapsedRealtime()
-        val allowed = TriggerSettings.load(this).startOnAmap && OverlayController.hasCameraPermission(this)
-        if (!allowed) {
+        if (!OverlayController.hasCameraPermission(this)) {
             closeWake()
             return
         }

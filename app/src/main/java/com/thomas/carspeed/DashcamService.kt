@@ -91,6 +91,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private var recordingStartElapsedMs = 0L
     private var tripRecordingStartElapsedMs = 0L
     private var requestedStop = false
+    private var recordingCueOpen = false
     private var exitAfterStop = false
     private var rollingRestart = false
     private var rollingRestartNeedsRebind = false
@@ -339,6 +340,7 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun onSeamlessRecordingStarted() {
+        playRecordingStartCue()
         setRecordingState(this, true)
         startForegroundCompat(includeCameraType = true)
         refreshSettings()
@@ -388,6 +390,7 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun onSeamlessRecordingStopped() {
+        playRecordingStopCue()
         seamlessRecorder = null
         if (!rollingRestart) {
             activeHdrEnabled = false
@@ -744,6 +747,7 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun onRecordingStarted() {
+        playRecordingStartCue()
         setRecordingState(this, true)
         startForegroundCompat(includeCameraType = true)
         mainHandler.removeCallbacks(subtitleTicker)
@@ -792,6 +796,7 @@ class DashcamService : LifecycleService(), LocationListener {
             return
         }
 
+        playRecordingStopCue()
         releaseCameraUseCases()
         writeTripDriveRecord()
         clearActiveTrip()
@@ -831,6 +836,18 @@ class DashcamService : LifecycleService(), LocationListener {
         }
     }
 
+    private fun playRecordingStartCue() {
+        if (recordingCueOpen) return
+        recordingCueOpen = true
+        PhotoShutterSound.playRecordingStart(this)
+    }
+
+    private fun playRecordingStopCue() {
+        if (!recordingCueOpen) return
+        recordingCueOpen = false
+        PhotoShutterSound.playRecordingStop(this)
+    }
+
     private fun releaseCameraUseCases() {
         runCatching { cameraProvider?.unbindAll() }
         camera = null
@@ -845,6 +862,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun takePhotoInternal() {
         val recorder = seamlessRecorder
         if (recorder != null) {
+            PhotoShutterSound.play(this)
             captureSeamlessPhoto(recorder)
             return
         }
@@ -862,6 +880,7 @@ class DashcamService : LifecycleService(), LocationListener {
         val outputFile = VideoStorage.photoOutputFile(this, tripFolderName = activeTripFolderName)
         val tempFile = VideoStorage.tempPhotoFile(this)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+        PhotoShutterSound.play(this)
         capture.takePicture(
             outputOptions,
             cameraExecutor,
@@ -977,7 +996,11 @@ class DashcamService : LifecycleService(), LocationListener {
             val track = VideoTrack(
                 videoFileName = videoFile.name,
                 startTimeMs = activeVideoStartWallMs,
-                points = activeTrackPoints.toList()
+                points = activeTrackPoints.toList(),
+                radars = RouteRadarMarks.toTrackRadars(
+                    RadarAlertController.sightingsBetween(activeVideoStartWallMs, System.currentTimeMillis()),
+                    activeVideoStartWallMs
+                )
             )
             VideoTrackStorage.writeTrack(
                 context = this,
@@ -1521,6 +1544,14 @@ class DashcamService : LifecycleService(), LocationListener {
         fun currentTelemetry(): DashcamTelemetry {
             val waitMs = instance?.currentStationaryWaitMs() ?: 0L
             return telemetrySnapshot.copy(stationaryWaitMs = waitMs)
+        }
+
+        fun radarLimitSummary(nowMs: Long = System.currentTimeMillis()): String? {
+            val service = instance ?: return null
+            val startMs = service.activeTripStartWallMs
+            if (startMs <= 0L) return null
+            val limits = RadarAlertController.sightingsBetween(startMs, nowMs).map { it.speedLimit }
+            return RouteRadarMarks.limitSummary(limits)
         }
 
         fun updatePreviewFocusTelemetry(focusDistanceDiopters: Float?, autofocusState: Int?) {

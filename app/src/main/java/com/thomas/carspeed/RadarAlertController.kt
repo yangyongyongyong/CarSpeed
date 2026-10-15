@@ -1,7 +1,6 @@
 package com.thomas.carspeed
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
@@ -63,6 +62,8 @@ object RadarAlertController {
     private val firedThresholdsByCamera = mutableMapOf<String, MutableSet<Int>>()
     private val etaAnchorByCamera = mutableMapOf<String, EtaAnchor>()
     private val passedCameraKeys = mutableSetOf<String>()
+    private val sightingLock = Any()
+    private var sightings = emptyList<RadarSighting>()
     private val roadLock = Any()
     private var alertLayerElevated = true
     private var alertRoadInTunnel = false
@@ -285,6 +286,9 @@ object RadarAlertController {
         return synchronized(roadLock) {
             RoadSnapshot(
                 alertElevated = alertLayerElevated,
+                tunnel = alertRoadInTunnel,
+                usingDefault = roadLayerUsingDefault,
+                corrected = roadLayerCorrectedByDivergence,
                 elevatedFlag = elevatedFlag,
                 pendingSwitchSinceMs = pendingSwitchSinceMs
             )
@@ -331,7 +335,7 @@ object RadarAlertController {
             if (ttsReady) {
                 val activeTts = tts ?: return@TextToSpeech
                 activeTts.language = Locale.CHINA
-                activeTts.setAudioAttributes(ttsAudioAttributes())
+                activeTts.setAudioAttributes(AppPlaybackDuck.speechAttributes())
                 activeTts.setSpeechRate(settings.speechRate)
                 activeTts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
@@ -340,11 +344,13 @@ object RadarAlertController {
 
                     override fun onDone(utteranceId: String?) {
                         AMapNavi.setTtsPlaying(false)
+                        mainHandler.post { finishSpeech(utteranceId) }
                     }
 
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
                         AMapNavi.setTtsPlaying(false)
+                        mainHandler.post { finishSpeech(utteranceId) }
                     }
                 })
                 pendingText?.let { text ->
@@ -363,6 +369,7 @@ object RadarAlertController {
         val now = System.currentTimeMillis()
         dataHealth = dataHealth.copy(lastDataAtMs = now)
         state = state.copy(lastRadarDataAtMs = now)
+        rememberSpeedCameras(cameraInfo, now)
         val road = roadSnapshot()
         val overlapMode = RoadLayerAlertGate.mode(
             alertElevated = road.alertElevated,
@@ -513,14 +520,37 @@ object RadarAlertController {
         }
         AppSpeechGuard.markSpeechStarted()
         AMapNavi.setTtsPlaying(true)
+        holdForSpeech(utteranceId)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
 
+    private val speechDucks = mutableMapOf<String, DuckToken>()
+
+    private fun holdForSpeech(utteranceId: String) {
+        val context = appContext ?: return
+        speechDucks.remove(utteranceId)?.release()
+        speechDucks[utteranceId] = AppPlaybackDuck.acquire(context)
+        mainHandler.postDelayed({ finishSpeech(utteranceId) }, 12_000L)
+    }
+
+    private fun finishSpeech(utteranceId: String?) {
+        if (utteranceId == null) return
+        speechDucks.remove(utteranceId)?.release()
+    }
+
     private fun playPassTone() {
-        val tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }.getOrNull() ?: return
+        val ducked = appContext?.let { AppPlaybackDuck.acquire(it) }
+        val tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }.getOrNull()
+        if (tone == null) {
+            ducked?.release()
+            return
+        }
         tone.startTone(ToneGenerator.TONE_PROP_ACK, 140)
         mainHandler.postDelayed({ tone.startTone(ToneGenerator.TONE_PROP_ACK, 140) }, 220L)
-        mainHandler.postDelayed({ tone.release() }, 520L)
+        mainHandler.postDelayed({
+            tone.release()
+            ducked?.release()
+        }, 520L)
     }
 
     private data class LayerPublish(
@@ -532,15 +562,42 @@ object RadarAlertController {
 
     private data class RoadSnapshot(
         val alertElevated: Boolean,
+        val tunnel: Boolean,
+        val usingDefault: Boolean,
+        val corrected: Boolean,
         val elevatedFlag: Int,
         val pendingSwitchSinceMs: Long
     )
 
-    private fun ttsAudioAttributes(): AudioAttributes {
-        return AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .setLegacyStreamType(AudioManager.STREAM_MUSIC)
-            .build()
+    internal fun sightingsBetween(startMs: Long, endMs: Long): List<RadarSighting> {
+        return synchronized(sightingLock) {
+            sightings.filter { it.timeMs in startMs..endMs }
+        }
     }
+
+    private fun rememberSpeedCameras(cameraInfo: Array<out AMapNaviTrafficFacilityInfo>, nowMs: Long) {
+        val road = roadSnapshot()
+        val layer = RouteRadarMarks.layer(tunnel = road.tunnel, elevated = road.alertElevated)
+        cameraInfo.forEach { info ->
+            if (info.getDistance() <= 0 || !RadarAlertPlanner.isSpeedCamera(info.getBroadcastType())) return@forEach
+            val latitude = info.getCoorY()
+            val longitude = info.getCoorX()
+            if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return@forEach
+            if (kotlin.math.abs(latitude) < 0.01 && kotlin.math.abs(longitude) < 0.01) return@forEach
+            val incoming = RadarSighting(
+                timeMs = nowMs,
+                latitude = latitude,
+                longitude = longitude,
+                cameraType = info.getBroadcastType(),
+                speedLimit = info.getLimitSpeed().takeIf { it > 0 },
+                roadLayer = layer,
+                usingDefault = road.usingDefault,
+                correctedByDivergence = road.corrected
+            )
+            synchronized(sightingLock) {
+                sightings = RouteRadarMarks.remember(sightings, incoming, nowMs)
+            }
+        }
+    }
+
 }

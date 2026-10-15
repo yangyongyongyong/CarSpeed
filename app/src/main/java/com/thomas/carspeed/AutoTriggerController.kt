@@ -27,10 +27,7 @@ object AutoTriggerController {
             val device = connectedDevices.firstOrNull()
             if (device != null) {
                 if (settings.startOnBluetoothConnected) {
-                    DashcamService.startRecording(appContext)
-                    if (OverlayController.canStart(appContext) && !OverlayController.isRunning(appContext)) {
-                        OverlayController.start(appContext)
-                    }
+                    BackgroundRecordingStart.start(appContext)
                 } else if (settings.startOnBluetoothConnectedAndSpeed) {
                     TriggerMonitorService.arm(appContext, device.address, device.name)
                 } else {

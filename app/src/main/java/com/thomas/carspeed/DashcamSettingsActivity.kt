@@ -36,6 +36,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var tvParkingStopLabel: TextView
     private lateinit var sbParkingStopMinutes: SeekBar
     private lateinit var cbRecordAudio: CheckBox
+    private lateinit var cbCueSounds: CheckBox
+    private lateinit var tvCueVolumeLabel: TextView
+    private lateinit var sbCueVolume: SeekBar
     private lateinit var cbVoicePhoto: CheckBox
     private lateinit var cbAutoStartRecording: CheckBox
     private lateinit var cbAutoTriggerStartOnAmap: CheckBox
@@ -52,6 +55,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var cbWatermarkStationaryWait: CheckBox
     private lateinit var cbWatermarkGps: CheckBox
     private lateinit var cbWatermarkSatellites: CheckBox
+    private lateinit var cbWatermarkRadar: CheckBox
     private lateinit var cbWatermarkAddress: CheckBox
     private lateinit var cbWatermarkRoadLayer: CheckBox
     private lateinit var cbWatermarkVideoMode: CheckBox
@@ -114,6 +118,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
         tvParkingStopLabel = findViewById(R.id.tvParkingStopLabel)
         sbParkingStopMinutes = findViewById(R.id.sbParkingStopMinutes)
         cbRecordAudio = findViewById(R.id.cbRecordAudio)
+        cbCueSounds = findViewById(R.id.cbCueSounds)
+        tvCueVolumeLabel = findViewById(R.id.tvCueVolumeLabel)
+        sbCueVolume = findViewById(R.id.sbCueVolume)
         cbVoicePhoto = findViewById(R.id.cbVoicePhoto)
         cbAutoStartRecording = findViewById(R.id.cbAutoStartRecording)
         cbAutoTriggerStartOnAmap = findViewById(R.id.cbAutoTriggerStartOnAmap)
@@ -130,6 +137,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbWatermarkStationaryWait = findViewById(R.id.cbWatermarkStationaryWait)
         cbWatermarkGps = findViewById(R.id.cbWatermarkGps)
         cbWatermarkSatellites = findViewById(R.id.cbWatermarkSatellites)
+        cbWatermarkRadar = findViewById(R.id.cbWatermarkRadar)
         cbWatermarkAddress = findViewById(R.id.cbWatermarkAddress)
         cbWatermarkRoadLayer = findViewById(R.id.cbWatermarkRoadLayer)
         cbWatermarkVideoMode = findViewById(R.id.cbWatermarkVideoMode)
@@ -159,6 +167,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private fun setupCheckBoxes() {
         listOf(
             cbRecordAudio,
+            cbCueSounds,
             cbVoicePhoto,
             cbAutoStartRecording,
             cbAutoTriggerStartOnAmap,
@@ -173,6 +182,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
             cbWatermarkStationaryWait,
             cbWatermarkGps,
             cbWatermarkSatellites,
+            cbWatermarkRadar,
             cbWatermarkAddress,
             cbWatermarkRoadLayer,
             cbWatermarkVideoMode,
@@ -190,6 +200,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
                 }
                 if (box == cbParkingStop) {
                     updateParkingStopControls()
+                }
+                if (box == cbCueSounds) {
+                    updateCueVolumeControls()
                 }
                 if (box in bluetoothTriggerBoxes()) {
                     updateAutoTriggerControls()
@@ -469,6 +482,34 @@ class DashcamSettingsActivity : AppCompatActivity() {
         tvParkingStopLabel.text = getString(R.string.parking_stop_label, parkingStopMinutes)
         updateParkingStopControls()
 
+        val cueVolume = prefs.getInt(
+            DashcamSettings.PREF_CUE_VOLUME_PERCENT,
+            DashcamSettings.DEFAULT_CUE_VOLUME_PERCENT
+        ).coerceIn(DashcamSettings.MIN_CUE_VOLUME_PERCENT, DashcamSettings.MAX_CUE_VOLUME_PERCENT)
+        sbCueVolume.min = DashcamSettings.MIN_CUE_VOLUME_PERCENT
+        sbCueVolume.max = DashcamSettings.MAX_CUE_VOLUME_PERCENT
+        sbCueVolume.progress = cueVolume
+        tvCueVolumeLabel.text = getString(R.string.cue_volume_label, cueVolume)
+        updateCueVolumeControls()
+        sbCueVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val fixed = progress.coerceIn(
+                    DashcamSettings.MIN_CUE_VOLUME_PERCENT,
+                    DashcamSettings.MAX_CUE_VOLUME_PERCENT
+                )
+                tvCueVolumeLabel.text = getString(R.string.cue_volume_label, fixed)
+                prefs.edit().putInt(DashcamSettings.PREF_CUE_VOLUME_PERCENT, fixed).apply()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (cbCueSounds.isChecked && sbCueVolume.progress > 0) {
+                    PhotoShutterSound.play(this@DashcamSettingsActivity)
+                }
+            }
+        })
+
         sbLoopStorage.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 val fixed = progress.coerceIn(DashcamSettings.MIN_LOOP_STORAGE_GB, DashcamSettings.MAX_LOOP_STORAGE_GB)
@@ -511,11 +552,13 @@ class DashcamSettingsActivity : AppCompatActivity() {
         val settings = DashcamSettings.load(this)
         val triggerSettings = TriggerSettings.load(this)
         cbRecordAudio.isChecked = settings.recordAudio
+        cbCueSounds.isChecked = settings.cueSoundsEnabled
         cbWatermarkTime.isChecked = settings.showTime
         cbWatermarkSpeed.isChecked = settings.showSpeed
         cbWatermarkStationaryWait.isChecked = settings.showStationaryWait
         cbWatermarkGps.isChecked = settings.showGps
         cbWatermarkSatellites.isChecked = settings.showSatellites
+        cbWatermarkRadar.isChecked = settings.showRadarSummary
         cbWatermarkAddress.isChecked = settings.showAddress
         cbWatermarkRoadLayer.isChecked = settings.showRoadLayer
         cbWatermarkVideoMode.isChecked = settings.showVideoMode
@@ -532,6 +575,12 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbAutoTriggerStopOnBluetoothDisconnected.isChecked = triggerSettings.stopOnBluetoothDisconnected
         cbAutoTriggerStopOnBluetoothStationary.isChecked = triggerSettings.stopOnBluetoothDisconnectedAndStationary
         updateAutoTriggerControls()
+    }
+
+    private fun updateCueVolumeControls() {
+        val enabled = cbCueSounds.isChecked
+        sbCueVolume.isEnabled = enabled
+        tvCueVolumeLabel.isEnabled = enabled
     }
 
     private fun updateParkingStopControls() {
@@ -579,12 +628,14 @@ class DashcamSettingsActivity : AppCompatActivity() {
             .putBoolean(DashcamSettings.PREF_WATERMARK_STATIONARY_WAIT, cbWatermarkStationaryWait.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_GPS, cbWatermarkGps.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_SATELLITES, cbWatermarkSatellites.isChecked)
+            .putBoolean(DashcamSettings.PREF_WATERMARK_RADAR, cbWatermarkRadar.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_ADDRESS, cbWatermarkAddress.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_ROAD_LAYER, cbWatermarkRoadLayer.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_VIDEO_MODE, cbWatermarkVideoMode.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_FOCUS, cbWatermarkFocus.isChecked)
             .putBoolean(DashcamSettings.PREF_PLATE_RECOGNITION_ENABLED, cbPlateRecognition.isChecked)
             .putBoolean(DashcamSettings.PREF_RECORD_AUDIO, cbRecordAudio.isChecked)
+            .putBoolean(DashcamSettings.PREF_CUE_SOUNDS, cbCueSounds.isChecked)
             .putBoolean(DashcamSettings.PREF_VOICE_PHOTO, cbVoicePhoto.isChecked)
             .putBoolean(DashcamSettings.PREF_AUTO_START_RECORDING, cbAutoStartRecording.isChecked)
             .putBoolean(DashcamSettings.PREF_PARKING_STOP_ENABLED, cbParkingStop.isChecked)

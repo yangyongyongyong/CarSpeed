@@ -54,6 +54,7 @@ class ShareExportActivity : AppCompatActivity() {
     private lateinit var cbSubtitleStationaryWait: CheckBox
     private lateinit var cbSubtitleGps: CheckBox
     private lateinit var cbSubtitleSatellites: CheckBox
+    private lateinit var cbSubtitleRadar: CheckBox
     private lateinit var cbSubtitleAddress: CheckBox
     private lateinit var cbSubtitleFocus: CheckBox
     private lateinit var cbSubtitleVideoMode: CheckBox
@@ -187,6 +188,7 @@ class ShareExportActivity : AppCompatActivity() {
             cbSubtitleStationaryWait = subtitleCheckBox(getString(R.string.share_export_field_stationary_wait))
             cbSubtitleGps = subtitleCheckBox(getString(R.string.share_export_field_gps))
             cbSubtitleSatellites = subtitleCheckBox(getString(R.string.share_export_field_satellites))
+            cbSubtitleRadar = subtitleCheckBox(getString(R.string.share_export_field_radar))
             cbSubtitleAddress = subtitleCheckBox(getString(R.string.share_export_field_address))
             cbSubtitleFocus = subtitleCheckBox(getString(R.string.share_export_field_focus))
             cbSubtitleVideoMode = subtitleCheckBox(getString(R.string.share_export_field_video_mode))
@@ -197,6 +199,7 @@ class ShareExportActivity : AppCompatActivity() {
                 cbSubtitleStationaryWait,
                 cbSubtitleGps,
                 cbSubtitleSatellites,
+                cbSubtitleRadar,
                 cbSubtitleAddress,
                 cbSubtitleFocus,
                 cbSubtitleVideoMode,
@@ -402,6 +405,7 @@ class ShareExportActivity : AppCompatActivity() {
                 showStationaryWait = cbSubtitleStationaryWait.isChecked,
                 showGps = cbSubtitleGps.isChecked,
                 showSatellites = cbSubtitleSatellites.isChecked,
+                showRadarSummary = cbSubtitleRadar.isChecked,
                 showAddress = cbSubtitleAddress.isChecked,
                 showFocus = cbSubtitleFocus.isChecked,
                 showVideoMode = cbSubtitleVideoMode.isChecked,

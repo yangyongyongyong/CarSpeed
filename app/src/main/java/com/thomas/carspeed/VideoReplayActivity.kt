@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
@@ -101,6 +102,7 @@ class VideoReplayActivity : AppCompatActivity() {
     private var lastVideoWidth = 0
     private var lastVideoHeight = 0
     private var playbackSpeedIndex = 0
+    private var radarLookup: HistoricalRadarLookup? = null
 
     private val syncTicker = object : Runnable {
         override fun run() {
@@ -175,6 +177,8 @@ class VideoReplayActivity : AppCompatActivity() {
         tvReplayRotate.setOnClickListener { rotatePlayback(90) }
         mapRouteView.onMapTap = { if (!mapFullscreen) setMapFullscreen(true) }
         mapRouteView.onPhotoClick = { path -> openRoutePhoto(path) }
+        mapRouteView.onRadarClick = { radar -> showRadarDetail(radar) }
+        mapRouteView.onMaxSpeedClick = { speedKmh -> showMaxSpeed(speedKmh) }
         mapRouteView.onScaleChanged = { updateMapControls() }
         mapRouteView.setOverlayControlsVisible(false)
         btnMapViewportAll.setOnClickListener { mapRouteView.showWholeRoute() }
@@ -232,6 +236,8 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        radarLookup?.cancel()
+        radarLookup = null
         mainHandler.removeCallbacks(syncTicker)
         mainHandler.removeCallbacks(hideControlsRunnable)
         releasePlayer()
@@ -597,6 +603,7 @@ class VideoReplayActivity : AppCompatActivity() {
             )
         }
         publishRoute(points, 0L)
+        requestHistoricalRadars(points)
     }
 
     private fun renderTrackInfo() {
@@ -622,6 +629,68 @@ class VideoReplayActivity : AppCompatActivity() {
         mapRouteView.setPhotoMarks(
             RoutePhotoMarks.match(points, routePhotoCandidates(), track?.startTimeMs ?: 0L)
         )
+        mapRouteView.setRadarMarks(track?.radars.orEmpty())
+    }
+
+    private fun showRadarDetail(radar: VideoTrackRadar) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.route_radar_detail_title)
+            .setMessage(
+                RouteRadarMarks.detail(
+                    cameraType = radar.cameraType,
+                    speedLimit = radar.speedLimit,
+                    roadLayer = radar.roadLayer,
+                    usingDefault = radar.usingDefault,
+                    correctedByDivergence = radar.correctedByDivergence
+                )
+            )
+            .setPositiveButton(R.string.route_radar_detail_close, null)
+            .show()
+    }
+
+    private fun showMaxSpeed(speedKmh: Float) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.route_max_speed_title)
+            .setMessage(getString(R.string.route_max_speed_message, speedKmh))
+            .setPositiveButton(R.string.route_radar_detail_close, null)
+            .show()
+    }
+
+    /**
+     * 新录像在录的时候已经把雷达写进轨迹。旧录像没有这份数据，按轨迹向导航补查一次，
+     * 查到就写回轨迹文件，下次直接画。
+     */
+    private fun requestHistoricalRadars(points: List<VideoTrackPoint>) {
+        if (trackOnly || points.size < 2 || !track?.radars.isNullOrEmpty()) return
+        radarLookup?.cancel()
+        val lookup = HistoricalRadarLookup(this)
+        radarLookup = lookup
+        lookup.load(points) { radars ->
+            radarLookup = null
+            if (isDestroyed || radars.isEmpty()) return@load
+            track = track?.copy(radars = radars)
+            mapRouteView.setRadarMarks(radars)
+            persistLookedUpRadars(radars)
+        }
+    }
+
+    private fun persistLookedUpRadars(radars: List<VideoTrackRadar>) {
+        videoFiles.forEachIndexed { index, file ->
+            val existing = VideoTrackStorage.readTrack(this, file) ?: return@forEachIndexed
+            val offset = segmentOffsetsMs.getOrElse(index) { 0L }
+            val duration = segmentDurationsMs.getOrElse(index) { Long.MAX_VALUE }
+            val segmentRadars = radars.mapNotNull { radar ->
+                val localElapsed = radar.elapsedMs - offset
+                if (localElapsed < -2_000L || localElapsed > duration + 2_000L) null
+                else radar.copy(elapsedMs = localElapsed.coerceAtLeast(0L))
+            }
+            if (segmentRadars.isEmpty()) return@forEachIndexed
+            VideoTrackStorage.writeTrack(
+                this,
+                file,
+                existing.copy(radars = RouteRadarMarks.uniqueByLocation(segmentRadars))
+            )
+        }
     }
 
     private fun routePhotoCandidates(): List<RoutePhotoCandidate> {

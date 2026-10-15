@@ -6,7 +6,7 @@ import org.junit.Test
 
 class AmapWatchRulesTest {
     @Test
-    fun amap_in_foreground_wakes_recording_when_enabled() {
+    fun amap_in_foreground_wakes_the_app_when_enabled() {
         assertTrue(
             AmapWatchRules.shouldWake(
                 enabled = true,
@@ -59,7 +59,7 @@ class AmapWatchRulesTest {
     }
 
     @Test
-    fun already_recording_or_recent_wake_does_not_start_again() {
+    fun already_recording_or_recent_wake_does_not_wake_again() {
         assertFalse(
             AmapWatchRules.shouldWake(
                 enabled = true,

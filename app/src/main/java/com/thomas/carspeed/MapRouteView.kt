@@ -16,6 +16,7 @@ import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.appcompat.content.res.AppCompatResources
 import com.amap.api.maps.AMap
 import com.amap.api.maps.AMapException
 import com.amap.api.maps.CameraUpdateFactory
@@ -49,6 +50,8 @@ class MapRouteView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : FrameLayout(context, attrs), OfflineMapManager.OfflineMapDownloadListener,
     OfflineMapManager.OfflineLoadedListener {
+    private class MaxSpeedTag(val speedKmh: Float)
+
     private val mapView = TextureMapView(context)
     private val aMap: AMap
     private val statsView = TextView(context)
@@ -68,10 +71,16 @@ class MapRouteView @JvmOverloads constructor(
     private var playedRunScales: List<Float> = emptyList()
     private var currentPulseCircle: Circle? = null
     private var currentCircle: Circle? = null
-    private var maxSpeedCircle: Circle? = null
+    private var maxSpeedMarker: Marker? = null
+    private var maxSpeedIcon: BitmapDescriptor? = null
+    var onMaxSpeedClick: ((Float) -> Unit)? = null
     private var photoMarks: List<RoutePhotoMark> = emptyList()
     private val photoMarkers = mutableListOf<Marker>()
     private var photoMarkerIcon: BitmapDescriptor? = null
+    private var radarMarks: List<VideoTrackRadar> = emptyList()
+    private var radarLatLngs: List<LatLng> = emptyList()
+    private val radarMarkers = mutableListOf<Marker>()
+    private val radarMarkerIcons = mutableMapOf<Int, RadarMarkerBitmap>()
     private var fitWholeRoute = false
     private var currentMapType = AMap.MAP_TYPE_NORMAL
     private var userCameraLocked = false
@@ -87,6 +96,7 @@ class MapRouteView @JvmOverloads constructor(
     var onMapTap: (() -> Unit)? = null
     var onScaleChanged: (() -> Unit)? = null
     var onPhotoClick: ((String) -> Unit)? = null
+    var onRadarClick: ((VideoTrackRadar) -> Unit)? = null
 
     init {
         clipChildren = false
@@ -127,6 +137,13 @@ class MapRouteView @JvmOverloads constructor(
     internal fun setPhotoMarks(marks: List<RoutePhotoMark>) {
         photoMarks = marks
         renderPhotoMarks()
+    }
+
+    fun setRadarMarks(marks: List<VideoTrackRadar>) {
+        radarMarks = marks
+        radarLatLngs = marks.map { LatLng(it.latitude, it.longitude) }
+        renderRadarMarks()
+        if (fitWholeRoute) updateCamera()
     }
 
     fun resetViewport() {
@@ -279,6 +296,16 @@ class MapRouteView @JvmOverloads constructor(
             }
         })
         aMap.setOnMarkerClickListener { marker ->
+            val radar = marker.`object` as? VideoTrackRadar
+            if (radar != null) {
+                onRadarClick?.invoke(radar)
+                return@setOnMarkerClickListener true
+            }
+            val maxSpeed = marker.`object` as? MaxSpeedTag
+            if (maxSpeed != null) {
+                onMaxSpeedClick?.invoke(maxSpeed.speedKmh)
+                return@setOnMarkerClickListener true
+            }
             val path = marker.`object` as? String
             if (path.isNullOrBlank()) {
                 false
@@ -335,8 +362,8 @@ class MapRouteView @JvmOverloads constructor(
         currentPulseCircle = null
         currentCircle?.remove()
         currentCircle = null
-        maxSpeedCircle?.remove()
-        maxSpeedCircle = null
+        maxSpeedMarker?.remove()
+        maxSpeedMarker = null
 
         if (convertedPoints.size < 2) return
         for (i in 1 until convertedPoints.size) {
@@ -351,17 +378,41 @@ class MapRouteView @JvmOverloads constructor(
         }
         val maxIndex = points.indices.maxByOrNull { points[it].speedKmh } ?: -1
         if (maxIndex >= 0 && points[maxIndex].speedKmh > 0f) {
-            maxSpeedCircle = aMap.addCircle(
-                CircleOptions()
-                    .center(convertedPoints[maxIndex])
-                    .radius(2.5)
-                    .strokeWidth(dp(5).toFloat())
-                    .strokeColor(Color.WHITE)
-                    .fillColor(Color.rgb(255, 64, 129))
-                    .zIndex(40f)
+            val marker = aMap.addMarker(
+                MarkerOptions()
+                    .position(convertedPoints[maxIndex])
+                    .icon(maxSpeedMarkerIcon())
+                    .anchor(0.5f, 0.5f)
+                    .zIndex(42f)
             )
+            marker?.setObject(MaxSpeedTag(points[maxIndex].speedKmh))
+            marker?.isInfoWindowEnable = false
+            maxSpeedMarker = marker
         }
         renderPhotoMarks()
+        renderRadarMarks()
+    }
+
+    private fun maxSpeedMarkerIcon(): BitmapDescriptor {
+        maxSpeedIcon?.let { return it }
+        val diameter = dp(14).coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(diameter, diameter, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(255, 64, 129)
+            style = Paint.Style.FILL
+        }
+        val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = (1.5f * resources.displayMetrics.density).coerceAtLeast(1.5f)
+        }
+        val radius = diameter / 2f - stroke.strokeWidth / 2f
+        canvas.drawCircle(diameter / 2f, diameter / 2f, radius, fill)
+        canvas.drawCircle(diameter / 2f, diameter / 2f, radius, stroke)
+        val icon = BitmapDescriptorFactory.fromBitmap(bitmap)
+        maxSpeedIcon = icon
+        return icon
     }
 
     private fun renderPhotoMarks() {
@@ -403,6 +454,79 @@ class MapRouteView @JvmOverloads constructor(
         photoMarkerIcon = icon
         return icon
     }
+
+    private fun renderRadarMarks() {
+        radarMarkers.forEach { it.remove() }
+        radarMarkers.clear()
+        if (radarMarks.isEmpty()) return
+        radarMarks.forEach { mark ->
+            val bitmap = radarMarkerBitmap(mark.speedLimit)
+            // 高德巡航给的是地图坐标，轨迹点才需要从 GPS 再转一次。
+            val marker = aMap.addMarker(
+                MarkerOptions()
+                    .position(LatLng(mark.latitude, mark.longitude))
+                    .icon(bitmap.icon)
+                    .anchor(0.5f, bitmap.anchorY)
+                    .zIndex(58f)
+            ) ?: return@forEach
+            marker.`object` = mark
+            marker.isInfoWindowEnable = false
+            radarMarkers += marker
+        }
+    }
+
+    private fun radarMarkerBitmap(speedLimit: Int?): RadarMarkerBitmap {
+        val limit = speedLimit?.takeIf { it > 0 }
+        val key = limit ?: RADAR_ICON_NO_LIMIT
+        radarMarkerIcons[key]?.let { return it }
+        val iconSize = dp(22).coerceAtLeast(1)
+        val label = limit?.toString()
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = dp(11).toFloat()
+            textAlign = Paint.Align.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val textWidth = label?.let { textPaint.measureText(it) } ?: 0f
+        val pillPadX = dp(4)
+        val pillHeight = if (label == null) 0 else dp(14)
+        val gap = if (label == null) 0 else dp(1)
+        val width = max(iconSize, (textWidth + pillPadX * 2).roundToInt()).coerceAtLeast(1)
+        val height = (iconSize + gap + pillHeight).coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        AppCompatResources.getDrawable(context, R.drawable.ic_speed_radar)?.let { drawable ->
+            val left = (width - iconSize) / 2
+            drawable.setBounds(left, 0, left + iconSize, iconSize)
+            drawable.draw(canvas)
+        }
+        if (label != null) {
+            val pillTop = iconSize + gap
+            val pill = android.graphics.RectF(
+                (width - textWidth) / 2f - pillPadX,
+                pillTop.toFloat(),
+                (width + textWidth) / 2f + pillPadX,
+                (pillTop + pillHeight).toFloat()
+            )
+            val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(21, 32, 51)
+            }
+            canvas.drawRoundRect(pill, dp(3).toFloat(), dp(3).toFloat(), pillPaint)
+            val baseline = pill.centerY() - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
+            canvas.drawText(label, width / 2f, baseline, textPaint)
+        }
+        val marker = RadarMarkerBitmap(
+            icon = BitmapDescriptorFactory.fromBitmap(bitmap),
+            anchorY = (iconSize / 2f) / height
+        )
+        radarMarkerIcons[key] = marker
+        return marker
+    }
+
+    private data class RadarMarkerBitmap(
+        val icon: BitmapDescriptor,
+        val anchorY: Float
+    )
 
     private fun renderPlaybackState() {
         if (points.isEmpty() || convertedPoints.isEmpty()) return
@@ -455,6 +579,7 @@ class MapRouteView @JvmOverloads constructor(
         if (fitWholeRoute && convertedPoints.size > 1) {
             val builder = LatLngBounds.builder()
             convertedPoints.forEach { builder.include(it) }
+            radarLatLngs.forEach { builder.include(it) }
             runCatching { aMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), dp(18))) }
             routeCameraInitialized = true
         } else if (userCameraLocked) {
@@ -831,6 +956,7 @@ class MapRouteView @JvmOverloads constructor(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val RADAR_ICON_NO_LIMIT = Int.MIN_VALUE
         private const val MIN_ZOOM = 3
         private const val MAX_ZOOM = 21
         private val VIEWPORT_SCALE_METERS = doubleArrayOf(

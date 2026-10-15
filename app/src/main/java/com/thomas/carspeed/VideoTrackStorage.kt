@@ -9,7 +9,20 @@ data class VideoTrack(
     val version: Int = 1,
     val videoFileName: String,
     val startTimeMs: Long,
-    val points: List<VideoTrackPoint>
+    val points: List<VideoTrackPoint>,
+    val radars: List<VideoTrackRadar> = emptyList()
+)
+
+data class VideoTrackRadar(
+    val elapsedMs: Long,
+    val timeMs: Long,
+    val latitude: Double,
+    val longitude: Double,
+    val cameraType: Int,
+    val speedLimit: Int?,
+    val roadLayer: String,
+    val usingDefault: Boolean = false,
+    val correctedByDivergence: Boolean = false
 )
 
 data class VideoTrackPoint(
@@ -70,10 +83,15 @@ object VideoTrackStorage {
                 point.copy(elapsedMs = segmentOffsetMs + point.elapsedMs)
             }
         }.sortedBy { it.elapsedMs }
+        val mergedRadars = tracks.flatMap { track ->
+            val segmentOffsetMs = (track.startTimeMs - firstStartMs).coerceAtLeast(0L)
+            track.radars.map { radar -> radar.copy(elapsedMs = segmentOffsetMs + radar.elapsedMs) }
+        }.sortedBy { it.elapsedMs }
         return VideoTrack(
             videoFileName = videoFiles.firstOrNull()?.parentFile?.name.orEmpty(),
             startTimeMs = firstStartMs,
-            points = mergedPoints
+            points = mergedPoints,
+            radars = RouteRadarMarks.uniqueByLocation(mergedRadars)
         )
     }
 
@@ -89,10 +107,15 @@ object VideoTrackStorage {
                 point.copy(elapsedMs = segmentOffsetMs + point.elapsedMs)
             }
         }.sortedBy { it.elapsedMs }
+        val mergedRadars = tracks.flatMap { track ->
+            val segmentOffsetMs = (track.startTimeMs - firstStartMs).coerceAtLeast(0L)
+            track.radars.map { radar -> radar.copy(elapsedMs = segmentOffsetMs + radar.elapsedMs) }
+        }.sortedBy { it.elapsedMs }
         return VideoTrack(
             videoFileName = videoFiles.firstOrNull()?.parentFile?.name.orEmpty(),
             startTimeMs = firstStartMs,
-            points = mergedPoints
+            points = mergedPoints,
+            radars = RouteRadarMarks.uniqueByLocation(mergedRadars)
         )
     }
 
@@ -117,10 +140,18 @@ object VideoTrackStorage {
                 .filter { point -> durationMs <= 0L || point.elapsedMs <= durationMs + SEGMENT_SIDE_CAR_TOLERANCE_MS }
                 .map { point -> point.copy(elapsedMs = segmentOffsetMs + point.elapsedMs) }
         }.sortedBy { it.elapsedMs }
+        val mergedRadars = tracks.flatMap { (index, track) ->
+            val segmentOffsetMs = offsetsMs.getOrElse(index) { 0L }
+            val durationMs = durationsMs.getOrElse(index) { 0L }
+            track.radars
+                .filter { radar -> durationMs <= 0L || radar.elapsedMs <= durationMs + SEGMENT_SIDE_CAR_TOLERANCE_MS }
+                .map { radar -> radar.copy(elapsedMs = segmentOffsetMs + radar.elapsedMs) }
+        }.sortedBy { it.elapsedMs }
         return VideoTrack(
             videoFileName = videoFiles.firstOrNull()?.parentFile?.name.orEmpty(),
             startTimeMs = firstStartMs,
-            points = mergedPoints
+            points = mergedPoints,
+            radars = RouteRadarMarks.uniqueByLocation(mergedRadars)
         )
     }
 
@@ -140,11 +171,27 @@ object VideoTrackStorage {
                     .putNullable("bearingDegrees", point.bearingDegrees)
             )
         }
+        val radars = JSONArray()
+        track.radars.forEach { radar ->
+            radars.put(
+                JSONObject()
+                    .put("elapsedMs", radar.elapsedMs)
+                    .put("timeMs", radar.timeMs)
+                    .put("latitude", radar.latitude)
+                    .put("longitude", radar.longitude)
+                    .put("cameraType", radar.cameraType)
+                    .putNullable("speedLimit", radar.speedLimit)
+                    .put("roadLayer", radar.roadLayer)
+                    .put("usingDefault", radar.usingDefault)
+                    .put("correctedByDivergence", radar.correctedByDivergence)
+            )
+        }
         return JSONObject()
             .put("version", track.version)
             .put("videoFileName", track.videoFileName)
             .put("startTimeMs", track.startTimeMs)
             .put("points", points)
+            .put("radars", radars)
     }
 
     private fun fromJson(json: JSONObject): VideoTrack {
@@ -169,8 +216,37 @@ object VideoTrackStorage {
             version = json.optInt("version", 1),
             videoFileName = json.optString("videoFileName"),
             startTimeMs = json.optLong("startTimeMs", 0L),
-            points = points.sortedBy { it.elapsedMs }
+            points = points.sortedBy { it.elapsedMs },
+            radars = parseRadars(json.optJSONArray("radars"))
         )
+    }
+
+    private fun parseRadars(radarsJson: JSONArray?): List<VideoTrackRadar> {
+        if (radarsJson == null) return emptyList()
+        val radars = mutableListOf<VideoTrackRadar>()
+        for (i in 0 until radarsJson.length()) {
+            val radar = radarsJson.optJSONObject(i) ?: continue
+            val latitude = radar.optDouble("latitude", Double.NaN)
+            val longitude = radar.optDouble("longitude", Double.NaN)
+            if (latitude.isNaN() || longitude.isNaN()) continue
+            val speedLimit = radar.optNullableInt("speedLimit")?.takeIf { it > 0 }
+            radars += VideoTrackRadar(
+                elapsedMs = radar.optLong("elapsedMs", 0L),
+                timeMs = radar.optLong("timeMs", 0L),
+                latitude = latitude,
+                longitude = longitude,
+                cameraType = radar.optInt("cameraType", RadarAlertPlanner.SPEED_CAMERA_TYPE),
+                speedLimit = speedLimit,
+                roadLayer = radar.optString("roadLayer", RouteRadarMarks.LAYER_GROUND),
+                usingDefault = radar.optBoolean("usingDefault", false),
+                correctedByDivergence = radar.optBoolean("correctedByDivergence", false)
+            )
+        }
+        return radars.sortedBy { it.elapsedMs }
+    }
+
+    private fun JSONObject.optNullableInt(key: String): Int? {
+        return if (has(key) && !isNull(key)) optInt(key) else null
     }
 
     private fun JSONObject.optNullableFloat(key: String): Float? {

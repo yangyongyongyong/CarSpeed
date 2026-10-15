@@ -97,10 +97,7 @@ class TriggerMonitorService : Service(), LocationListener {
         val currentSpeedKmh = speedKmh ?: return
         val settings = TriggerSettings.load(this)
         if (TriggerRules.shouldStartRecordingAfterBluetoothConnectedAndSpeed(settings, bluetoothAddress, currentSpeedKmh)) {
-            DashcamService.startRecording(this)
-            if (OverlayController.canStart(this) && !OverlayController.isRunning(this)) {
-                OverlayController.start(this)
-            }
+            BackgroundRecordingStart.start(this)
             stopSelf()
         }
     }

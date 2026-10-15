@@ -38,6 +38,7 @@ data class ShareSubtitleFields(
     val showStationaryWait: Boolean = true,
     val showGps: Boolean = true,
     val showSatellites: Boolean = true,
+    val showRadarSummary: Boolean = true,
     val showAddress: Boolean = true,
     val showFocus: Boolean = true,
     val showVideoMode: Boolean = true,
@@ -559,6 +560,7 @@ object ShareSubtitleFormatter {
             SubtitleCategory.STATIONARY_WAIT -> fields.showStationaryWait
             SubtitleCategory.GPS -> fields.showGps
             SubtitleCategory.SATELLITES -> fields.showSatellites
+            SubtitleCategory.RADAR -> fields.showRadarSummary
             SubtitleCategory.FOCUS -> fields.showFocus
             SubtitleCategory.VIDEO_MODE -> fields.showVideoMode
             SubtitleCategory.ROAD_LAYER -> fields.showRoadLayer
@@ -569,6 +571,7 @@ object ShareSubtitleFormatter {
     private fun categoryOf(text: String): SubtitleCategory {
         return when {
             DATE_TIME_REGEX.containsMatchIn(text) -> SubtitleCategory.TIME
+            text.startsWith("测速 ") -> SubtitleCategory.RADAR
             text.contains("km/h", ignoreCase = true) -> SubtitleCategory.SPEED
             text.startsWith("静止等待") -> SubtitleCategory.STATIONARY_WAIT
             text.startsWith("GPS卫星") -> SubtitleCategory.SATELLITES
@@ -583,7 +586,7 @@ object ShareSubtitleFormatter {
     }
 
     private enum class SubtitleCategory {
-        TIME, SPEED, STATIONARY_WAIT, GPS, SATELLITES, ADDRESS, FOCUS, VIDEO_MODE, ROAD_LAYER
+        TIME, SPEED, STATIONARY_WAIT, GPS, SATELLITES, RADAR, ADDRESS, FOCUS, VIDEO_MODE, ROAD_LAYER
     }
 
     private val DATE_TIME_REGEX = Regex("\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}")

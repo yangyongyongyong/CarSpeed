@@ -1,7 +1,6 @@
 package com.thomas.carspeed
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 
@@ -22,18 +21,9 @@ class AmapWatchService : AccessibilityService() {
         ) {
             return
         }
-        if (!OverlayController.hasCameraPermission(this)) return
         lastWakeAtMs = now
-        // 先放一个可见的悬浮窗，系统才允许接下来从后台拉起录像页面。
-        AmapWakeWindow.show(this)
-        val intent = Intent(this, DashcamWakeActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-        }
-        val started = runCatching { startActivity(intent) }.isSuccess
-        if (!started) {
-            AmapWakeWindow.hide(this)
-            AmapWatchNotifier.showManualStart(this)
-        }
+        // 只把进程唤醒并跑已有的开始录像规则，不因为高德在前台就直接开录。
+        AutoTriggerController.sync(this)
     }
 
     override fun onInterrupt() = Unit

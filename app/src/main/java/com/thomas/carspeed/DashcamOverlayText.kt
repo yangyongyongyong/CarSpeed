@@ -59,6 +59,9 @@ object DashcamOverlayText {
                 context.getString(R.string.gps_satellite_unknown)
             }
         }
+        if (settings.showRadarSummary) {
+            DashcamService.radarLimitSummary()?.let { result += it }
+        }
         if (settings.showAddress) {
             val layer = RoadLayerEngine.subtitleLabel()
             result += telemetry.address?.let { PlaceSubtitle.withLayer(it, layer) }

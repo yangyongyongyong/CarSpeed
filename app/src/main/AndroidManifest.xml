@@ -94,6 +94,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".RadarQueryActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".TrackRecordingSettingsActivity"
             android:exported="false" />
 
