@@ -12,7 +12,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipInputStream
 
 data class VoicePhotoRecognizerState(
@@ -98,6 +100,7 @@ internal object VoiceCommandParser {
     )
 }
 
+// 播报开始时间仍会记下来。拍照口令不再靠这段静音丢掉，改看前后有没有约 1 秒停顿。
 internal object AppSpeechGuard {
     private const val COMMAND_SUPPRESSION_WINDOW_MS = 6_000L
     @Volatile private var lastSpeechStartedAtMs = 0L
@@ -125,29 +128,46 @@ object VoicePhotoRecognizer {
     @Volatile private var state = VoicePhotoRecognizerState()
 
     private var model: Model? = null
+    private var recognizer: Recognizer? = null
     private var speechService: SpeechService? = null
+    @Volatile private var externalMic = false
+    private val recognizerLock = Any()
+    private val downsampler = PcmDownsampler()
+    private val pcmQueue = ArrayBlockingQueue<PcmChunk>(4)
+    private val pcmWorkerStarted = AtomicBoolean(false)
     private var activeOwner: String? = null
     private var activeContext: Context? = null
     private var activeOnCommand: ((VoiceCommand) -> Unit)? = null
     private var starting = false
     private var lastAcceptedCommand: VoiceCommand? = null
     private var lastAcceptedCommandAtMs = 0L
+    private val commandGate = IsolatedCommandGate()
+    private var pauseToken = 0
+    private var pauseRunnable: Runnable? = null
+    private var armedText: String? = null
+    private var sawWordTimes = false
 
     fun currentState(): VoicePhotoRecognizerState = state
 
     fun start(context: Context, owner: String, onCommand: (VoiceCommand) -> Unit) {
         if (activeOwner != null && activeOwner != owner) {
             val previousOwner = activeOwner
-            speechService?.stop()
-            speechService?.shutdown()
-            speechService = null
+            releaseSpeechService()
             starting = false
+            resetCommandGate()
             previousOwner?.let { VoicePhotoMonitor.markStopped(it) }
         }
         activeContext = context.applicationContext
         activeOwner = owner
         activeOnCommand = onCommand
-        if (speechService != null || starting) return
+        if (externalMic) {
+            if (recognizer != null || starting) return
+        } else if (speechService != null || starting) {
+            return
+        } else if (recognizer != null) {
+            attachMicrophone(owner)
+            return
+        }
         starting = true
         updateState(owner, modelState = "preparing", listening = false, lastError = null)
         worker.execute {
@@ -161,8 +181,22 @@ object VoicePhotoRecognizer {
                         return@post
                     }
                     try {
-                        val recognizer = Recognizer(loadedModel, SAMPLE_RATE, VoiceCommandParser.commandGrammar())
-                        speechService = SpeechService(recognizer, SAMPLE_RATE).also { service ->
+                        val readyRecognizer = recognizer ?: newRecognizer(loadedModel).also { recognizer = it }
+                        resetCommandGate()
+                        if (externalMic) {
+                            starting = false
+                            updateState(
+                                owner,
+                                modelState = "ready",
+                                modelPath = modelDir.absolutePath,
+                                modelReady = true,
+                                listening = true,
+                                lastError = null
+                            )
+                            VoicePhotoMonitor.markStarted(owner, ENGINE)
+                            return@post
+                        }
+                        speechService = SpeechService(readyRecognizer, SAMPLE_RATE).also { service ->
                             service.startListening(listener(owner))
                         }
                         starting = false
@@ -175,7 +209,7 @@ object VoicePhotoRecognizer {
                             lastError = null
                         )
                         VoicePhotoMonitor.markStarted(owner, ENGINE)
-                    } catch (e: RuntimeException) {
+                    } catch (e: Exception) {
                         starting = false
                         handleError(owner, e)
                     }
@@ -189,12 +223,59 @@ object VoicePhotoRecognizer {
         }
     }
 
+    fun beginExternalCapture(context: Context, owner: String, onCommand: (VoiceCommand) -> Unit) {
+        activeContext = context.applicationContext
+        activeOwner = owner
+        activeOnCommand = onCommand
+        val alreadyExternal = externalMic && speechService == null
+        if (!alreadyExternal) {
+            releaseSpeechService()
+            synchronized(recognizerLock) {
+                externalMic = true
+                downsampler.reset()
+            }
+        }
+        if (recognizer == null && !starting) {
+            start(context, owner, onCommand)
+        } else if (recognizer != null) {
+            updateState(owner, listening = true, lastError = null)
+            VoicePhotoMonitor.markStarted(owner, ENGINE)
+        }
+    }
+
+    fun endExternalCapture(owner: String) {
+        if (activeOwner != null && activeOwner != owner) return
+        synchronized(recognizerLock) {
+            externalMic = false
+            downsampler.reset()
+        }
+        pcmQueue.clear()
+    }
+
+    fun feedExternalPcm(data: ByteArray, length: Int, sampleRate: Int) {
+        if (!externalMic || length <= 1) return
+        ensurePcmWorker()
+        val copy = ByteArray(length)
+        System.arraycopy(data, 0, copy, 0, length)
+        val chunk = PcmChunk(copy, sampleRate)
+        if (!pcmQueue.offer(chunk)) {
+            pcmQueue.poll()
+            pcmQueue.offer(chunk)
+        }
+    }
+
     fun stop(owner: String) {
         if (activeOwner != owner) return
+        externalMic = false
+        resetCommandGate()
         mainHandler.removeCallbacksAndMessages(null)
-        speechService?.stop()
-        speechService?.shutdown()
-        speechService = null
+        releaseSpeechService()
+        synchronized(recognizerLock) {
+            downsampler.reset()
+            runCatching { recognizer?.close() }
+            recognizer = null
+        }
+        pcmQueue.clear()
         activeOwner = null
         activeContext = null
         activeOnCommand = null
@@ -206,15 +287,15 @@ object VoicePhotoRecognizer {
     private fun listener(owner: String): RecognitionListener {
         return object : RecognitionListener {
             override fun onPartialResult(hypothesis: String?) {
-                handleText(owner, hypothesis, allowCommand = false)
+                handleText(owner, hypothesis, endpoint = false)
             }
 
             override fun onResult(hypothesis: String?) {
-                handleText(owner, hypothesis, allowCommand = true)
+                handleText(owner, hypothesis, endpoint = true)
             }
 
             override fun onFinalResult(hypothesis: String?) {
-                handleText(owner, hypothesis, allowCommand = true)
+                handleText(owner, hypothesis, endpoint = true)
                 if (activeOwner == owner && speechService == null) restart(owner)
             }
 
@@ -228,18 +309,65 @@ object VoicePhotoRecognizer {
         }
     }
 
-    private fun handleText(owner: String, hypothesis: String?, allowCommand: Boolean) {
+    private fun handleText(owner: String, hypothesis: String?, endpoint: Boolean) {
         val text = recognizedText(hypothesis)
-        if (text.isBlank()) return
-        updateState(owner, lastText = text, lastError = null)
-        VoicePhotoMonitor.markHeard(owner, text)
-        if (!allowCommand) return
-        val command = VoiceCommandParser.parseCommand(text) ?: return
-        if (command == VoiceCommand.TAKE_PHOTO && AppSpeechGuard.shouldSuppressVoiceCommand()) return
-        if (activeOwner != owner || !shouldAcceptCommand(command)) return
+        if (text.isNotBlank()) {
+            updateState(owner, lastText = text, lastError = null)
+            VoicePhotoMonitor.markHeard(owner, text)
+        }
+        val timed = VoiceCommandWords.parse(hypothesis).filterNot { VoiceCommandWords.isUnknown(it.word) }
+        if (timed.isNotEmpty()) {
+            sawWordTimes = true
+            val endMs = timed.maxOf { it.endMs }
+            val confirmedThroughMs = if (endpoint) endMs + IsolatedCommandGate.PAUSE_MS else endMs
+            deliver(owner, commandGate.onWords(timed, confirmedThroughMs))
+            // 同一个词的结束时间会来回微调；只有词语本身变了才重新计算后面的 1 秒。
+            val spoken = "${timed.first().startMs / 300}:${timed.joinToString("") { it.word }}"
+            if (!endpoint && spoken != armedText) {
+                armedText = spoken
+                schedulePause(owner, endMs)
+            }
+            return
+        }
+        if (sawWordTimes) return
+        val nowMs = System.currentTimeMillis()
+        deliver(owner, commandGate.onText(text, nowMs, endpoint))
+        if (!endpoint && text.isNotBlank() && text != armedText) {
+            armedText = text
+            schedulePause(owner, streamEndMs = null)
+        }
+    }
+
+    private fun deliver(owner: String, command: VoiceCommand?) {
+        if (command == null || activeOwner != owner || !shouldAcceptCommand(command)) return
         state = state.copy(lastCommand = command.name)
         VoicePhotoMonitor.markTriggered(owner)
         activeOnCommand?.invoke(command)
+    }
+
+    private fun schedulePause(owner: String, streamEndMs: Long?) {
+        pauseRunnable?.let { mainHandler.removeCallbacks(it) }
+        val token = ++pauseToken
+        val runnable = Runnable {
+            if (token != pauseToken || activeOwner != owner) return@Runnable
+            val command = if (streamEndMs != null) {
+                commandGate.onSilenceAdvanced(streamEndMs + IsolatedCommandGate.PAUSE_MS)
+            } else {
+                commandGate.onClock(System.currentTimeMillis())
+            }
+            deliver(owner, command)
+        }
+        pauseRunnable = runnable
+        mainHandler.postDelayed(runnable, IsolatedCommandGate.PAUSE_MS)
+    }
+
+    private fun resetCommandGate() {
+        pauseToken += 1
+        pauseRunnable?.let { mainHandler.removeCallbacks(it) }
+        pauseRunnable = null
+        armedText = null
+        sawWordTimes = false
+        commandGate.reset()
     }
 
     private fun shouldAcceptCommand(command: VoiceCommand): Boolean {
@@ -256,15 +384,92 @@ object VoicePhotoRecognizer {
         val message = error.message ?: error.javaClass.simpleName
         updateState(owner, listening = false, lastError = message)
         VoicePhotoMonitor.markError(owner, -3, message)
-        speechService?.shutdown()
-        speechService = null
+        releaseSpeechService()
+        synchronized(recognizerLock) {
+            runCatching { recognizer?.close() }
+            recognizer = null
+        }
         restart(owner)
     }
 
+    private fun newRecognizer(loadedModel: Model): Recognizer {
+        return Recognizer(loadedModel, SAMPLE_RATE, VoiceCommandParser.commandGrammar()).also { created ->
+            created.setWords(true)
+            created.setPartialWords(true)
+            // 说完后静音满 1 秒才截断这句话，和口令前后停顿用的是同一秒。
+            created.setEndpointerDelays(5.0f, 1.0f, 30.0f)
+        }
+    }
+
+    private fun attachMicrophone(owner: String) {
+        val readyRecognizer = recognizer ?: return
+        try {
+            releaseSpeechService()
+            resetCommandGate()
+            speechService = SpeechService(readyRecognizer, SAMPLE_RATE).also { service ->
+                service.startListening(listener(owner))
+            }
+            starting = false
+            updateState(owner, modelState = "ready", modelReady = true, listening = true, lastError = null)
+            VoicePhotoMonitor.markStarted(owner, ENGINE)
+        } catch (e: Exception) {
+            starting = false
+            handleError(owner, e)
+        }
+    }
+
+    private fun releaseSpeechService() {
+        val service = speechService ?: return
+        speechService = null
+        runCatching { service.stop() }
+        runCatching { service.shutdown() }
+    }
+
+    private fun ensurePcmWorker() {
+        if (!pcmWorkerStarted.compareAndSet(false, true)) return
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "CarSpeedVoicePcm").apply { isDaemon = true }
+        }.execute {
+            while (true) {
+                val chunk = try {
+                    pcmQueue.take()
+                } catch (_: InterruptedException) {
+                    break
+                }
+                processPcmChunk(chunk)
+            }
+        }
+    }
+
+    private fun processPcmChunk(chunk: PcmChunk) {
+        val owner = activeOwner ?: return
+        try {
+            val payload = synchronized(recognizerLock) {
+                if (!externalMic) return
+                val readyRecognizer = recognizer ?: return
+                val samples = downsampler.accept(chunk.data, chunk.data.size, chunk.sampleRate, SAMPLE_RATE.toInt())
+                if (samples.isEmpty()) return
+                val endpoint = readyRecognizer.acceptWaveForm(samples, samples.size)
+                val json = if (endpoint) readyRecognizer.result else readyRecognizer.partialResult
+                endpoint to json
+            }
+            mainHandler.post {
+                if (activeOwner != owner || !externalMic) return@post
+                handleText(owner, payload.second, endpoint = payload.first)
+            }
+        } catch (e: Exception) {
+            mainHandler.post {
+                if (activeOwner == owner) handleError(owner, e)
+            }
+        }
+    }
+
+    private class PcmChunk(val data: ByteArray, val sampleRate: Int)
+
     private fun restart(owner: String) {
         if (activeOwner != owner) return
-        speechService?.shutdown()
-        speechService = null
+        resetCommandGate()
+        releaseSpeechService()
         val context = activeContext ?: return
         val onCommand = activeOnCommand ?: return
         mainHandler.postDelayed({ start(context, owner, onCommand) }, RESTART_DELAY_MS)

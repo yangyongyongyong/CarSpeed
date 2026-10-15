@@ -1,5 +1,6 @@
 package com.thomas.carspeed
 
+import android.animation.LayoutTransition
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -11,15 +12,12 @@ import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.Button
-import android.app.DatePickerDialog
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -30,8 +28,8 @@ import com.google.android.material.appbar.MaterialToolbar
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -41,12 +39,14 @@ class HistoryActivity : AppCompatActivity() {
     private val thumbnailExecutor: ExecutorService = Executors.newFixedThreadPool(2)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val thumbnailCache = mutableMapOf<String, Bitmap?>()
+    private val videoUriByPath = HashMap<String, android.net.Uri>()
+    private var videoUrisLoaded = false
     private var routePhotoTimesMs: List<Long> = emptyList()
 
-    private lateinit var spSortField: Spinner
-    private lateinit var btnSortOrder: Button
     private lateinit var btnVideoFilterDialog: Button
     private lateinit var btnVideoFilterClear: Button
+    private lateinit var btnVideoDate: MaterialButton
+    private lateinit var btnVideoDateClear: MaterialButton
     private lateinit var btnVideoScopeAll: MaterialButton
     private lateinit var btnVideoScopeFavorites: MaterialButton
     private lateinit var btnVideoPrevPage: Button
@@ -62,12 +62,12 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var tvVideoPage: TextView
     private lateinit var layoutVideoList: LinearLayout
     private lateinit var tvGpsTrackSummary: TextView
+    private lateinit var btnGpsPrevPage: Button
+    private lateinit var btnGpsNextPage: Button
+    private lateinit var tvGpsPage: TextView
     private lateinit var layoutGpsTrackList: LinearLayout
-    private lateinit var tvHistory: TextView
     private lateinit var toolbar: MaterialToolbar
 
-    private var currentField: HistorySortField = HistorySortField.START_TIME
-    private var ascending: Boolean = false
     private var filterSingleDayMs: Long? = null
     private var filterRangeStartMs: Long? = null
     private var filterRangeEndMs: Long? = null
@@ -78,20 +78,25 @@ class HistoryActivity : AppCompatActivity() {
     private var filterMinPhotoCount: Int? = null
     private var showFavoriteVideosOnly = false
     private var videoPageIndex = 0
+    private var gpsPageIndex = 0
+    private var allGpsTrackRecords: List<DriveRecord> = emptyList()
     @Volatile private var renderRequestId: Int = 0
     private var currentVideoItems: List<VideoListItem> = emptyList()
     private var currentFilteredVideoTrips: List<VideoStorage.VideoTrip> = emptyList()
+    private var videoScopeCount: Int = 0
+    private var videoListMutation: Int = 0
     private var batchDeleteMode = false
     private val batchSelectedTripIds = mutableSetOf<String>()
+    private var videoDateSpans: List<CountSpan> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_history)
 
-        spSortField = findViewById(R.id.spSortField)
-        btnSortOrder = findViewById(R.id.btnSortOrder)
         btnVideoFilterDialog = findViewById(R.id.btnVideoFilterDialog)
         btnVideoFilterClear = findViewById(R.id.btnVideoFilterClear)
+        btnVideoDate = findViewById(R.id.btnVideoDate)
+        btnVideoDateClear = findViewById(R.id.btnVideoDateClear)
         btnVideoScopeAll = findViewById(R.id.btnVideoScopeAll)
         btnVideoScopeFavorites = findViewById(R.id.btnVideoScopeFavorites)
         btnVideoPrevPage = findViewById(R.id.btnVideoPrevPage)
@@ -107,18 +112,15 @@ class HistoryActivity : AppCompatActivity() {
         tvVideoPage = findViewById(R.id.tvVideoPage)
         layoutVideoList = findViewById(R.id.layoutVideoList)
         tvGpsTrackSummary = findViewById(R.id.tvGpsTrackSummary)
+        btnGpsPrevPage = findViewById(R.id.btnGpsPrevPage)
+        btnGpsNextPage = findViewById(R.id.btnGpsNextPage)
+        tvGpsPage = findViewById(R.id.tvGpsPage)
         layoutGpsTrackList = findViewById(R.id.layoutGpsTrackList)
-        tvHistory = findViewById(R.id.tvHistory)
         toolbar = findViewById(R.id.toolbar)
 
         toolbar.setNavigationOnClickListener { finish() }
 
         val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
-        currentField = HistorySortField.entries[
-            prefs.getInt(PREF_HISTORY_SORT_FIELD, HistorySortField.START_TIME.ordinal)
-                .coerceIn(0, HistorySortField.entries.lastIndex)
-        ]
-        ascending = prefs.getBoolean(PREF_HISTORY_SORT_ASC, false)
         filterSingleDayMs = prefs.getLong(PREF_VIDEO_FILTER_DAY_MS, 0L).takeIf { it > 0L }
         filterRangeStartMs = prefs.getLong(PREF_VIDEO_FILTER_RANGE_START_MS, 0L).takeIf { it > 0L }
         filterRangeEndMs = prefs.getLong(PREF_VIDEO_FILTER_RANGE_END_MS, 0L).takeIf { it > 0L }
@@ -127,8 +129,10 @@ class HistoryActivity : AppCompatActivity() {
         filterMinDistanceMeters = prefs.getFloat(PREF_VIDEO_FILTER_MIN_DISTANCE_METERS, -1f).takeIf { it >= 0f }
         filterMaxDistanceMeters = prefs.getFloat(PREF_VIDEO_FILTER_MAX_DISTANCE_METERS, -1f).takeIf { it >= 0f }
         filterMinPhotoCount = prefs.getInt(PREF_VIDEO_FILTER_MIN_PHOTO_COUNT, -1).takeIf { it >= 0 }
+        if (filterSingleDayMs != null && (filterRangeStartMs != null || filterRangeEndMs != null)) {
+            filterSingleDayMs = null
+        }
 
-        setupSortUi()
         setupTimeFilterUi()
         setupFavoriteFilterUi()
         setupPagingUi()
@@ -144,40 +148,18 @@ class HistoryActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun setupSortUi() {
-        val items = listOf("启动时间", "结束时间", "驾驶时长", "最高速度", "行驶距离", "平均速度")
-        val adapter = ArrayAdapter(this, R.layout.spinner_item, items)
-        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spSortField.adapter = adapter
-        spSortField.setSelection(currentField.ordinal)
-
-        btnSortOrder.text = if (ascending) "升序" else "降序"
-
-        spSortField.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: android.widget.AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                currentField = HistorySortField.entries[position]
-                persistSortPref()
-                render()
-            }
-
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-        }
-
-        btnSortOrder.setOnClickListener {
-            ascending = !ascending
-            btnSortOrder.text = if (ascending) "升序" else "降序"
-            persistSortPref()
-            render()
-        }
-    }
-
     private fun setupTimeFilterUi() {
         updateTimeFilterButtons()
+        btnVideoDate.setOnClickListener { showVideoCalendar() }
+        btnVideoDateClear.setOnClickListener {
+            filterSingleDayMs = null
+            filterRangeStartMs = null
+            filterRangeEndMs = null
+            videoPageIndex = 0
+            persistTimeFilterPref()
+            updateTimeFilterButtons()
+            render()
+        }
         btnVideoFilterDialog.setOnClickListener { showVideoFilterDialog() }
         btnVideoFilterClear.setOnClickListener {
             clearVideoFilter()
@@ -186,6 +168,46 @@ class HistoryActivity : AppCompatActivity() {
             updateTimeFilterButtons()
             render()
         }
+    }
+
+    private fun showVideoCalendar() {
+        MonthCalendarDialog.show(
+            activity = this,
+            spans = videoDateSpans,
+            selection = currentDaySelection()
+        ) { selection ->
+            applyDaySelection(selection)
+        }
+    }
+
+    private fun currentDaySelection(): DaySelection? {
+        val rangeStart = filterRangeStartMs
+        val rangeEnd = filterRangeEndMs
+        if (rangeStart != null || rangeEnd != null) {
+            val from = PhotoCalendar.startOfDay((rangeStart ?: rangeEnd)!!, TimeZone.getDefault())
+            val to = PhotoCalendar.startOfDay((rangeEnd ?: rangeStart)!!, TimeZone.getDefault())
+            return DaySelection(minOf(from, to), maxOf(from, to))
+        }
+        val day = filterSingleDayMs ?: return null
+        val start = PhotoCalendar.startOfDay(day, TimeZone.getDefault())
+        return DaySelection(start, start)
+    }
+
+    private fun applyDaySelection(selection: DaySelection) {
+        val zone = TimeZone.getDefault()
+        if (selection.singleDay) {
+            filterSingleDayMs = PhotoCalendar.startOfDay(selection.startMs, zone)
+            filterRangeStartMs = null
+            filterRangeEndMs = null
+        } else {
+            filterSingleDayMs = null
+            filterRangeStartMs = PhotoCalendar.startOfDay(selection.startMs, zone)
+            filterRangeEndMs = PhotoCalendar.endOfDay(selection.endMs, zone)
+        }
+        videoPageIndex = 0
+        persistTimeFilterPref()
+        updateTimeFilterButtons()
+        render()
     }
 
     private fun setupPagingUi() {
@@ -198,6 +220,19 @@ class HistoryActivity : AppCompatActivity() {
         btnVideoNextPage.setOnClickListener {
             videoPageIndex += 1
             render()
+        }
+        btnGpsPrevPage.setOnClickListener {
+            if (gpsPageIndex > 0) {
+                gpsPageIndex -= 1
+                showGpsTrackPage()
+            }
+        }
+        btnGpsNextPage.setOnClickListener {
+            val pages = pageCount(allGpsTrackRecords.size)
+            if (gpsPageIndex + 1 < pages) {
+                gpsPageIndex += 1
+                showGpsTrackPage()
+            }
         }
     }
 
@@ -237,48 +272,10 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showVideoFilterDialog() {
-        var dayMs = filterSingleDayMs
-        var rangeStartMs = filterRangeStartMs
-        var rangeEndMs = filterRangeEndMs
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-
-        val cbDay = filterCheckBox(getString(R.string.video_filter_date), dayMs != null)
-        val btnDay = filterButton(dayMs?.let { formatFilterDate(it) } ?: getString(R.string.video_filter_date_none))
-        btnDay.setOnClickListener {
-            showDatePicker(dayMs ?: System.currentTimeMillis()) { picked ->
-                dayMs = startOfDay(picked)
-                cbDay.isChecked = true
-                btnDay.text = formatFilterDate(dayMs!!)
-            }
-        }
-        content.addView(cbDay)
-        content.addView(btnDay)
-
-        val cbRange = filterCheckBox(getString(R.string.video_filter_date_range), rangeStartMs != null || rangeEndMs != null)
-        val rowRange = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val btnRangeStart = filterButton(rangeStartMs?.let { formatFilterDate(it) } ?: getString(R.string.video_filter_start_none))
-        val btnRangeEnd = filterButton(rangeEndMs?.let { formatFilterDate(it) } ?: getString(R.string.video_filter_end_none))
-        btnRangeStart.setOnClickListener {
-            showDatePicker(rangeStartMs ?: System.currentTimeMillis()) { picked ->
-                rangeStartMs = startOfDay(picked)
-                cbRange.isChecked = true
-                btnRangeStart.text = formatFilterDate(rangeStartMs!!)
-            }
-        }
-        btnRangeEnd.setOnClickListener {
-            showDatePicker(rangeEndMs ?: System.currentTimeMillis()) { picked ->
-                rangeEndMs = endOfDay(picked)
-                cbRange.isChecked = true
-                btnRangeEnd.text = formatFilterDate(rangeEndMs!!)
-            }
-        }
-        rowRange.addView(btnRangeStart, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-        rowRange.addView(btnRangeEnd, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) })
-        content.addView(cbRange)
-        content.addView(rowRange)
 
         val cbDuration = filterCheckBox(getString(R.string.video_filter_duration), filterMinDurationMs != null || filterMaxDurationMs != null)
         val durationRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -310,25 +307,18 @@ class HistoryActivity : AppCompatActivity() {
             .setNegativeButton(android.R.string.cancel, null)
             .show()
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val nextDayMs = if (cbDay.isChecked) dayMs ?: startOfDay(System.currentTimeMillis()) else null
-            val nextRangeStartMs = if (cbRange.isChecked) rangeStartMs else null
-            val nextRangeEndMs = if (cbRange.isChecked) rangeEndMs else null
             val nextMinDurationMs = if (cbDuration.isChecked) etMinDuration.text.toString().toLongOrNull()?.times(1000L) else null
             val nextMaxDurationMs = if (cbDuration.isChecked) etMaxDuration.text.toString().toLongOrNull()?.times(1000L) else null
             val nextMinDistanceMeters = if (cbDistance.isChecked) etMinDistance.text.toString().toFloatOrNull()?.times(1000f) else null
             val nextMaxDistanceMeters = if (cbDistance.isChecked) etMaxDistance.text.toString().toFloatOrNull()?.times(1000f) else null
             val nextMinPhotoCount = if (cbPhotos.isChecked) etPhotos.text.toString().toIntOrNull() ?: 0 else null
-            if (invalidRange(nextRangeStartMs, nextRangeEndMs) ||
-                invalidRange(nextMinDurationMs, nextMaxDurationMs) ||
+            if (invalidRange(nextMinDurationMs, nextMaxDurationMs) ||
                 invalidRange(nextMinDistanceMeters, nextMaxDistanceMeters) ||
                 (nextMinPhotoCount != null && nextMinPhotoCount < 0)
             ) {
                 Toast.makeText(this, R.string.video_filter_invalid, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            filterSingleDayMs = nextDayMs
-            filterRangeStartMs = nextRangeStartMs
-            filterRangeEndMs = nextRangeEndMs
             filterMinDurationMs = nextMinDurationMs
             filterMaxDurationMs = nextMaxDurationMs
             filterMinDistanceMeters = nextMinDistanceMeters
@@ -342,35 +332,18 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun showDatePicker(initialMs: Long, onPicked: (Long) -> Unit) {
-        val calendar = Calendar.getInstance().apply { timeInMillis = initialMs }
-        DatePickerDialog(
-            this,
-            { _, year, month, day ->
-                val picked = Calendar.getInstance().apply {
-                    set(Calendar.YEAR, year)
-                    set(Calendar.MONTH, month)
-                    set(Calendar.DAY_OF_MONTH, day)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }.timeInMillis
-                onPicked(picked)
-            },
-            calendar.get(Calendar.YEAR),
-            calendar.get(Calendar.MONTH),
-            calendar.get(Calendar.DAY_OF_MONTH)
-        ).show()
-    }
-
     private fun updateTimeFilterButtons() {
-        btnVideoFilterDialog.text = if (hasVideoFilter()) {
+        val dateOnly = currentDaySelection() != null
+        val extra = hasExtraVideoFilter()
+        btnVideoDate.text = currentDaySelection()?.let { PhotoCalendar.formatSelection(it, TimeZone.getDefault()) }
+            ?: getString(R.string.photo_filter_all)
+        btnVideoDateClear.isEnabled = dateOnly
+        btnVideoFilterDialog.text = if (extra) {
             getString(R.string.video_filter_summary, videoFilterSummary())
         } else {
             getString(R.string.video_filter_none)
         }
-        btnVideoFilterClear.isEnabled = hasVideoFilter()
+        btnVideoFilterClear.isEnabled = extra || dateOnly
     }
 
     private fun persistTimeFilterPref() {
@@ -406,13 +379,6 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun filterButton(textValue: String): Button {
-        return Button(this).apply {
-            text = textValue
-            isAllCaps = false
-        }
-    }
-
     private fun filterEditText(hintRes: Int, value: String?, decimal: Boolean = false): EditText {
         return EditText(this).apply {
             hint = getString(hintRes)
@@ -428,8 +394,6 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun videoFilterSummary(): String {
         return listOfNotNull(
-            filterSingleDayMs?.let { "单日 ${formatFilterDate(it)}" },
-            rangeText(filterRangeStartMs, filterRangeEndMs, "日期"),
             rangeText(filterMinDurationMs, filterMaxDurationMs, "时长") { formatDuration(it) },
             rangeText(filterMinDistanceMeters, filterMaxDistanceMeters, "里程") { trimNumber(it / 1000f) + "km" },
             filterMinPhotoCount?.let { "抓拍>=${it}张" }
@@ -491,14 +455,24 @@ class HistoryActivity : AppCompatActivity() {
         )
     }
 
+    private fun tripListTitle(trip: VideoStorage.VideoTrip, startTimeMs: Long = 0L, durationMs: Long = 0L): String {
+        val start = startTimeMs.takeIf { it > 0L }
+            ?: VideoStorage.tripFolderStartTimeMs(trip.directory.name)
+            ?: VideoStorage.tripFolderStartTimeMs(trip.title)
+            ?: 0L
+        val duration = durationMs.takeIf { it > 0L }
+            ?: trip.segments.sumOf { VideoStorage.recordingDurationMs(it) }
+        return VideoStorage.tripListTitle(start, duration) ?: trip.title.removePrefix("carspeed-trip-")
+    }
+
     private fun confirmDeleteVideo(trip: VideoStorage.VideoTrip) {
         AlertDialog.Builder(this)
             .setTitle(R.string.video_delete_one)
-            .setMessage(trip.title)
+            .setMessage(tripListTitle(trip))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
                 val deleted = VideoStorage.deleteVideoTrip(this, trip)
                 Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                render()
+                dropDeletedTrips(setOf(trip.id))
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -516,7 +490,7 @@ class HistoryActivity : AppCompatActivity() {
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
                 val deleted = trips.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
                 Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                render()
+                dropDeletedTrips(trips.map { it.id }.toSet())
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -534,7 +508,7 @@ class HistoryActivity : AppCompatActivity() {
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
                 val deleted = trips.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
                 Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                render()
+                dropDeletedTrips(trips.map { it.id }.toSet())
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -628,40 +602,35 @@ class HistoryActivity : AppCompatActivity() {
             .setMessage(getString(R.string.video_delete_selected_confirm, selected.size))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
                 val deleted = selected.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
-                batchSelectedTripIds.clear()
                 Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                render()
+                dropDeletedTrips(selected.map { it.id }.toSet())
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private fun persistSortPref() {
-        getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
-            .edit()
-            .putInt(PREF_HISTORY_SORT_FIELD, currentField.ordinal)
-            .putBoolean(PREF_HISTORY_SORT_ASC, ascending)
-            .apply()
-    }
-
     private fun render() {
         val requestId = ++renderRequestId
-        val sortField = currentField
-        val sortAscending = ascending
         val filter = currentVideoFilter()
         val favoriteOnly = showFavoriteVideosOnly
         showLoadingState()
         val appContext = applicationContext
         historyExecutor.execute {
             val metadataCache = VideoHistoryCache.load(appContext)
-            val allTrips = VideoStorage.videoTrips(appContext)
-                .sortedWith(
-                    compareByDescending<VideoStorage.VideoTrip> { VideoStorage.isFavorite(appContext, it) }
-                        .thenByDescending { it.lastModified }
+            val loadedTrips = VideoStorage.videoTrips(appContext)
+            val favoriteIds = VideoStorage.favoriteTripIds(appContext, loadedTrips)
+            val allTrips = loadedTrips.map { trip ->
+                TripSortKey(
+                    trip = trip,
+                    favorite = trip.id in favoriteIds,
+                    lastModified = trip.segments.maxOfOrNull { it.lastModified() } ?: 0L
                 )
+            }.sortedWith(
+                compareByDescending<TripSortKey> { it.favorite }.thenByDescending { it.lastModified }
+            ).map { it.trip }
             metadataCache.prune(allTrips.map { it.id }.toSet())
             val scopedTrips = if (favoriteOnly) {
-                allTrips.filter { trip -> VideoStorage.isFavorite(appContext, trip) }
+                allTrips.filter { trip -> trip.id in favoriteIds }
             } else {
                 allTrips
             }
@@ -671,7 +640,7 @@ class HistoryActivity : AppCompatActivity() {
             routePhotoTimesMs = photoTimes
             val needsDetailedFilter = filter.requiresDetailedVideoData()
             val allVideoItems = if (needsDetailedFilter) {
-                scopedTrips.map { trip -> buildVideoListItem(appContext, trip, metadataCache) }
+                scopedTrips.map { trip -> buildVideoListItem(trip, metadataCache, trip.id in favoriteIds) }
             } else {
                 emptyList()
             }
@@ -686,26 +655,25 @@ class HistoryActivity : AppCompatActivity() {
             val videoItems = if (needsDetailedFilter) {
                 allVideoItems.filter { item -> item.trip in pageTrips }
             } else {
-                pageTrips.map { trip -> buildVideoListItem(appContext, trip, metadataCache) }
+                pageTrips.map { trip -> buildVideoListItem(trip, metadataCache, trip.id in favoriteIds) }
+            }
+            val dateSpans = if (needsDetailedFilter) {
+                allVideoItems.map { item ->
+                    CountSpan(item.startTimeMs, item.endTimeMs.coerceAtLeast(item.startTimeMs))
+                }
+            } else {
+                scopedTrips.map { trip ->
+                    val start = tripStartTimeMs(trip, track = null)
+                    CountSpan(start, tripEndTimeMs(trip, track = null, startTimeMs = start).coerceAtLeast(start))
+                }
             }
             metadataCache.save()
             if (requestId != renderRequestId) return@execute
             val totalBytes = videoItems.sumOf { it.totalBytes }
-            val storedRecords = DriveRecordStore.loadRecords(appContext)
-            val records = storedRecords.ifEmpty { videoTrackRecords(videoItems) }
-                .filter { record -> recordMatchesFilter(record, filter) }
-            val sortedRecords = HistorySort.sort(records, sortField, sortAscending)
-            val gpsTrackRecords = HistorySort.sort(
-                storedRecords.filter { record ->
-                    record.source == DriveRecordStore.SOURCE_GPS_TRACK && record.routePoints.isNotEmpty()
-                },
-                sortField,
-                sortAscending
-            )
-            val historyText = historyText(storedRecords.isEmpty(), sortedRecords, sortField, sortAscending)
             mainHandler.post {
                 if (requestId != renderRequestId || isFinishing || isDestroyed) return@post
                 videoPageIndex = pageIndex
+                videoDateSpans = dateSpans
                 routePhotoTimesMs = photoTimes
                 currentFilteredVideoTrips = filteredTrips
                 renderVideoList(
@@ -716,8 +684,15 @@ class HistoryActivity : AppCompatActivity() {
                     pageIndex,
                     favoriteOnly
                 )
+            }
+            val storedRecords = DriveRecordStore.loadRecords(appContext)
+            val gpsTrackRecords = storedRecords.filter { record ->
+                record.source == DriveRecordStore.SOURCE_GPS_TRACK && record.routePoints.isNotEmpty()
+            }.sortedByDescending { it.startTimeMs }
+            if (requestId != renderRequestId) return@execute
+            mainHandler.post {
+                if (requestId != renderRequestId || isFinishing || isDestroyed) return@post
                 renderGpsTrackList(gpsTrackRecords)
-                tvHistory.text = historyText
             }
         }
     }
@@ -737,151 +712,49 @@ class HistoryActivity : AppCompatActivity() {
             textSize = 13f
         })
         tvGpsTrackSummary.text = getString(R.string.gps_track_history_summary, 0)
+        tvGpsPage.text = ""
+        btnGpsPrevPage.isEnabled = false
+        btnGpsNextPage.isEnabled = false
         layoutGpsTrackList.removeAllViews()
         layoutGpsTrackList.addView(TextView(this).apply {
             text = "正在加载 GPS 轨迹记录…"
             setTextColor(getColorCompat(R.color.text_secondary))
             textSize = 13f
         })
-        tvHistory.text = "正在加载历史驾驶记录…"
-    }
-
-    private fun historyText(
-        fromVideoTracks: Boolean,
-        records: List<DriveRecord>,
-        sortField: HistorySortField,
-        sortAscending: Boolean
-    ): String {
-        if (records.isEmpty()) {
-            return getString(R.string.history_empty) +
-                "\n\n记录明细以前只来自 HUD 行驶记录；现在录像结束会写入记录。旧视频如果没有轨迹文件，也无法补算。"
-        }
-
-        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        val text = buildString {
-            appendLine(if (fromVideoTracks) "录像行程记录（由 GPS 轨迹补算）" else "历史驾驶记录（最多100条）")
-            appendLine("排序字段: ${fieldLabel(sortField)}  顺序: ${if (sortAscending) "升序" else "降序"}")
-            appendLine("====================")
-            records.forEachIndexed { idx, r ->
-                appendLine("#${idx + 1}")
-                appendLine("启动时间: ${fmt.format(Date(r.startTimeMs))}")
-                appendLine("结束时间: ${fmt.format(Date(r.endTimeMs))}")
-                appendLine("本次耗时: ${formatDuration(r.durationMs)}")
-                appendLine("静止等待: ${formatDuration(r.waitDurationMs)}")
-                appendLine("行驶距离: ${formatDistance(r.distanceMeters)}")
-                appendLine("平均速度: ${String.format("%.1f", r.averageSpeedKmh)} km/h")
-                appendLine("最高速度: ${String.format("%.1f", r.maxSpeedKmh)} km/h")
-                appendLine("GPS质量: ${formatGpsQuality(r)}")
-                appendLine("轨迹点: ${r.routePoints.size}")
-                val maxLat = r.maxSpeedLatitude
-                val maxLon = r.maxSpeedLongitude
-                if (maxLat != null && maxLon != null) {
-                    appendLine(
-                        "峰值位置: ${String.format("%.6f", maxLat)}, " +
-                            String.format("%.6f", maxLon)
-                    )
-                }
-                appendLine("--------------------")
-            }
-        }
-        return text
-    }
-
-    private fun videoTrackRecords(videoItems: List<VideoListItem>): List<DriveRecord> {
-        return videoItems.mapNotNull { item ->
-            val track = item.track
-            if (track == null) return@mapNotNull cachedVideoRecord(item)
-            val points = track.points
-            if (points.isEmpty()) return@mapNotNull null
-            val summary = item.trackSummary ?: TrackMetrics.summary(points)
-            val maxPoint = points.maxByOrNull { it.speedKmh }
-            val startTimeMs = track.startTimeMs.takeIf { it > 0L } ?: points.first().timeMs
-            val endTimeMs = points.last().timeMs.takeIf { it > 0L } ?: (startTimeMs + summary.durationMs)
-            DriveRecord(
-                startTimeMs = startTimeMs,
-                endTimeMs = endTimeMs,
-                durationMs = summary.durationMs,
-                maxSpeedKmh = summary.maxSpeedKmh,
-                distanceMeters = summary.totalDistanceMeters,
-                averageSpeedKmh = summary.averageSpeedKmh,
-                maxSpeedLatitude = maxPoint?.latitude,
-                maxSpeedLongitude = maxPoint?.longitude,
-                maxSpeedAccuracyMeters = maxPoint?.accuracyMeters,
-                averageAccuracyMeters = summary.averageAccuracyMeters,
-                goodFixRatio = summary.goodFixRatio,
-                source = DriveRecordStore.SOURCE_VIDEO,
-                routePoints = points.map { point ->
-                    DriveRoutePoint(
-                        timeMs = point.timeMs,
-                        latitude = point.latitude,
-                        longitude = point.longitude,
-                        speedKmh = point.speedKmh,
-                        accuracyMeters = point.accuracyMeters,
-                        bearingDegrees = point.bearingDegrees
-                    )
-                }
-            )
-        }
-    }
-
-    private fun cachedVideoRecord(item: VideoListItem): DriveRecord? {
-        val summary = item.trackSummary ?: return null
-        if (!item.hasTrack) return null
-        return DriveRecord(
-            startTimeMs = item.startTimeMs,
-            endTimeMs = item.endTimeMs,
-            durationMs = item.durationMs.takeIf { it > 0L } ?: summary.durationMs,
-            maxSpeedKmh = summary.maxSpeedKmh,
-            distanceMeters = item.distanceMeters,
-            averageSpeedKmh = summary.averageSpeedKmh,
-            averageAccuracyMeters = summary.averageAccuracyMeters,
-            goodFixRatio = summary.goodFixRatio,
-            source = DriveRecordStore.SOURCE_VIDEO,
-            routePoints = listOfNotNull(item.startPoint, item.endPoint)
-                .distinctBy { point -> point.elapsedMs to point.timeMs }
-                .map { point ->
-                    DriveRoutePoint(
-                        timeMs = point.timeMs,
-                        latitude = point.latitude,
-                        longitude = point.longitude,
-                        speedKmh = point.speedKmh,
-                        accuracyMeters = point.accuracyMeters,
-                        bearingDegrees = point.bearingDegrees
-                    )
-                }
-        )
     }
 
     private fun buildVideoListItem(
-        context: Context,
         trip: VideoStorage.VideoTrip,
-        metadataCache: VideoHistoryCache.Store
+        metadataCache: VideoHistoryCache.Store,
+        favorite: Boolean
     ): VideoListItem {
-        val signature = VideoHistoryCache.signatureFor(context, trip)
+        val signature = VideoHistoryCache.signatureFor(trip)
         metadataCache.read(trip.id, signature)?.let { cached ->
-            return cached.toVideoListItem(context, trip)
+            return cached.toVideoListItem(trip, favorite)
         }
-        val item = buildVideoListItemUncached(context, trip)
+        val item = buildVideoListItemUncached(trip, favorite)
         metadataCache.write(item.toCacheEntry(trip.id, signature))
         return item
     }
 
-    private fun buildVideoListItemUncached(context: Context, trip: VideoStorage.VideoTrip): VideoListItem {
-        val track = VideoTrackStorage.readMergedTrack(context, trip.segments)
+    private fun buildVideoListItemUncached(
+        trip: VideoStorage.VideoTrip,
+        favorite: Boolean
+    ): VideoListItem {
+        val track = VideoTrackStorage.readMergedTrack(trip.segments)
         val points = track?.points.orEmpty()
         val trackSummary = points.takeIf { it.isNotEmpty() }?.let { TrackMetrics.summary(it) }
         val startTimeMs = tripStartTimeMs(trip, track)
         val endTimeMs = tripEndTimeMs(trip, track, startTimeMs)
-        val durationMs = trip.segments.sumOf { videoDurationMs(it) }
+        val durationMs = trip.segments.sumOf { VideoStorage.recordingDurationMs(it) }
             .takeIf { it > 0L }
             ?: trackSummary?.durationMs
             ?: (endTimeMs - startTimeMs).coerceAtLeast(0L)
-        val companions = VideoStorage.companionFilesFor(context, trip)
         return VideoListItem(
             trip = trip,
-            favorite = VideoStorage.isFavorite(context, trip),
-            totalBytes = companions.sumOf { it.length() },
-            hasTrack = track != null || trip.segments.any { video -> VideoStorage.trackFilesFor(context, video).any { it.exists() } },
+            favorite = favorite,
+            totalBytes = trip.segments.sumOf { it.length() },
+            hasTrack = track != null,
             hasSubtitle = trip.segments.any { VideoStorage.subtitleFileFor(it).exists() },
             track = track,
             trackSummary = trackSummary,
@@ -894,10 +767,13 @@ class HistoryActivity : AppCompatActivity() {
         )
     }
 
-    private fun VideoHistoryCache.Entry.toVideoListItem(context: Context, trip: VideoStorage.VideoTrip): VideoListItem {
+    private fun VideoHistoryCache.Entry.toVideoListItem(
+        trip: VideoStorage.VideoTrip,
+        favorite: Boolean
+    ): VideoListItem {
         return VideoListItem(
             trip = trip,
-            favorite = VideoStorage.isFavorite(context, trip),
+            favorite = favorite,
             totalBytes = totalBytes,
             hasTrack = hasTrack,
             hasSubtitle = hasSubtitle,
@@ -929,6 +805,96 @@ class HistoryActivity : AppCompatActivity() {
         )
     }
 
+    private fun dropDeletedTrips(tripIds: Set<String>) {
+        if (tripIds.isEmpty()) return
+        videoListMutation++
+        val mutation = videoListMutation
+        currentFilteredVideoTrips = currentFilteredVideoTrips.filter { it.id !in tripIds }
+        currentVideoItems = currentVideoItems.filter { it.trip.id !in tripIds }
+        videoScopeCount = (videoScopeCount - tripIds.size).coerceAtLeast(currentFilteredVideoTrips.size)
+        batchSelectedTripIds.removeAll(tripIds)
+        animateRemoveVideoCards(tripIds)
+        val pages = pageCount(currentFilteredVideoTrips.size)
+        if (videoPageIndex > pages - 1) videoPageIndex = (pages - 1).coerceAtLeast(0)
+        publishVideoPageChrome()
+        if (currentFilteredVideoTrips.isEmpty()) {
+            showVideoListEmpty()
+            return
+        }
+        fillVideoPageGap(mutation)
+    }
+
+    private fun animateRemoveVideoCards(tripIds: Set<String>) {
+        layoutVideoList.layoutTransition = videoListTransition()
+        val doomed = (0 until layoutVideoList.childCount)
+            .map { layoutVideoList.getChildAt(it) }
+            .filter { (it.tag as? String) in tripIds }
+        doomed.forEach { layoutVideoList.removeView(it) }
+    }
+
+    private fun fillVideoPageGap(mutation: Int) {
+        val pageTrips = currentFilteredVideoTrips
+            .drop(videoPageIndex * VIDEO_PAGE_SIZE)
+            .take(VIDEO_PAGE_SIZE)
+        val shownIds = currentVideoItems.map { it.trip.id }.toSet()
+        val missing = pageTrips.filter { it.id !in shownIds }
+        if (missing.isEmpty()) {
+            if (currentVideoItems.isEmpty()) showVideoListEmpty()
+            return
+        }
+        val appContext = applicationContext
+        historyExecutor.execute {
+            val cache = VideoHistoryCache.load(appContext)
+            val favoriteIds = VideoStorage.favoriteTripIds(appContext, missing)
+            val items = missing.map { trip ->
+                buildVideoListItem(trip, cache, trip.id in favoriteIds)
+            }
+            cache.save()
+            mainHandler.post {
+                if (mutation != videoListMutation || isFinishing || isDestroyed) return@post
+                if (layoutVideoList.childCount == 1 && layoutVideoList.getChildAt(0).tag !is String) {
+                    layoutVideoList.layoutTransition = null
+                    layoutVideoList.removeAllViews()
+                }
+                layoutVideoList.layoutTransition = videoListTransition()
+                items.forEach { item ->
+                    if (currentVideoItems.none { it.trip.id == item.trip.id }) {
+                        currentVideoItems = currentVideoItems + item
+                        layoutVideoList.addView(videoCard(item))
+                    }
+                }
+                publishVideoPageChrome()
+            }
+        }
+    }
+
+    private fun showVideoListEmpty() {
+        layoutVideoList.layoutTransition = videoListTransition()
+        layoutVideoList.removeAllViews()
+        layoutVideoList.addView(TextView(this).apply {
+            text = getString(videoEmptyTextRes(showFavoriteVideosOnly))
+            setTextColor(getColorCompat(R.color.text_primary))
+            textSize = 13f
+        })
+    }
+
+    private fun videoListTransition(): LayoutTransition {
+        return LayoutTransition().apply {
+            setAnimateParentHierarchy(false)
+            setDuration(220)
+        }
+    }
+
+    private fun publishVideoPageChrome() {
+        bindVideoPageChrome(
+            items = currentVideoItems,
+            filteredCount = currentFilteredVideoTrips.size,
+            allCount = videoScopeCount,
+            pageIndex = videoPageIndex,
+            favoriteOnly = showFavoriteVideosOnly
+        )
+    }
+
     private fun renderVideoList(
         items: List<VideoListItem>,
         pageBytes: Long,
@@ -937,7 +903,33 @@ class HistoryActivity : AppCompatActivity() {
         pageIndex: Int,
         favoriteOnly: Boolean
     ) {
+        videoListMutation++
         currentVideoItems = items
+        videoScopeCount = allCount
+        bindVideoPageChrome(items, filteredCount, allCount, pageIndex, favoriteOnly, pageBytes)
+        layoutVideoList.layoutTransition = null
+        layoutVideoList.removeAllViews()
+        if (items.isEmpty()) {
+            layoutVideoList.addView(TextView(this).apply {
+                text = getString(videoEmptyTextRes(favoriteOnly))
+                setTextColor(getColorCompat(R.color.text_primary))
+                textSize = 13f
+            })
+        } else {
+            items.forEach { item ->
+                layoutVideoList.addView(videoCard(item))
+            }
+        }
+    }
+
+    private fun bindVideoPageChrome(
+        items: List<VideoListItem>,
+        filteredCount: Int,
+        allCount: Int,
+        pageIndex: Int,
+        favoriteOnly: Boolean,
+        pageBytes: Long = items.sumOf { it.totalBytes }
+    ) {
         val firstNumber = if (filteredCount == 0) 0 else pageIndex * VIDEO_PAGE_SIZE + 1
         val lastNumber = (pageIndex * VIDEO_PAGE_SIZE + items.size).coerceAtMost(filteredCount)
         tvVideoSummary.text = when {
@@ -976,19 +968,7 @@ class HistoryActivity : AppCompatActivity() {
         tvVideoPage.text = getString(R.string.page_indicator, if (filteredCount == 0) 0 else pageIndex + 1, totalPages)
         btnVideoPrevPage.isEnabled = pageIndex > 0
         btnVideoNextPage.isEnabled = pageIndex + 1 < totalPages
-        layoutVideoList.removeAllViews()
-        if (items.isEmpty()) {
-            layoutVideoList.addView(TextView(this).apply {
-                text = getString(videoEmptyTextRes(favoriteOnly))
-                setTextColor(getColorCompat(R.color.text_primary))
-                textSize = 13f
-            })
-        } else {
-            items.forEach { item ->
-                layoutVideoList.addView(videoCard(item))
-            }
-        }
-        btnDeleteAllVideos.isEnabled = items.isNotEmpty()
+        btnDeleteAllVideos.isEnabled = filteredCount > 0
         btnDeleteCurrentPageVideos.isEnabled = items.isNotEmpty()
         btnBatchDelete.isEnabled = items.isNotEmpty()
         updateBatchModeViews()
@@ -1005,9 +985,34 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun renderGpsTrackList(records: List<DriveRecord>) {
-        tvGpsTrackSummary.text = getString(R.string.gps_track_history_summary, records.size)
+        allGpsTrackRecords = records
+        val pages = pageCount(records.size)
+        gpsPageIndex = gpsPageIndex.coerceIn(0, (pages - 1).coerceAtLeast(0))
+        showGpsTrackPage()
+    }
+
+    private fun showGpsTrackPage() {
+        val total = allGpsTrackRecords.size
+        val pages = pageCount(total)
+        val pageIndex = gpsPageIndex.coerceIn(0, (pages - 1).coerceAtLeast(0))
+        gpsPageIndex = pageIndex
+        val page = if (total == 0) {
+            emptyList()
+        } else {
+            allGpsTrackRecords.drop(pageIndex * VIDEO_PAGE_SIZE).take(VIDEO_PAGE_SIZE)
+        }
+        if (total == 0) {
+            tvGpsTrackSummary.text = getString(R.string.gps_track_history_summary, 0)
+        } else {
+            val first = pageIndex * VIDEO_PAGE_SIZE + 1
+            val last = (pageIndex * VIDEO_PAGE_SIZE + page.size).coerceAtMost(total)
+            tvGpsTrackSummary.text = getString(R.string.gps_track_history_page_summary, first, last, total)
+        }
+        tvGpsPage.text = getString(R.string.page_indicator, if (total == 0) 0 else pageIndex + 1, pages)
+        btnGpsPrevPage.isEnabled = pageIndex > 0
+        btnGpsNextPage.isEnabled = total > 0 && pageIndex + 1 < pages
         layoutGpsTrackList.removeAllViews()
-        if (records.isEmpty()) {
+        if (page.isEmpty()) {
             layoutGpsTrackList.addView(TextView(this).apply {
                 text = getString(R.string.gps_track_history_empty)
                 setTextColor(getColorCompat(R.color.text_primary))
@@ -1015,13 +1020,14 @@ class HistoryActivity : AppCompatActivity() {
             })
             return
         }
-        records.forEach { record -> layoutGpsTrackList.addView(gpsTrackCard(record)) }
+        page.forEach { record -> layoutGpsTrackList.addView(gpsTrackCard(record)) }
     }
 
     private fun gpsTrackCard(record: DriveRecord): View {
         val card = MaterialCardView(this).apply {
-            radius = 14f * resources.displayMetrics.density
+            radius = 16f * resources.displayMetrics.density
             cardElevation = 0f
+            strokeWidth = 0
             setCardBackgroundColor(getColorCompat(R.color.surface_primary))
             isClickable = true
             isFocusable = true
@@ -1035,9 +1041,8 @@ class HistoryActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
         }
-        val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
         content.addView(TextView(this).apply {
-            text = "${fmt.format(Date(record.startTimeMs))} - ${fmt.format(Date(record.endTimeMs))}"
+            text = GpsTrackTimeLabel.format(record.startTimeMs, record.endTimeMs)
             setTextColor(getColorCompat(R.color.text_primary))
             textSize = 14f
         })
@@ -1075,8 +1080,10 @@ class HistoryActivity : AppCompatActivity() {
         val trip = item.trip
         val density = resources.displayMetrics.density
         val card = MaterialCardView(this).apply {
+            tag = trip.id
             radius = 16f * density
             cardElevation = 0f
+            strokeWidth = 0
             setCardBackgroundColor(getColorCompat(R.color.surface_primary))
             isClickable = true
             isFocusable = true
@@ -1109,14 +1116,19 @@ class HistoryActivity : AppCompatActivity() {
             })
         }
         val thumbWrap = FrameLayout(this).apply {
-            setBackgroundColor(android.graphics.Color.BLACK)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 8f * density
+                setColor(android.graphics.Color.BLACK)
+            }
+            clipToOutline = true
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
             layoutParams = LinearLayout.LayoutParams(dp(132), dp(82))
         }
         val image = ImageView(this).apply {
             alpha = 0.28f
             scaleType = ImageView.ScaleType.CENTER
             setImageResource(android.R.drawable.ic_menu_slideshow)
-            tag = trip.firstVideo.absolutePath
+            tag = thumbnailKey(trip.firstVideo)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -1145,7 +1157,7 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
         content.addView(TextView(this).apply {
-            text = trip.title
+            text = tripListTitle(item.trip, item.startTimeMs, item.durationMs)
             setTextColor(getColorCompat(R.color.text_primary))
             textSize = 14f
             maxLines = 2
@@ -1163,7 +1175,7 @@ class HistoryActivity : AppCompatActivity() {
         if (item.favorite) {
             content.addView(TextView(this).apply {
                 text = getString(R.string.video_favorite_badge)
-                setTextColor(getColorCompat(R.color.text_secondary))
+                setTextColor(getColorCompat(R.color.brand_teal))
                 textSize = 12f
             })
         }
@@ -1185,7 +1197,7 @@ class HistoryActivity : AppCompatActivity() {
             actions.addView(actionText(getString(R.string.video_segments_count, trip.segments.size)) { replayTrip(trip) })
         }
         actions.addView(actionText(getString(R.string.video_export_share)) { exportTrip(trip) })
-        actions.addView(actionText(getString(R.string.video_delete_one)) { confirmDeleteVideo(trip) })
+        actions.addView(actionText(getString(R.string.video_delete_one), danger = true) { confirmDeleteVideo(trip) })
         content.addView(actions)
         row.addView(content)
         card.addView(row)
@@ -1193,17 +1205,92 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun loadVideoThumbnail(videoFile: File, target: ImageView) {
-        val key = videoFile.absolutePath
+        val key = thumbnailKey(videoFile)
+        target.tag = key
         if (thumbnailCache.containsKey(key)) {
             thumbnailCache[key]?.let { bitmap -> showVideoThumbnail(target, key, bitmap) }
             return
         }
+        val width = dp(132)
+        val height = dp(82)
         thumbnailExecutor.execute {
-            val bitmap = extractVideoThumbnail(videoFile, dp(132), dp(82))
+            val cached = readCachedThumbnail(videoFile)
+            val bitmap = cached
+                ?: mediaStoreThumbnail(videoFile, width, height)
+                ?: extractVideoThumbnail(videoFile, width, height)
+            if (cached == null && bitmap != null) storeCachedThumbnail(videoFile, bitmap)
             mainHandler.post {
                 thumbnailCache[key] = bitmap
                 bitmap?.let { showVideoThumbnail(target, key, it) }
             }
+        }
+    }
+
+    private fun mediaStoreThumbnail(videoFile: File, width: Int, height: Int): Bitmap? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null
+        val uri = videoContentUri(videoFile) ?: return null
+        return try {
+            contentResolver.loadThumbnail(uri, android.util.Size(width, height), null)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun videoContentUri(videoFile: File): android.net.Uri? {
+        synchronized(videoUriByPath) {
+            if (!videoUrisLoaded) {
+                videoUrisLoaded = true
+                val collection = android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                runCatching {
+                    contentResolver.query(
+                        collection,
+                        arrayOf(
+                            android.provider.MediaStore.MediaColumns._ID,
+                            android.provider.MediaStore.MediaColumns.DATA
+                        ),
+                        "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+                        arrayOf("DCIM/CarSpeed/%"),
+                        null
+                    )?.use { cursor ->
+                        val idColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns._ID)
+                        val dataColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns.DATA)
+                        while (cursor.moveToNext()) {
+                            val path = cursor.getString(dataColumn) ?: continue
+                            videoUriByPath[path] = android.content.ContentUris.withAppendedId(
+                                collection,
+                                cursor.getLong(idColumn)
+                            )
+                        }
+                    }
+                }
+            }
+            return videoUriByPath[videoFile.absolutePath]
+        }
+    }
+
+    private fun thumbnailKey(videoFile: File): String {
+        return "${videoFile.absolutePath}:${videoFile.length()}:${videoFile.lastModified()}"
+    }
+
+    private fun thumbnailCacheFile(videoFile: File): File {
+        val digest = java.security.MessageDigest.getInstance("SHA-1")
+            .digest(thumbnailKey(videoFile).toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte) }
+            .take(20)
+        return File(cacheDir, "video-thumbs/$digest.jpg")
+    }
+
+    private fun readCachedThumbnail(videoFile: File): Bitmap? {
+        val file = thumbnailCacheFile(videoFile)
+        if (!file.isFile) return null
+        return android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+    }
+
+    private fun storeCachedThumbnail(videoFile: File, bitmap: Bitmap) {
+        val file = thumbnailCacheFile(videoFile)
+        file.parentFile?.mkdirs()
+        runCatching {
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 80, it) }
         }
     }
 
@@ -1261,6 +1348,12 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun hasVideoFilter(): Boolean = currentVideoFilter().hasAny()
 
+    private fun hasExtraVideoFilter(): Boolean {
+        return filterMinDurationMs != null || filterMaxDurationMs != null ||
+            filterMinDistanceMeters != null || filterMaxDistanceMeters != null ||
+            filterMinPhotoCount != null
+    }
+
     private fun currentVideoFilter(): VideoFilter {
         val day = filterSingleDayMs?.let { startOfDay(it) }
         return VideoFilter(
@@ -1279,7 +1372,7 @@ class HistoryActivity : AppCompatActivity() {
     private fun VideoFilter.requiresDetailedVideoData(): Boolean {
         return minDurationMs != null || maxDurationMs != null ||
             minDistanceMeters != null || maxDistanceMeters != null ||
-            minPhotoCount != null
+            (minPhotoCount != null && minPhotoCount > 0)
     }
 
     private fun VideoStorage.VideoTrip.matchesLightFilter(filter: VideoFilter): Boolean {
@@ -1298,17 +1391,6 @@ class HistoryActivity : AppCompatActivity() {
         if (filter.minDistanceMeters != null && distanceMeters < filter.minDistanceMeters) return false
         if (filter.maxDistanceMeters != null && distanceMeters > filter.maxDistanceMeters) return false
         if (filter.minPhotoCount != null && photoCount() < filter.minPhotoCount) return false
-        return true
-    }
-
-    private fun recordMatchesFilter(record: DriveRecord, filter: VideoFilter): Boolean {
-        val end = record.endTimeMs.takeIf { it > 0L } ?: record.startTimeMs
-        if (!rangeMatches(record.startTimeMs, end, filter.dayStartMs, filter.dayEndMs)) return false
-        if (!rangeMatches(record.startTimeMs, end, filter.rangeStartMs, filter.rangeEndMs)) return false
-        if (filter.minDurationMs != null && record.durationMs < filter.minDurationMs) return false
-        if (filter.maxDurationMs != null && record.durationMs > filter.maxDurationMs) return false
-        if (filter.minDistanceMeters != null && record.distanceMeters < filter.minDistanceMeters) return false
-        if (filter.maxDistanceMeters != null && record.distanceMeters > filter.maxDistanceMeters) return false
         return true
     }
 
@@ -1339,30 +1421,13 @@ class HistoryActivity : AppCompatActivity() {
         return startTimeMs
     }
 
-    private fun videoDurationMs(video: File): Long {
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(video.absolutePath)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        } catch (_: Exception) {
-            0L
-        } finally {
-            try {
-                retriever.release()
-            } catch (_: Exception) {
-                // 忽略系统解码器释放异常。
-            }
-        }
-    }
-
     private fun parseVideoTimeMs(name: String): Long? {
         val match = VIDEO_NAME_REGEX.find(name) ?: return null
         return parseCompactDateTime(match.groupValues[1], match.groupValues[2])
     }
 
     private fun parseTripTimeMs(name: String): Long? {
-        val match = TRIP_NAME_REGEX.find(name) ?: return null
-        return parseCompactDateTime(match.groupValues[1], match.groupValues[2])
+        return VideoStorage.tripFolderStartTimeMs(name)
     }
 
     private fun parseCompactDateTime(date: String, time: String): Long? {
@@ -1371,25 +1436,6 @@ class HistoryActivity : AppCompatActivity() {
         } catch (_: Exception) {
             null
         }
-    }
-
-    private fun defaultFilterStartMs(): Long {
-        return Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
-
-    private fun defaultFilterEndMs(): Long = System.currentTimeMillis()
-
-    private fun formatFilterTime(ms: Long): String {
-        return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(ms))
-    }
-
-    private fun formatFilterDate(ms: Long): String {
-        return SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(ms))
     }
 
     private fun startOfDay(ms: Long): Long {
@@ -1420,11 +1466,11 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun actionText(text: String, action: () -> Unit): TextView {
+    private fun actionText(text: String, danger: Boolean = false, action: () -> Unit): TextView {
         return TextView(this).apply {
             this.text = text
             gravity = Gravity.CENTER
-            setTextColor(getColorCompat(R.color.text_primary))
+            setTextColor(getColorCompat(if (danger) R.color.text_danger else R.color.brand_blue))
             textSize = 12f
             isClickable = true
             isFocusable = true
@@ -1474,25 +1520,8 @@ class HistoryActivity : AppCompatActivity() {
         return (value * resources.displayMetrics.density).toInt()
     }
 
-    private fun fieldLabel(field: HistorySortField): String {
-        return when (field) {
-            HistorySortField.START_TIME -> "启动时间"
-            HistorySortField.END_TIME -> "结束时间"
-            HistorySortField.DURATION -> "驾驶时长"
-            HistorySortField.MAX_SPEED -> "最高速度"
-            HistorySortField.DISTANCE -> "行驶距离"
-            HistorySortField.AVERAGE_SPEED -> "平均速度"
-        }
-    }
-
     private fun formatDistance(meters: Float): String {
         return TrackMetrics.formatDistance(meters)
-    }
-
-    private fun formatGpsQuality(record: DriveRecord): String {
-        val avgAccuracy = record.averageAccuracyMeters?.let { String.format("%.1fm", it) } ?: "--"
-        val goodRatio = String.format("%.0f%%", record.goodFixRatio.coerceIn(0f, 1f) * 100f)
-        return "平均精度 $avgAccuracy，好点率 $goodRatio"
     }
 
     private fun formatDuration(ms: Long): String {
@@ -1502,6 +1531,12 @@ class HistoryActivity : AppCompatActivity() {
         val s = totalSec % 60
         return String.format("%02d:%02d:%02d", h, m, s)
     }
+
+    private data class TripSortKey(
+        val trip: VideoStorage.VideoTrip,
+        val favorite: Boolean,
+        val lastModified: Long
+    )
 
     private data class VideoListItem(
         val trip: VideoStorage.VideoTrip,
@@ -1540,8 +1575,6 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val PREF_HISTORY_SORT_FIELD = "history_sort_field"
-        private const val PREF_HISTORY_SORT_ASC = "history_sort_asc"
         private const val PREF_VIDEO_FILTER_DAY_MS = "history_video_filter_day_ms"
         private const val PREF_VIDEO_FILTER_RANGE_START_MS = "history_video_filter_range_start_ms"
         private const val PREF_VIDEO_FILTER_RANGE_END_MS = "history_video_filter_range_end_ms"
@@ -1553,6 +1586,5 @@ class HistoryActivity : AppCompatActivity() {
         private const val VIDEO_PAGE_SIZE = 5
         private const val BATCH_CHECK_TAG_PREFIX = "batch_check_"
         private val VIDEO_NAME_REGEX = Regex("carspeed-(\\d{8})-(\\d{6})")
-        private val TRIP_NAME_REGEX = Regex("carspeed-trip-(\\d{8})-(\\d{6})")
     }
 }

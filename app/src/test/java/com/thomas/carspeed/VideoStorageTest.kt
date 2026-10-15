@@ -15,6 +15,49 @@ class VideoStorageTest {
     }
 
     @Test
+    fun favorite_markers_match_trip_tokens() {
+        val dir = Files.createTempDirectory("carspeed-favorite-marker-test").toFile()
+        try {
+            val video = dir.resolve("carspeed-20261013-100000.mp4")
+            val trip = VideoStorage.VideoTrip(
+                id = "carspeed-trip-20261013-100000",
+                title = "carspeed-trip-20261013-100000",
+                directory = dir,
+                segments = listOf(video)
+            )
+
+            assertEquals(
+                setOf(trip.id),
+                VideoStorage.favoriteIdsFromMarkers(
+                    listOf(trip),
+                    setOf(".carspeed-trip-20261013-100000.favorite")
+                )
+            )
+            assertEquals(emptySet<String>(), VideoStorage.favoriteIdsFromMarkers(listOf(trip), emptySet()))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun recording_duration_follows_the_filename_clock() {
+        val dir = Files.createTempDirectory("carspeed-duration-test").toFile()
+        try {
+            val video = dir.resolve("carspeed-trip-20261013-100000__carspeed-20261013-100000.mp4").apply {
+                writeText("segment")
+            }
+            assertEquals(0L, VideoStorage.recordingDurationMs(dir.resolve("note.txt")))
+
+            val before = VideoStorage.recordingDurationMs(video)
+            video.setLastModified(video.lastModified() + 90_000L)
+
+            assertEquals(before + 90_000L, VideoStorage.recordingDurationMs(video))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun photo_file_name_is_stable_and_jpg() {
         val name = VideoStorage.photoFileNameFor(1_700_000_000_000L)
 
@@ -213,6 +256,94 @@ class VideoStorageTest {
             assertEquals(20L, plan.projectedManagedBytes)
         } finally {
             dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun gallery_file_name_drops_the_trip_token() {
+        val prefixed = "carspeed-trip-20261011-025338__carspeed-20261011-025338.mp4"
+
+        assertEquals(
+            "carspeed-20261011-025338.mp4",
+            VideoStorage.galleryFileName("carspeed-trip-20261011-025338", prefixed)
+        )
+        assertEquals("carspeed-trip-20261011-025338", VideoStorage.galleryTripToken(prefixed))
+        assertEquals("20261011-025338", VideoStorage.canonicalTripFolderName("carspeed-trip-20261011-025338"))
+    }
+
+    @Test
+    fun trip_list_title_shows_start_time_and_duration() {
+        val start = 1_700_000_000_000L
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date(start))
+
+        assertEquals("$stamp  1h3min", VideoStorage.tripListTitle(start, 3_780_000L))
+        assertEquals("45min", VideoStorage.formatTripDuration(45L * 60L * 1000L))
+        assertEquals("1h", VideoStorage.formatTripDuration(3_600_000L))
+        assertEquals("40s", VideoStorage.formatTripDuration(40_000L))
+    }
+
+    @Test
+    fun readable_trip_folder_round_trips_to_the_same_second() {
+        val name = VideoStorage.tripFolderNameFor(1_700_000_000_000L)
+
+        assertTrue(VideoStorage.isTripDirectoryName(name))
+        assertEquals(1_700_000_000L, VideoStorage.tripFolderStartTimeMs(name)!! / 1000L)
+        assertTrue(VideoStorage.isTripDirectoryName("carspeed-trip-20231114-221320"))
+        assertTrue(VideoStorage.tripFolderStartTimeMs("carspeed-trip-20231114-221320") != null)
+    }
+
+    @Test
+    fun readable_trip_folder_is_deleted_as_one_group() {
+        val dir = Files.createTempDirectory("carspeed-readable-trip-cleanup-test").toFile()
+        try {
+            val trip = dir.resolve("行车 2026-10-13 16点00分05秒").apply { mkdirs() }
+            val first = trip.resolve("carspeed-20261013-160005.mp4").apply { writeBytes(ByteArray(40)) }
+            val second = trip.resolve("carspeed-20261013-160505.mp4").apply { writeBytes(ByteArray(40)) }
+            val newer = dir.resolve("carspeed-20261013-170000.mp4").apply { writeBytes(ByteArray(10)) }
+            first.setLastModified(1_000L)
+            second.setLastModified(1_100L)
+            newer.setLastModified(2_000L)
+
+            val plan = VideoStorage.planCleanup(
+                files = VideoStorage.managedVideoFiles(dir),
+                limitBytes = 50L,
+                usableSpaceBytes = 1_000L,
+                requiredFreeBytes = 0L,
+                minFreeBytes = 50L
+            )
+
+            assertEquals(setOf(first, second), plan.filesToDelete.toSet())
+            assertEquals(10L, plan.projectedManagedBytes)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun moved_trip_video_still_finds_the_old_track_file() {
+        val root = Files.createTempDirectory("carspeed-legacy-track").toFile()
+        try {
+            val video = root.resolve("DCIM/CarSpeed/20261013-094720/carspeed-20261013-094721.mp4").apply {
+                parentFile?.mkdirs()
+                writeText("video")
+            }
+            val legacyDir = root.resolve(
+                "Android/media/com.thomas.carspeed/CarSpeed/carspeed-trip-20261013-094720"
+            )
+            val track = legacyDir.resolve("carspeed-20261013-094721.track.json").apply {
+                parentFile?.mkdirs()
+                writeText("{}")
+            }
+            val subtitle = legacyDir.resolve("carspeed-20261013-094721.srt").apply { writeText("1") }
+
+            val tracks = VideoStorage.legacyCompanionFiles(video, ".track.json", root)
+            val subtitles = VideoStorage.legacyCompanionFiles(video, ".srt", root)
+
+            assertTrue(tracks.any { it.canonicalFile == track.canonicalFile })
+            assertTrue(subtitles.any { it.canonicalFile == subtitle.canonicalFile })
+        } finally {
+            root.deleteRecursively()
         }
     }
 }

@@ -61,8 +61,8 @@ object VideoHistoryCache {
         return Store(context.applicationContext, entries)
     }
 
-    fun signatureFor(context: Context, trip: VideoStorage.VideoTrip): String {
-        return signatureForFiles(signatureFiles(context, trip))
+    fun signatureFor(trip: VideoStorage.VideoTrip): String {
+        return signatureForFiles(trip.segments)
     }
 
     fun signatureForFiles(files: List<File>): String {
@@ -76,15 +76,6 @@ object VideoHistoryCache {
                     if (exists) file.lastModified().toString() else "-1"
                 ).joinToString(":")
             }
-    }
-
-    private fun signatureFiles(context: Context, trip: VideoStorage.VideoTrip): List<File> {
-        return trip.segments.flatMap { video ->
-            listOf(video, VideoStorage.subtitleFileFor(video)) +
-                VideoStorage.trackFilesFor(context, video) +
-                VideoStorage.plateFilesFor(context, video) +
-                VideoStorage.favoriteFilesFor(context, video)
-        }
     }
 
     private fun Entry.toJson(): JSONObject {

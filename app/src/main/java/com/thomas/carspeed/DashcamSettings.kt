@@ -5,6 +5,7 @@ import android.content.Context
 data class WatermarkSettings(
     val showTime: Boolean,
     val showSpeed: Boolean,
+    val showStationaryWait: Boolean,
     val showGps: Boolean,
     val showSatellites: Boolean,
     val showAddress: Boolean,
@@ -22,6 +23,7 @@ data class WatermarkSettings(
 object DashcamSettings {
     const val PREF_WATERMARK_TIME = "dashcam_watermark_time"
     const val PREF_WATERMARK_SPEED = "dashcam_watermark_speed"
+    const val PREF_WATERMARK_STATIONARY_WAIT = "dashcam_watermark_stationary_wait"
     const val PREF_WATERMARK_GPS = "dashcam_watermark_gps"
     const val PREF_WATERMARK_SATELLITES = "dashcam_watermark_satellites"
     const val PREF_WATERMARK_ADDRESS = "dashcam_watermark_address"
@@ -68,6 +70,7 @@ object DashcamSettings {
         return WatermarkSettings(
             showTime = prefs.getBoolean(PREF_WATERMARK_TIME, true),
             showSpeed = prefs.getBoolean(PREF_WATERMARK_SPEED, true),
+            showStationaryWait = prefs.getBoolean(PREF_WATERMARK_STATIONARY_WAIT, true),
             showGps = prefs.getBoolean(PREF_WATERMARK_GPS, true),
             showSatellites = prefs.getBoolean(PREF_WATERMARK_SATELLITES, true),
             showAddress = prefs.getBoolean(PREF_WATERMARK_ADDRESS, false),

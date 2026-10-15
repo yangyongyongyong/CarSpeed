@@ -462,11 +462,11 @@ class CameraRecordActivity : AppCompatActivity() {
     }
 
     private fun focusDistanceLabel(percent: Int): String {
-        return when (percent.coerceIn(0, 100)) {
-            0 -> getString(R.string.focus_far_label)
-            100 -> getString(R.string.focus_near_label)
-            else -> "$percent%"
-        }
+        return CameraFocus.distanceLabel(
+            percent,
+            CameraFocus.maxFocusDistanceDiopters(this),
+            getString(R.string.focus_far_label)
+        )
     }
 
     private fun startOrientationListener() {

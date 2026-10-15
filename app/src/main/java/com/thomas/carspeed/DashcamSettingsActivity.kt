@@ -50,6 +50,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var tvBluetoothDeviceSummary: TextView
     private lateinit var cbWatermarkTime: CheckBox
     private lateinit var cbWatermarkSpeed: CheckBox
+    private lateinit var cbWatermarkStationaryWait: CheckBox
     private lateinit var cbWatermarkGps: CheckBox
     private lateinit var cbWatermarkSatellites: CheckBox
     private lateinit var cbWatermarkAddress: CheckBox
@@ -130,6 +131,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
         tvBluetoothDeviceSummary = findViewById(R.id.tvBluetoothDeviceSummary)
         cbWatermarkTime = findViewById(R.id.cbWatermarkTime)
         cbWatermarkSpeed = findViewById(R.id.cbWatermarkSpeed)
+        cbWatermarkStationaryWait = findViewById(R.id.cbWatermarkStationaryWait)
         cbWatermarkGps = findViewById(R.id.cbWatermarkGps)
         cbWatermarkSatellites = findViewById(R.id.cbWatermarkSatellites)
         cbWatermarkAddress = findViewById(R.id.cbWatermarkAddress)
@@ -173,6 +175,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
             cbAutoTriggerStopOnBluetoothStationary,
             cbWatermarkTime,
             cbWatermarkSpeed,
+            cbWatermarkStationaryWait,
             cbWatermarkGps,
             cbWatermarkSatellites,
             cbWatermarkAddress,
@@ -535,6 +538,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
         cbRecordAudio.isChecked = settings.recordAudio
         cbWatermarkTime.isChecked = settings.showTime
         cbWatermarkSpeed.isChecked = settings.showSpeed
+        cbWatermarkStationaryWait.isChecked = settings.showStationaryWait
         cbWatermarkGps.isChecked = settings.showGps
         cbWatermarkSatellites.isChecked = settings.showSatellites
         cbWatermarkAddress.isChecked = settings.showAddress
@@ -585,11 +589,11 @@ class DashcamSettingsActivity : AppCompatActivity() {
     }
 
     private fun focusDistanceLabel(percent: Int): String {
-        return when (percent.coerceIn(0, 100)) {
-            0 -> getString(R.string.focus_far_label)
-            100 -> getString(R.string.focus_near_label)
-            else -> "$percent%"
-        }
+        return CameraFocus.distanceLabel(
+            percent,
+            CameraFocus.maxFocusDistanceDiopters(this),
+            getString(R.string.focus_far_label)
+        )
     }
 
     private fun persistSettings() {
@@ -603,6 +607,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
             .edit()
             .putBoolean(DashcamSettings.PREF_WATERMARK_TIME, cbWatermarkTime.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_SPEED, cbWatermarkSpeed.isChecked)
+            .putBoolean(DashcamSettings.PREF_WATERMARK_STATIONARY_WAIT, cbWatermarkStationaryWait.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_GPS, cbWatermarkGps.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_SATELLITES, cbWatermarkSatellites.isChecked)
             .putBoolean(DashcamSettings.PREF_WATERMARK_ADDRESS, cbWatermarkAddress.isChecked)

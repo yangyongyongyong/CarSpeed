@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/brand_sand"
-    android:orientation="vertical"
-    android:paddingStart="16dp"
-    android:paddingTop="18dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="16dp">
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="16dp">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
@@ -165,7 +170,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRecordVideo"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.CarSpeed.Button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -180,7 +185,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnTakePhoto"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.CarSpeed.Button.Tonal"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -189,7 +194,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenPhotos"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.CarSpeed.Button.Tonal"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -198,7 +203,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenSettings"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.CarSpeed.Button.Tonal"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -214,7 +219,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenHistory"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.CarSpeed.Button.Text"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -222,7 +227,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenStatus"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.CarSpeed.Button.Text"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -230,7 +235,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenHud"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.CarSpeed.Button.Text"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -246,7 +251,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenRadar"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.CarSpeed.Button.Text"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -254,7 +259,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenTrack"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.CarSpeed.Button.Text"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -262,4 +267,5 @@
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
-</LinearLayout>
+    </LinearLayout>
+</ScrollView>

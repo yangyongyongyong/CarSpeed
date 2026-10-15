@@ -37,10 +37,34 @@
     <string name="photo_saved">照片已保存</string>
     <string name="photo_failed">照片保存失败</string>
     <string name="photo_unavailable_while_plate_recognition">当前录像规格下车牌识别占用分析通道，暂不能同时拍照。</string>
+    <string name="photo_unavailable_during_recording">当前录像规格不能同时拍照。</string>
     <string name="photo_gallery_title">照片</string>
     <string name="photo_gallery_subtitle">查看通过按钮或语音指令保存的水印照片。</string>
     <string name="photo_history_summary">历史照片：%1$d 张，占用 %2$s</string>
+    <string name="photo_history_page_summary">照片：第 %1$d-%2$d 张 / 共 %3$d 张，本页占用 %4$s</string>
+    <string name="photo_history_page_filtered_summary">照片：第 %1$d-%2$d 张 / 筛选 %3$d 张 / 共 %4$d 张，本页占用 %5$s</string>
     <string name="photo_history_empty">暂无照片</string>
+    <string name="photo_filter_label">按日期</string>
+    <string name="photo_filter_all">全部日期</string>
+    <string name="photo_filter_day">%1$d年%2$d月%3$d日</string>
+    <string name="photo_filter_empty">当前日期没有照片</string>
+    <string name="photo_calendar_hint">点一天筛选当天，再点一天筛选范围</string>
+    <string name="photo_calendar_confirm">确定</string>
+    <string name="photo_calendar_title">%1$d年%2$d月</string>
+    <string name="photo_calendar_prev">上月</string>
+    <string name="photo_calendar_next">下月</string>
+    <string name="photo_delete_page_confirm">确定删除当前页的 %1$d 张照片吗？</string>
+    <string name="photo_delete_selected_confirm">确定删除选中的 %1$d 张照片吗？</string>
+    <string name="photo_batch_none_selected">请先勾选要删除的照片</string>
+    <string-array name="photo_weekdays">
+        <item>一</item>
+        <item>二</item>
+        <item>三</item>
+        <item>四</item>
+        <item>五</item>
+        <item>六</item>
+        <item>日</item>
+    </string-array>
     <string name="photo_view">查看</string>
     <string name="photo_preview_title">照片</string>
     <string name="photo_preview_missing">找不到这张照片</string>
@@ -181,6 +205,7 @@
     <string name="record_audio_toggle">录制声音</string>
     <string name="watermark_time_toggle">视频字幕显示时间</string>
     <string name="watermark_speed_toggle">视频字幕显示速度</string>
+    <string name="watermark_stationary_wait_toggle">视频字幕显示静止等待</string>
     <string name="watermark_gps_toggle">视频字幕显示 GPS 经纬度</string>
     <string name="watermark_satellites_toggle">视频字幕显示 GPS 卫星个数</string>
     <string name="watermark_address_toggle">视频字幕显示所在位置</string>
@@ -196,9 +221,7 @@
     <string name="dashcam_notif_text_ready">等待开始录像。</string>
     <string name="dashcam_action_photo">拍照</string>
     <string name="history_title">驾驶记录</string>
-    <string name="history_subtitle">按时间、距离或速度回看最近 100 条驾驶数据。</string>
-    <string name="history_panel_title">记录明细</string>
-    <string name="sort_label">排序方式</string>
+    <string name="history_subtitle">按时间、距离或速度筛选录像和 GPS 轨迹。</string>
     <string name="video_filter_label">录像筛选</string>
     <string name="video_filter_none">筛选：不限</string>
     <string name="video_filter_start_none">开始：不限</string>
@@ -238,6 +261,7 @@
     <string name="page_indicator">第 %1$d / %2$d 页</string>
     <string name="gps_track_history_title">GPS 轨迹记录</string>
     <string name="gps_track_history_summary">GPS 轨迹记录：%1$d 条</string>
+    <string name="gps_track_history_page_summary">GPS 轨迹记录：第 %1$d-%2$d 条 / 共 %3$d 条</string>
     <string name="gps_track_history_empty">暂无独立 GPS 轨迹记录</string>
     <string name="gps_track_replay_hint">点击播放轨迹</string>
     <string name="gps_track_replay_title">GPS 轨迹回放</string>
@@ -259,6 +283,7 @@
     <string name="video_replay_map_scale">当前：%1$s</string>
     <string name="video_replay_map_scale_in">＋</string>
     <string name="video_replay_map_scale_out">－</string>
+    <string name="video_replay_rotate">旋转</string>
     <string name="video_replay_map_whole">全程</string>
     <string name="video_replay_map_current">当前</string>
     <string name="video_replay_map_road">道路</string>
@@ -304,6 +329,7 @@
     <string name="share_export_subtitle_fields">字幕显示内容</string>
     <string name="share_export_field_time">时间</string>
     <string name="share_export_field_speed">速度</string>
+    <string name="share_export_field_stationary_wait">静止等待</string>
     <string name="share_export_field_gps">GPS 经纬度</string>
     <string name="share_export_field_satellites">GPS 卫星个数</string>
     <string name="share_export_field_address">所在位置</string>

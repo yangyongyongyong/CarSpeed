@@ -7,6 +7,7 @@ import java.util.Locale
 
 data class DashcamTelemetry(
     val speedKmh: Float = 0f,
+    val stationaryWaitMs: Long = 0L,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val satelliteCount: Int? = null,
@@ -37,6 +38,9 @@ object DashcamOverlayText {
         }
         if (settings.showSpeed) {
             result += String.format(Locale.US, "%.1f km/h", telemetry.speedKmh)
+        }
+        if (settings.showStationaryWait) {
+            result += formatStationaryWait(telemetry.stationaryWaitMs)
         }
         if (settings.showGps) {
             val lat = telemetry.latitude
@@ -71,6 +75,14 @@ object DashcamOverlayText {
             result += mode.label + hdr
         }
         return result
+    }
+
+    fun formatStationaryWait(waitDurationMs: Long): String {
+        val totalSec = (waitDurationMs / 1000).coerceAtLeast(0)
+        val hours = totalSec / 3600
+        val minutes = (totalSec % 3600) / 60
+        val seconds = totalSec % 60
+        return String.format(Locale.US, "静止等待：%02d:%02d:%02d", hours, minutes, seconds)
     }
 
     private fun formatFocus(telemetry: DashcamTelemetry, context: Context): String {

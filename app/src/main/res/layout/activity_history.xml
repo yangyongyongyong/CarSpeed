@@ -11,306 +11,293 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingStart="16dp"
-        android:paddingTop="18dp"
+        android:paddingTop="8dp"
         android:paddingEnd="16dp"
-        android:paddingBottom="16dp">
+        android:paddingBottom="20dp">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:backgroundTint="@android:color/transparent"
-        app:navigationIcon="@android:drawable/ic_menu_revert"
-        app:title="@string/history_title"
-        app:titleTextColor="@color/text_primary" />
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@android:color/transparent"
+            app:navigationIcon="@drawable/ic_nav_back"
+            app:title="@string/history_title"
+            app:titleTextColor="@color/text_primary" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="@string/history_subtitle"
-        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/history_subtitle"
+            android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        style="@style/Widget.CarSpeed.Card">
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.CarSpeed.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/photo_filter_label"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVideoDate"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/photo_filter_all" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVideoDateClear"
+                        style="@style/Widget.CarSpeed.Button.Text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/video_filter_clear" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvVideoTimeFilterLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/video_filter_label"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVideoFilterDialog"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/video_filter_none" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVideoFilterClear"
+                        style="@style/Widget.CarSpeed.Button.Text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/video_filter_clear" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/video_scope_label"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVideoScopeAll"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/video_scope_all" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnVideoScopeFavorites"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:text="@string/video_scope_favorites" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/tvVideoSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/tvSortLabel"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnVideoPrevPage"
+                style="@style/Widget.CarSpeed.Button.Text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/sort_label"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <Spinner
-                    android:id="@+id/spSortField"
-                    android:layout_width="0dp"
-                    android:layout_height="52dp"
-                    android:layout_weight="1"
-                    android:backgroundTint="@color/surface_secondary" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSortOrder"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:minWidth="82dp"
-                    android:text="降序" />
-            </LinearLayout>
+                android:text="@string/page_previous" />
 
             <TextView
-                android:id="@+id/tvVideoTimeFilterLabel"
-                android:layout_width="wrap_content"
+                android:id="@+id/tvVideoPage"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/video_filter_label"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVideoFilterDialog"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/video_filter_none" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVideoFilterClear"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/video_filter_clear" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="12dp"
-                    android:text="@string/video_scope_label"
-                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVideoScopeAll"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/video_scope_all" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVideoScopeFavorites"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="@string/video_scope_favorites" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/tvVideoSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVideoPrevPage"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/page_previous" />
-
-                <TextView
-                    android:id="@+id/tvVideoPage"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnVideoNextPage"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/page_next" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/layoutBatchActions"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:visibility="gone">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBatchExit"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/video_batch_exit" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBatchToggleAll"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="@string/video_batch_select_all" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBatchDeleteSelected"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/video_batch_delete_selected" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/layoutVideoList"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@color/surface_secondary"
-                android:orientation="vertical"
-                android:padding="8dp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBatchDelete"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/video_batch_delete" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDeleteCurrentPage"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="@string/video_delete_current_page" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDeleteAllVideos"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="@string/video_delete_all" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/gps_track_history_title"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-            <TextView
-                android:id="@+id/tvGpsTrackSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_weight="1"
+                android:gravity="center"
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-            <LinearLayout
-                android:id="@+id/layoutGpsTrackList"
-                android:layout_width="match_parent"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnVideoNextPage"
+                style="@style/Widget.CarSpeed.Button.Text"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@color/surface_secondary"
-                android:orientation="vertical"
-                android:padding="8dp" />
+                android:text="@string/page_next" />
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
 
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="420dp"
-        android:layout_marginTop="16dp"
-        style="@style/Widget.CarSpeed.Card">
+        <LinearLayout
+            android:id="@+id/layoutBatchActions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBatchExit"
+                style="@style/Widget.CarSpeed.Button.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/video_batch_exit" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBatchToggleAll"
+                style="@style/Widget.CarSpeed.Button.Tonal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/video_batch_select_all" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBatchDeleteSelected"
+                style="@style/Widget.CarSpeed.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/video_batch_delete_selected" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layoutVideoList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:padding="18dp">
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBatchDelete"
+                style="@style/Widget.CarSpeed.Button.Text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/video_batch_delete" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDeleteCurrentPage"
+                style="@style/Widget.CarSpeed.Button.Text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/video_delete_current_page" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDeleteAllVideos"
+                style="@style/Widget.CarSpeed.Button.Text.Danger"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/video_delete_all" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/gps_track_history_title"
+            android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+        <TextView
+            android:id="@+id/tvGpsTrackSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGpsPrevPage"
+                style="@style/Widget.CarSpeed.Button.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/page_previous" />
 
             <TextView
-                android:layout_width="match_parent"
+                android:id="@+id/tvGpsPage"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="@string/history_panel_title"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-            <ScrollView
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_marginTop="12dp"
-                android:layout_weight="1">
-
-                <TextView
-                    android:id="@+id/tvHistory"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="6dp"
-                    android:paddingBottom="4dp"
-                    android:textColor="@color/text_primary"
-                    android:textSize="13sp" />
-            </ScrollView>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGpsNextPage"
+                style="@style/Widget.CarSpeed.Button.Text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/page_next" />
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:id="@+id/layoutGpsTrackList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
     </LinearLayout>
 </ScrollView>

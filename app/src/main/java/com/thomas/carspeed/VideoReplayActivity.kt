@@ -35,6 +35,7 @@ class VideoReplayActivity : AppCompatActivity() {
     private lateinit var infoCard: MaterialCardView
     private lateinit var infoContent: LinearLayout
     private lateinit var videoFrame: FrameLayout
+    private lateinit var videoStage: FrameLayout
     private lateinit var videoTextureView: TextureView
     private lateinit var plateOverlayView: PlateOverlayView
     private lateinit var mapFrame: FrameLayout
@@ -58,6 +59,7 @@ class VideoReplayActivity : AppCompatActivity() {
     private lateinit var tvReplayTime: TextView
     private lateinit var tvMapReplayTime: TextView
     private lateinit var tvReplayFullscreen: TextView
+    private lateinit var tvReplayRotate: TextView
     private lateinit var tvMapScale: TextView
     private lateinit var btnMapViewportAll: MaterialButton
     private lateinit var btnMapViewportCurrent: MaterialButton
@@ -82,6 +84,8 @@ class VideoReplayActivity : AppCompatActivity() {
     private var playerPrepared = false
     private var controlsVisible = true
     private var fullscreen = false
+    private var videoRotationDegrees = 0
+    private var flatVideoMapRatio: Float? = null
     private var mapFullscreen = false
     private var userSeeking = false
     private var trackOnly = false
@@ -118,6 +122,7 @@ class VideoReplayActivity : AppCompatActivity() {
         infoCard = findViewById(R.id.infoCard)
         infoContent = findViewById(R.id.infoContent)
         videoFrame = findViewById(R.id.videoFrame)
+        videoStage = findViewById(R.id.videoStage)
         videoTextureView = findViewById(R.id.videoTextureView)
         plateOverlayView = findViewById(R.id.replayPlateOverlayView)
         mapFrame = findViewById(R.id.mapFrame)
@@ -141,6 +146,7 @@ class VideoReplayActivity : AppCompatActivity() {
         tvReplayTime = findViewById(R.id.tvReplayTime)
         tvMapReplayTime = findViewById(R.id.tvMapReplayTime)
         tvReplayFullscreen = findViewById(R.id.tvReplayFullscreen)
+        tvReplayRotate = findViewById(R.id.tvReplayRotate)
         tvMapScale = findViewById(R.id.tvMapScale)
         btnMapViewportAll = findViewById(R.id.btnMapViewportAll)
         btnMapViewportCurrent = findViewById(R.id.btnMapViewportCurrent)
@@ -148,6 +154,12 @@ class VideoReplayActivity : AppCompatActivity() {
         btnOfflineMap = findViewById(R.id.btnOfflineMap)
         btnMapScaleOut = findViewById(R.id.btnMapScaleOut)
         btnMapScaleIn = findViewById(R.id.btnMapScaleIn)
+        videoCard.clipToOutline = false
+        videoCard.clipChildren = false
+        videoFrame.clipChildren = false
+        infoCard.clipToOutline = false
+        infoCard.clipChildren = false
+        mapFrame.clipChildren = false
         normalVideoRadius = videoCard.radius
         normalInfoRadius = infoCard.radius
         videoMapRatio = loadVideoMapRatio()
@@ -160,6 +172,7 @@ class VideoReplayActivity : AppCompatActivity() {
         tvReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvMapReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvReplayFullscreen.setOnClickListener { setFullscreen(!fullscreen) }
+        tvReplayRotate.setOnClickListener { rotatePlayback(90) }
         mapRouteView.onMapTap = { if (!mapFullscreen) setMapFullscreen(true) }
         mapRouteView.onPhotoClick = { path -> openRoutePhoto(path) }
         mapRouteView.onScaleChanged = { updateMapControls() }
@@ -560,7 +573,14 @@ class VideoReplayActivity : AppCompatActivity() {
             renderTrackInfo()
             return
         }
-        val title = files.firstOrNull()?.parentFile?.takeIf { files.size > 1 }?.name ?: files.first().name
+        val folder = files.firstOrNull()?.parentFile?.name
+        val startMs = folder?.let { VideoStorage.tripFolderStartTimeMs(it) } ?: 0L
+        val durationMs = trackSummary?.durationMs ?: track?.points?.let { points ->
+            if (points.isEmpty()) 0L else points.last().timeMs - points.first().timeMs
+        } ?: 0L
+        val title = VideoStorage.tripListTitle(startMs, durationMs)
+            ?: files.firstOrNull()?.parentFile?.takeIf { files.size > 1 }?.name
+            ?: files.first().name
         tvReplayTitle.text = getString(R.string.video_replay_file_title, title)
         val points = track?.points.orEmpty()
         tvReplayStats.text = if (points.isEmpty()) {
@@ -754,7 +774,10 @@ class VideoReplayActivity : AppCompatActivity() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
-                    persistVideoMapRatio()
+                    if (!VideoReplayRotation.isQuarterTurn(videoRotationDegrees)) {
+                        flatVideoMapRatio = null
+                        persistVideoMapRatio()
+                    }
                     view.performClick()
                     true
                 }
@@ -814,51 +837,65 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
+    private fun rotatePlayback(visualClockwiseDegrees: Int) {
+        val next = VideoReplayRotation.normalize(videoRotationDegrees + visualClockwiseDegrees)
+        val turningUpright = VideoReplayRotation.isQuarterTurn(videoRotationDegrees) &&
+            !VideoReplayRotation.isQuarterTurn(next)
+        videoRotationDegrees = next
+        if (!fullscreen && !mapFullscreen && !trackOnly && lastVideoWidth > 0 && replayRoot.height > 0) {
+            if (VideoReplayRotation.isQuarterTurn(videoRotationDegrees)) {
+                if (flatVideoMapRatio == null) flatVideoMapRatio = videoMapRatio
+                applyVideoMapRatio(
+                    VideoReplayRotation.videoAreaFraction(
+                        replayRoot.width,
+                        replayRoot.height,
+                        lastVideoWidth,
+                        lastVideoHeight,
+                        videoRotationDegrees,
+                        MIN_VIDEO_MAP_RATIO,
+                        MAX_VIDEO_MAP_RATIO
+                    )
+                )
+            } else if (turningUpright) {
+                applyVideoMapRatio(flatVideoMapRatio ?: videoMapRatio)
+                flatVideoMapRatio = null
+            }
+        }
+        mapRouteView.setContentRotation(videoRotationDegrees)
+        applyVideoStage(lastVideoWidth, lastVideoHeight)
+        showControls()
+    }
+
     private fun updateVideoLayout(videoWidth: Int, videoHeight: Int) {
+        applyVideoStage(videoWidth, videoHeight)
+    }
+
+    private fun applyVideoStage(videoWidth: Int, videoHeight: Int) {
         if (videoWidth <= 0 || videoHeight <= 0) return
         lastVideoWidth = videoWidth
         lastVideoHeight = videoHeight
-        if (!fullscreen) {
-            updateNormalVideoCardLayout(videoWidth, videoHeight)
-            return
-        }
         if (videoFrame.width <= 0 || videoFrame.height <= 0) {
-            videoFrame.post { updateVideoLayout(videoWidth, videoHeight) }
+            videoFrame.post { applyVideoStage(videoWidth, videoHeight) }
             return
         }
-        val frameWidth = videoFrame.width.toFloat()
-        val frameHeight = videoFrame.height.toFloat()
-        val displayWidth = videoWidth.toFloat()
-        val displayHeight = videoHeight.toFloat()
-        val scale = minOf(frameWidth / displayWidth, frameHeight / displayHeight)
-        val targetWidth = (displayWidth * scale).toInt().coerceAtLeast(1)
-        val targetHeight = (displayHeight * scale).toInt().coerceAtLeast(1)
-        val params = FrameLayout.LayoutParams(targetWidth, targetHeight, Gravity.CENTER)
-        if (videoTextureView.layoutParams?.width != targetWidth || videoTextureView.layoutParams?.height != targetHeight) {
-            videoTextureView.layoutParams = params
-        }
-        videoTextureView.setTransform(null)
-    }
-
-    private fun updateNormalVideoCardLayout(videoWidth: Int, videoHeight: Int) {
-        if (videoFrame.width <= 0 || videoFrame.height <= 0) {
-            videoCard.post { updateVideoLayout(videoWidth, videoHeight) }
-            return
-        }
-        val frameWidth = videoFrame.width.toFloat()
-        val frameHeight = videoFrame.height.toFloat()
-        val scale = minOf(frameWidth / videoWidth.toFloat(), frameHeight / videoHeight.toFloat())
-        val targetWidth = (videoWidth * scale).toInt().coerceAtLeast(1)
-        val targetHeight = (videoHeight * scale).toInt().coerceAtLeast(1)
-        val textureParams = FrameLayout.LayoutParams(
-            targetWidth,
-            targetHeight,
-            Gravity.CENTER
+        val (contentWidth, contentHeight) = VideoReplayRotation.fittedContentSize(
+            videoFrame.width,
+            videoFrame.height,
+            videoWidth,
+            videoHeight,
+            videoRotationDegrees
         )
-        if (videoTextureView.layoutParams?.width != targetWidth ||
-            videoTextureView.layoutParams?.height != targetHeight
-        ) {
-            videoTextureView.layoutParams = textureParams
+        if (videoStage.layoutParams?.width != contentWidth || videoStage.layoutParams?.height != contentHeight) {
+            videoStage.layoutParams = FrameLayout.LayoutParams(contentWidth, contentHeight, Gravity.CENTER)
+        }
+        videoStage.pivotX = contentWidth / 2f
+        videoStage.pivotY = contentHeight / 2f
+        videoStage.rotation = videoRotationDegrees.toFloat()
+        val subtitleParams = tvSubtitleOverlay.layoutParams as FrameLayout.LayoutParams
+        val bottomMargin = if (VideoReplayRotation.isQuarterTurn(videoRotationDegrees)) dp(12) else dp(64)
+        if (subtitleParams.bottomMargin != bottomMargin) {
+            subtitleParams.bottomMargin = bottomMargin
+            tvSubtitleOverlay.layoutParams = subtitleParams
         }
         videoTextureView.setTransform(null)
     }

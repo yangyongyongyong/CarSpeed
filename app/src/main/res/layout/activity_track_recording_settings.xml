@@ -20,7 +20,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:backgroundTint="@android:color/transparent"
-            app:navigationIcon="@android:drawable/ic_menu_revert"
+            app:navigationIcon="@drawable/ic_nav_back"
             app:title="@string/track_settings_title"
             app:titleTextColor="@color/text_primary" />
 
@@ -60,7 +60,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBluetoothDevices"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.CarSpeed.Button.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"

@@ -2,7 +2,9 @@ package com.thomas.carspeed
 
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import java.util.Locale
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -69,6 +71,44 @@ object CameraFocus {
         if (maxFocusDistanceDiopters <= 0f) return 0f
         return maxFocusDistanceDiopters * (percent(context) / 100f)
     }
+
+    fun maxFocusDistanceDiopters(context: Context): Float? {
+        cachedMaxDiopters?.let { return it }
+        val value = readMaxFocusDistanceDiopters(context) ?: return null
+        cachedMaxDiopters = value
+        return value
+    }
+
+    fun distanceLabel(percent: Int, maxDiopters: Float?, infinityLabel: String): String {
+        val clamped = percent.coerceIn(0, 100)
+        if (clamped == 0) return infinityLabel
+        val max = maxDiopters ?: return UNKNOWN_DISTANCE
+        if (max <= 0f) return UNKNOWN_DISTANCE
+        val diopters = max * (clamped / 100f)
+        if (diopters <= 0.01f) return infinityLabel
+        val meters = 1f / diopters
+        return when {
+            meters < 1f -> String.format(Locale.US, "%.0fcm", meters * 100f)
+            meters >= 10f -> String.format(Locale.US, "%.0fm", meters)
+            else -> String.format(Locale.US, "%.1fm", meters)
+        }
+    }
+
+    private fun readMaxFocusDistanceDiopters(context: Context): Float? {
+        return runCatching {
+            val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val id = manager.cameraIdList.firstOrNull { cameraId ->
+                manager.getCameraCharacteristics(cameraId)
+                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            } ?: manager.cameraIdList.firstOrNull() ?: return null
+            manager.getCameraCharacteristics(id)
+                .get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)
+                ?.coerceAtLeast(0f)
+        }.getOrNull()
+    }
+
+    private const val UNKNOWN_DISTANCE = "—"
+    @Volatile private var cachedMaxDiopters: Float? = null
 
     fun focusOnPlate(context: Context, camera: Camera?, frame: PlateOverlayFrame): Boolean {
         val activeCamera = camera ?: return false

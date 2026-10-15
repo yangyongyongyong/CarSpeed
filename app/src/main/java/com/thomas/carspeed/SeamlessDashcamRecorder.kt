@@ -10,7 +10,12 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.media.AudioFormat
+import android.media.ExifInterface
+import android.media.ImageReader
 import android.media.AudioRecord
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -24,6 +29,8 @@ import android.os.SystemClock
 import android.util.Range
 import android.view.Surface
 import java.io.File
+import java.io.FileOutputStream
+import java.util.ArrayDeque
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -47,6 +54,10 @@ class SeamlessDashcamRecorder(
         fun onError(error: Throwable)
         fun onCaptureResult(result: CaptureResult)
         fun onHdrStateChanged(enabled: Boolean) = Unit
+    }
+
+    fun interface RecordingPcmListener {
+        fun onPcm16le(data: ByteArray, length: Int, sampleRate: Int)
     }
 
     private data class SegmentStart(
@@ -74,7 +85,8 @@ class SeamlessDashcamRecorder(
     private var captureSessionGeneration = 0
     @Volatile private var audioMuxingEnabled = false
     private var audioEncoder: MediaCodec? = null
-    private var audioRecord: AudioRecord? = null
+    @Volatile private var audioRecord: AudioRecord? = null
+    @Volatile var recordingPcmListener: RecordingPcmListener? = null
     private var audioThread: Thread? = null
     private var audioBufferSize = 0
     private var muxer: MediaMuxer? = null
@@ -91,6 +103,12 @@ class SeamlessDashcamRecorder(
     private var orientationHintDegrees = 0
     private var hdrSceneModeEnabled = false
     private var startNotified = false
+    private var stillReader: ImageReader? = null
+    private var includeStillSurface = true
+    private var stillCandidates: List<CaptureSize> = emptyList()
+    private var stillCandidateIndex = 0
+    private val pendingStillFiles = ArrayDeque<File>()
+    private val pendingStillCallbacks = ArrayDeque<(Result<File>) -> Unit>()
 
     fun start() {
         try {
@@ -110,6 +128,7 @@ class SeamlessDashcamRecorder(
         if (!stopped.compareAndSet(false, true)) return
         stopRequested = true
         captureSessionGeneration++
+        cameraHandler?.post { failPendingStills(IllegalStateException("录像已停止")) }
         runCatching { captureSession?.stopRepeating() }
         runCatching { captureSession?.abortCaptures() }
         runCatching { captureSession?.close() }
@@ -119,6 +138,49 @@ class SeamlessDashcamRecorder(
         cameraDevice = null
         runCatching { audioRecord?.stop() }
         runCatching { videoEncoder?.signalEndOfInputStream() }
+    }
+
+    fun captureStill(file: File, onDone: (Result<File>) -> Unit) {
+        val handler = cameraHandler
+        if (handler == null) {
+            onDone(Result.failure(StillCaptureUnavailable()))
+            return
+        }
+        handler.post {
+            val session = captureSession
+            val camera = cameraDevice
+            val reader = stillReader
+            val characteristics = cameraCharacteristics
+            if (stopRequested || session == null || camera == null || reader == null || characteristics == null || !includeStillSurface) {
+                onDone(Result.failure(StillCaptureUnavailable()))
+                return@post
+            }
+            pendingStillFiles.addLast(file)
+            pendingStillCallbacks.addLast(onDone)
+            try {
+                val encoderSurface = encoderInputSurface
+                val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT).apply {
+                    addTarget(reader.surface)
+                    encoderSurface?.let { addTarget(it) }
+                    captureSessionPreviewSurface?.takeIf { it.isValid }?.let { addTarget(it) }
+                    applyHdrOptions()
+                    applyFocusOptions(characteristics)
+                    set(
+                        CaptureRequest.JPEG_ORIENTATION,
+                        StillCapturePlan.jpegOrientationDegrees(
+                            characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90,
+                            targetRotation
+                        )
+                    )
+                    set(CaptureRequest.JPEG_QUALITY, JPEG_QUALITY)
+                }.build()
+                session.capture(request, null, handler)
+            } catch (error: Exception) {
+                pendingStillFiles.removeLast()
+                pendingStillCallbacks.removeLast()
+                onDone(Result.failure(error))
+            }
+        }
     }
 
     fun setPreviewSurface(surface: Surface?) {
@@ -151,9 +213,19 @@ class SeamlessDashcamRecorder(
         videoEncoder = encoder
     }
 
+    fun isCapturingAudio(): Boolean = audioRecord != null
+
+    @SuppressLint("MissingPermission")
+    fun startListeningCaptureIfNeeded() {
+        if (stopped.get() || audioRecord != null) return
+        startAudioEncoderIfNeeded()
+    }
+
     @SuppressLint("MissingPermission")
     private fun startAudioEncoderIfNeeded() {
-        if (!enableAudio) return
+        if (audioRecord != null) return
+        val listen = recordingPcmListener != null
+        if (!enableAudio && !listen) return
         try {
             val minBuffer = AudioRecord.getMinBufferSize(
                 AUDIO_SAMPLE_RATE,
@@ -162,13 +234,18 @@ class SeamlessDashcamRecorder(
             )
             if (minBuffer <= 0) return
             audioBufferSize = (minBuffer * 2).coerceAtLeast(AUDIO_SAMPLE_RATE / 5 * AUDIO_BYTES_PER_SAMPLE)
-            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_COUNT).apply {
-                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-                setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE)
+            val encoder = if (enableAudio) {
+                val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_COUNT).apply {
+                    setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                    setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE)
+                }
+                MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also { created ->
+                    created.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    created.start()
+                }
+            } else {
+                null
             }
-            val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            encoder.start()
             audioEncoder = encoder
             audioRecord = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
@@ -180,15 +257,19 @@ class SeamlessDashcamRecorder(
                 if (recorder.state != AudioRecord.STATE_INITIALIZED) {
                     runCatching { recorder.release() }
                     audioRecord = null
-                    runCatching { encoder.stop() }
-                    runCatching { encoder.release() }
+                    if (encoder != null) {
+                        runCatching { encoder.stop() }
+                        runCatching { encoder.release() }
+                    }
                     audioEncoder = null
                     return
                 }
                 recorder.startRecording()
             }
-            audioMuxingEnabled = true
-            audioThread = Thread({ captureAndEncodeAudio() }, "CarSpeedSeamlessAudio").also { it.start() }
+            if (enableAudio) audioMuxingEnabled = true
+            audioThread = Thread({
+                if (encoder != null) captureAndEncodeAudio() else capturePcmOnly()
+            }, "CarSpeedSeamlessAudio").also { it.start() }
         } catch (_: Exception) {
             audioMuxingEnabled = false
             runCatching { audioRecord?.release() }
@@ -215,6 +296,7 @@ class SeamlessDashcamRecorder(
                         inputBuffer.clear()
                         val readSize = recorder.read(readBuffer, 0, minOf(inputBuffer.remaining(), readBuffer.size))
                         if (readSize > 0) {
+                            dispatchPcm(readBuffer, readSize)
                             inputBuffer.put(readBuffer, 0, readSize)
                             val ptsUs = audioStartPtsUs + samplesRead * 1_000_000L / AUDIO_SAMPLE_RATE
                             samplesRead += readSize / AUDIO_BYTES_PER_SAMPLE
@@ -229,6 +311,28 @@ class SeamlessDashcamRecorder(
         } catch (_: Exception) {
             audioMuxingEnabled = false
             // 音频失败不应中断视频；后续分段会继续只写视频轨。
+        }
+    }
+
+    private fun capturePcmOnly() {
+        val recorder = audioRecord ?: return
+        val readBuffer = ByteArray(audioBufferSize.coerceAtLeast(1))
+        try {
+            while (!stopRequested && !stopped.get()) {
+                val readSize = recorder.read(readBuffer, 0, readBuffer.size)
+                if (readSize > 0) dispatchPcm(readBuffer, readSize)
+            }
+        } catch (_: Exception) {
+            // 只给语音识别供声时失败，不影响已经开始的无声视频。
+        }
+    }
+
+    private fun dispatchPcm(data: ByteArray, length: Int) {
+        val listener = recordingPcmListener ?: return
+        try {
+            listener.onPcm16le(data, length, AUDIO_SAMPLE_RATE)
+        } catch (_: Exception) {
+            // 识别跟不上时丢掉这块声音，录像编码继续。
         }
     }
 
@@ -282,6 +386,7 @@ class SeamlessDashcamRecorder(
             object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
                     cameraDevice = camera
+                    prepareStillReader(characteristics)
                     createCaptureSession(camera, characteristics)
                 }
 
@@ -306,9 +411,11 @@ class SeamlessDashcamRecorder(
         val surface = encoderInputSurface ?: return
         val sessionId = ++captureSessionGeneration
         val sessionPreviewSurface = previewSurface?.takeIf { it.isValid }
+        val stillSurface = if (includeStillSurface) stillReader?.surface else null
         val surfaces = buildList {
             add(surface)
             sessionPreviewSurface?.let { add(it) }
+            stillSurface?.let { add(it) }
         }
         camera.createCaptureSession(
             surfaces,
@@ -355,6 +462,19 @@ class SeamlessDashcamRecorder(
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
                     session.close()
+                    if (sessionId != captureSessionGeneration || stopRequested) return
+                    if (stillSurface != null && stillCandidateIndex + 1 < stillCandidates.size) {
+                        stillCandidateIndex += 1
+                        openStillReader(stillCandidates[stillCandidateIndex])
+                        createCaptureSession(camera, characteristics)
+                        return
+                    }
+                    if (stillSurface != null) {
+                        includeStillSurface = false
+                        closeStillReader()
+                        createCaptureSession(camera, characteristics)
+                        return
+                    }
                     if (sessionPreviewSurface != null) {
                         previewSurface = null
                         createCaptureSession(camera, characteristics)
@@ -588,6 +708,7 @@ class SeamlessDashcamRecorder(
         audioThread = null
         runCatching { encoderInputSurface?.release() }
         encoderInputSurface = null
+        closeStillReader()
         runCatching { videoEncoder?.stop() }
         runCatching { videoEncoder?.release() }
         videoEncoder = null
@@ -599,6 +720,88 @@ class SeamlessDashcamRecorder(
 
     private fun notifyError(error: Throwable) {
         if (errorNotified.compareAndSet(false, true)) callback.onError(error)
+    }
+
+    private fun prepareStillReader(characteristics: CameraCharacteristics) {
+        if (stillReader != null) return
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+        val sizes = map.getOutputSizes(JPEG_IMAGE_FORMAT)
+            ?.map { CaptureSize(it.width, it.height) }
+            .orEmpty()
+        stillCandidates = StillCapturePlan.jpegSizeCandidates(sizes, mode.width, mode.height)
+        stillCandidateIndex = 0
+        if (stillCandidates.isEmpty()) {
+            includeStillSurface = false
+            return
+        }
+        openStillReader(stillCandidates[stillCandidateIndex])
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openStillReader(size: CaptureSize) {
+        closeStillReader()
+        includeStillSurface = true
+        stillReader = ImageReader.newInstance(size.width, size.height, JPEG_IMAGE_FORMAT, 2).also { reader ->
+            reader.setOnImageAvailableListener({ onStillImage(it) }, cameraHandler)
+        }
+    }
+
+    private fun closeStillReader() {
+        runCatching { stillReader?.close() }
+        stillReader = null
+    }
+
+    private fun onStillImage(reader: ImageReader) {
+        val image = reader.acquireNextImage() ?: return
+        val file = pendingStillFiles.pollFirst()
+        val callback = pendingStillCallbacks.pollFirst()
+        var delivered = false
+        try {
+            if (file == null || callback == null) return
+            val buffer = image.planes.firstOrNull()?.buffer
+            if (buffer == null) {
+                delivered = true
+                callback(Result.failure(IllegalStateException("照片数据为空")))
+                return
+            }
+            buffer.rewind()
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+            file.parentFile?.mkdirs()
+            FileOutputStream(file).use { it.write(bytes) }
+            bakeExifOrientation(file)
+            delivered = true
+            callback(Result.success(file))
+        } catch (error: Exception) {
+            if (!delivered && callback != null) callback(Result.failure(error))
+        } finally {
+            image.close()
+        }
+    }
+
+    private fun bakeExifOrientation(file: File) {
+        val exif = ExifInterface(file.absolutePath)
+        val degrees = when (
+            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        ) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270
+            else -> return
+        }
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        FileOutputStream(file).use { rotated.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY.toInt(), it) }
+        if (rotated != bitmap) rotated.recycle()
+        bitmap.recycle()
+    }
+
+    private fun failPendingStills(error: Throwable) {
+        val callbacks = pendingStillCallbacks.toList()
+        pendingStillCallbacks.clear()
+        pendingStillFiles.clear()
+        callbacks.forEach { callback -> callback(Result.failure(error)) }
     }
 
     private fun backCameraId(manager: CameraManager): String? {
@@ -631,5 +834,7 @@ class SeamlessDashcamRecorder(
         private const val AUDIO_BIT_RATE = 64_000
         private const val MIN_VIDEO_BITRATE = 4_000_000
         private const val MAX_VIDEO_BITRATE = 80_000_000
+        private const val JPEG_IMAGE_FORMAT = 256
+        private const val JPEG_QUALITY: Byte = 92
     }
 }

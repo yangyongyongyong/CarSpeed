@@ -15,7 +15,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:backgroundTint="@android:color/transparent"
-        app:navigationIcon="@android:drawable/ic_menu_revert"
+        app:navigationIcon="@drawable/ic_nav_back"
         app:title="@string/photo_preview_title"
         app:titleTextColor="@color/text_primary" />
 
@@ -31,7 +31,6 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:contentDescription="@string/photo_preview_title"
-            android:padding="12dp"
             android:scaleType="fitCenter" />
     </com.google.android.material.card.MaterialCardView>
 

@@ -84,4 +84,38 @@ class ShareSubtitleFormatterTest {
         )
         assertEquals("浙江省", removed)
     }
+
+    @Test
+    fun stationary_wait_is_not_treated_as_address() {
+        val text = "60.0 km/h  |  静止等待：00:01:23  |  杭州市余杭区天目山路"
+        val kept = ShareSubtitleFormatter.filter(
+            text,
+            ShareSubtitleFields(
+                showTime = false,
+                showSpeed = false,
+                showStationaryWait = true,
+                showGps = false,
+                showAddress = false,
+                showFocus = false,
+                showVideoMode = false,
+                showRoadLayer = false
+            )
+        )
+        assertEquals("静止等待：00:01:23", kept)
+
+        val removed = ShareSubtitleFormatter.filter(
+            text,
+            ShareSubtitleFields(
+                showTime = false,
+                showSpeed = true,
+                showStationaryWait = false,
+                showGps = false,
+                showAddress = true,
+                showFocus = false,
+                showVideoMode = false,
+                showRoadLayer = false
+            )
+        )
+        assertEquals("60.0 km/h  |  杭州市余杭区天目山路", removed)
+    }
 }

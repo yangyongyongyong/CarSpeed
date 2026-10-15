@@ -20,12 +20,13 @@ import com.amap.api.maps.AMap
 import com.amap.api.maps.AMapException
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.CoordinateConverter
-import com.amap.api.maps.MapView
+import com.amap.api.maps.TextureMapView
 import com.amap.api.maps.offlinemap.OfflineMapManager
 import com.amap.api.maps.offlinemap.OfflineMapProvince
 import com.amap.api.maps.offlinemap.OfflineMapStatus
 import com.amap.api.maps.model.BitmapDescriptor
 import com.amap.api.maps.model.BitmapDescriptorFactory
+import com.amap.api.maps.model.CameraPosition
 import com.amap.api.maps.model.Circle
 import com.amap.api.maps.model.CircleOptions
 import com.amap.api.maps.model.LatLng
@@ -48,7 +49,7 @@ class MapRouteView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : FrameLayout(context, attrs), OfflineMapManager.OfflineMapDownloadListener,
     OfflineMapManager.OfflineLoadedListener {
-    private val mapView = MapView(context)
+    private val mapView = TextureMapView(context)
     private val aMap: AMap
     private val statsView = TextView(context)
     private val viewportButton = Button(context)
@@ -76,6 +77,7 @@ class MapRouteView @JvmOverloads constructor(
     private var userCameraLocked = false
     private var routeCameraInitialized = false
     private var viewportScaleIndex = DEFAULT_VIEWPORT_SCALE_INDEX
+    private var contentRotationDegrees = 0
     private var overlayControlsVisible = false
     private var activeAutoProvince: String? = null
     private var activeAutoProgress: Int? = null
@@ -87,6 +89,8 @@ class MapRouteView @JvmOverloads constructor(
     var onPhotoClick: ((String) -> Unit)? = null
 
     init {
+        clipChildren = false
+        clipToPadding = false
         mapView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         mapView.onCreate(null as Bundle?)
         addView(mapView)
@@ -168,6 +172,11 @@ class MapRouteView @JvmOverloads constructor(
         } else {
             setViewportScaleIndex(viewportScaleIndex - 1)
         }
+    }
+
+    fun setContentRotation(degrees: Int) {
+        contentRotationDegrees = VideoReplayRotation.normalize(degrees)
+        applyContentRotation()
     }
 
     fun zoomOutScale() {
@@ -260,6 +269,15 @@ class MapRouteView @JvmOverloads constructor(
             }
         }
         aMap.setOnMapClickListener { onMapTap?.invoke() }
+        aMap.setOnCameraChangeListener(object : AMap.OnCameraChangeListener {
+            override fun onCameraChange(position: CameraPosition?) {
+                resizeCurrentMarkers()
+            }
+
+            override fun onCameraChangeFinish(position: CameraPosition?) {
+                resizeCurrentMarkers()
+            }
+        })
         aMap.setOnMarkerClickListener { marker ->
             val path = marker.`object` as? String
             if (path.isNullOrBlank()) {
@@ -461,6 +479,25 @@ class MapRouteView @JvmOverloads constructor(
         notifyScaleChanged()
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        applyContentRotation()
+    }
+
+    private fun applyContentRotation() {
+        if (width <= 0 || height <= 0) return
+        val quarter = VideoReplayRotation.isQuarterTurn(contentRotationDegrees)
+        val viewWidth = if (quarter) height else width
+        val viewHeight = if (quarter) width else height
+        val params = mapView.layoutParams
+        if (params.width != viewWidth || params.height != viewHeight) {
+            mapView.layoutParams = LayoutParams(viewWidth, viewHeight, Gravity.CENTER)
+        }
+        mapView.pivotX = viewWidth / 2f
+        mapView.pivotY = viewHeight / 2f
+        mapView.rotation = contentRotationDegrees.toFloat()
+    }
+
     private fun updateStats(extraLine: String? = null) {
         if (points.isEmpty()) {
             statsView.text = "高德官方地图"
@@ -543,16 +580,10 @@ class MapRouteView @JvmOverloads constructor(
         onScaleChanged?.invoke()
     }
 
-    private fun currentMarkerRadius(): Double {
-        return when (currentMarkerPhase()) {
-            0 -> 9.0
-            1 -> 6.5
-            else -> 8.0
-        }
-    }
+    private fun currentMarkerRadius(): Double = screenRadiusMeters(currentDotDp())
 
     private fun currentMarkerStrokeWidth(): Float {
-        return dp(if (currentMarkerPhase() == 1) 5 else 7).toFloat()
+        return (2f / 3f) * resources.displayMetrics.density
     }
 
     private fun currentMarkerStrokeColor(): Int {
@@ -571,13 +602,48 @@ class MapRouteView @JvmOverloads constructor(
         }
     }
 
-    private fun currentPulseRadius(): Double {
-        val fraction = currentPulseFraction()
-        return 12.0 + 30.0 * fraction
-    }
+    private fun currentPulseRadius(): Double = screenRadiusMeters(currentPulseDp())
 
     private fun currentPulseStrokeWidth(): Float {
-        return dp(5).toFloat()
+        return (2f / 3f) * resources.displayMetrics.density
+    }
+
+    private fun resizeCurrentMarkers() {
+        if (currentCircle == null && currentPulseCircle == null) return
+        // 半径按当前缩放换算，避免比例尺变大后仍沿用上一次的米制半径。
+        currentCircle?.radius = currentMarkerRadius()
+        currentPulseCircle?.radius = currentPulseRadius()
+    }
+
+    private fun currentDotDp(): Float {
+        return when (currentMarkerPhase()) {
+            1 -> CURRENT_DOT_RADIUS_DP - (1f / 3f)
+            else -> CURRENT_DOT_RADIUS_DP
+        }
+    }
+
+    private fun currentPulseDp(): Float {
+        return CURRENT_PULSE_MIN_DP + (CURRENT_PULSE_MAX_DP - CURRENT_PULSE_MIN_DP) * currentPulseFraction()
+    }
+
+    private fun screenRadiusMeters(radiusDp: Float, latitude: Double = currentLatitude()): Double {
+        return MapMarkerScale.metersForPixels(radiusDp * resources.displayMetrics.density, currentZoom(), latitude)
+    }
+
+    private fun currentLatitude(): Double {
+        return VideoTrackSync.pointAt(points, elapsedMs)?.latitude
+            ?: points.firstOrNull()?.latitude
+            ?: 30.0
+    }
+
+    private fun currentZoom(): Float {
+        val zoom = aMap.cameraPosition?.zoom ?: 0f
+        if (zoom > 1f) return zoom.coerceIn(MIN_ZOOM.toFloat(), MAX_ZOOM.toFloat())
+        return chooseZoomForScreenWidth(
+            currentLatitude(),
+            width.toFloat().coerceAtLeast(1f),
+            VIEWPORT_SCALE_METERS[viewportScaleIndex]
+        ).toFloat()
     }
 
     private fun currentPulseStrokeColor(): Int {
@@ -782,6 +848,9 @@ class MapRouteView @JvmOverloads constructor(
             100000.0
         )
         private const val DEFAULT_VIEWPORT_SCALE_INDEX = 6
+        private const val CURRENT_DOT_RADIUS_DP = 2f
+        private const val CURRENT_PULSE_MIN_DP = 8f / 3f
+        private const val CURRENT_PULSE_MAX_DP = 16f / 3f
         private const val ROUTE_BASE_WIDTH_DP = 5
         private val ROUTE_COLOR = Color.rgb(79, 214, 151)
         private const val WEB_MERCATOR_EQUATOR_METERS_PER_PIXEL = 156543.03392

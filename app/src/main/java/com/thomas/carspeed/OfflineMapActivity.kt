@@ -77,7 +77,7 @@ class OfflineMapActivity : AppCompatActivity(), OfflineMapManager.OfflineMapDown
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             setTitleTextColor(ContextCompat.getColor(this@OfflineMapActivity, R.color.text_primary))
-            setNavigationIcon(android.R.drawable.ic_menu_revert)
+            setNavigationIcon(R.drawable.ic_nav_back)
             setNavigationOnClickListener { finish() }
         }
         val summary = TextView(this).apply {

@@ -7,19 +7,23 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class PhotoPreviewActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val file = intent.getStringExtra(EXTRA_PATH)?.let { File(it) }
-        if (file == null || !file.exists() || RoutePhotoMarks.timeFromFileName(file.name) == null) {
+        val timeMs = file?.let { RoutePhotoMarks.timeFromFileName(it.name) }
+        if (file == null || !file.exists() || timeMs == null) {
             Toast.makeText(this, R.string.photo_preview_missing, Toast.LENGTH_SHORT).show()
             finish()
             return
         }
         setContentView(R.layout.activity_photo_preview)
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
-        toolbar.title = file.name
+        toolbar.title = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(timeMs))
         toolbar.setNavigationOnClickListener { finish() }
         findViewById<ImageView>(R.id.ivPhoto).setImageBitmap(loadScaledBitmap(file, 1600))
     }

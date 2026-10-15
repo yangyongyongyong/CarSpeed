@@ -46,6 +46,73 @@ class VoicePhotoRecognizerTest {
     }
 
     @Test
+    fun every_supported_phrase_parses_and_near_misses_do_not() {
+        mapOf(
+            "我要拍照" to VoiceCommand.TAKE_PHOTO,
+            "帮我拍照" to VoiceCommand.TAKE_PHOTO,
+            "给我拍照" to VoiceCommand.TAKE_PHOTO,
+            "拍一张" to VoiceCommand.TAKE_PHOTO,
+            "照一张" to VoiceCommand.TAKE_PHOTO,
+            "我要拍照。" to VoiceCommand.TAKE_PHOTO,
+            "我要拍照！" to VoiceCommand.TAKE_PHOTO,
+            "  拍一张  " to VoiceCommand.TAKE_PHOTO,
+            "开始录像" to VoiceCommand.START_RECORDING,
+            "开始录制" to VoiceCommand.START_RECORDING,
+            "开始拍摄" to VoiceCommand.START_RECORDING,
+            "我要录像" to VoiceCommand.START_RECORDING,
+            "我要录制" to VoiceCommand.START_RECORDING,
+            "开 始 录 像" to VoiceCommand.START_RECORDING,
+            "停止录像" to VoiceCommand.STOP_RECORDING,
+            "停止录制" to VoiceCommand.STOP_RECORDING,
+            "停止拍摄" to VoiceCommand.STOP_RECORDING,
+            "结束录像" to VoiceCommand.STOP_RECORDING,
+            "结束录制" to VoiceCommand.STOP_RECORDING,
+            "测速雷达开" to VoiceCommand.RADAR_ALERT_ON,
+            "测速雷达关" to VoiceCommand.RADAR_ALERT_OFF
+        ).forEach { (text, command) ->
+            assertEquals(text, command, VoiceCommandParser.parseCommand(text))
+        }
+
+        listOf(
+            "",
+            "拍照",
+            "拍张",
+            "我要拍张",
+            "拍一张吧",
+            "我要拍照谢谢",
+            "前方有拍照",
+            "现在开始录像",
+            "请停止录像",
+            "开始录象",
+            "停止拍摄了",
+            "测速雷达开启",
+            "测速雷达关闭",
+            "前方测速雷达开"
+        ).forEach { text ->
+            assertNull(text, VoiceCommandParser.parseCommand(text))
+        }
+    }
+
+    @Test
+    fun grammar_keeps_commands_and_lets_music_fall_into_unknown() {
+        val grammar = VoiceCommandParser.commandGrammar()
+        listOf(
+            "我要拍照",
+            "帮我拍照",
+            "给我拍照",
+            "照一张",
+            "拍一张",
+            "开始录像",
+            "停止录像",
+            "测速雷达开",
+            "测速雷达关",
+            "[unk]"
+        ).forEach { phrase ->
+            assertTrue(grammar.contains("\"$phrase\""))
+        }
+    }
+
+    @Test
     fun radar_commands_require_exact_independent_phrase() {
         assertEquals(VoiceCommand.RADAR_ALERT_ON, VoiceCommandParser.parseCommand("测速雷达开"))
         assertEquals(VoiceCommand.RADAR_ALERT_OFF, VoiceCommandParser.parseCommand("测速雷达关"))

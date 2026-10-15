@@ -35,6 +35,7 @@ data class ShareExportOptions(
 data class ShareSubtitleFields(
     val showTime: Boolean = true,
     val showSpeed: Boolean = true,
+    val showStationaryWait: Boolean = true,
     val showGps: Boolean = true,
     val showSatellites: Boolean = true,
     val showAddress: Boolean = true,
@@ -555,6 +556,7 @@ object ShareSubtitleFormatter {
         return when (categoryOf(text)) {
             SubtitleCategory.TIME -> fields.showTime
             SubtitleCategory.SPEED -> fields.showSpeed
+            SubtitleCategory.STATIONARY_WAIT -> fields.showStationaryWait
             SubtitleCategory.GPS -> fields.showGps
             SubtitleCategory.SATELLITES -> fields.showSatellites
             SubtitleCategory.FOCUS -> fields.showFocus
@@ -568,6 +570,7 @@ object ShareSubtitleFormatter {
         return when {
             DATE_TIME_REGEX.containsMatchIn(text) -> SubtitleCategory.TIME
             text.contains("km/h", ignoreCase = true) -> SubtitleCategory.SPEED
+            text.startsWith("静止等待") -> SubtitleCategory.STATIONARY_WAIT
             text.startsWith("GPS卫星") -> SubtitleCategory.SATELLITES
             text == "GPS --" || COORDINATE_REGEX.containsMatchIn(text) -> SubtitleCategory.GPS
             text.startsWith("对焦") -> SubtitleCategory.FOCUS
@@ -579,7 +582,9 @@ object ShareSubtitleFormatter {
         }
     }
 
-    private enum class SubtitleCategory { TIME, SPEED, GPS, SATELLITES, ADDRESS, FOCUS, VIDEO_MODE, ROAD_LAYER }
+    private enum class SubtitleCategory {
+        TIME, SPEED, STATIONARY_WAIT, GPS, SATELLITES, ADDRESS, FOCUS, VIDEO_MODE, ROAD_LAYER
+    }
 
     private val DATE_TIME_REGEX = Regex("\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}")
     private val COORDINATE_REGEX = Regex("-?\\d{1,3}\\.\\d{4,},\\s*-?\\d{1,3}\\.\\d{4,}")

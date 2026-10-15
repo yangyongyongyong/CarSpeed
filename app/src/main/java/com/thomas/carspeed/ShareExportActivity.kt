@@ -50,6 +50,7 @@ class ShareExportActivity : AppCompatActivity() {
     private lateinit var btnExportShare: MaterialButton
     private lateinit var cbSubtitleTime: CheckBox
     private lateinit var cbSubtitleSpeed: CheckBox
+    private lateinit var cbSubtitleStationaryWait: CheckBox
     private lateinit var cbSubtitleGps: CheckBox
     private lateinit var cbSubtitleSatellites: CheckBox
     private lateinit var cbSubtitleAddress: CheckBox
@@ -98,7 +99,7 @@ class ShareExportActivity : AppCompatActivity() {
         val toolbar = MaterialToolbar(this).apply {
             title = getString(R.string.share_export_title)
             setTitleTextColor(color(R.color.text_primary))
-            setNavigationIcon(android.R.drawable.ic_menu_revert)
+            setNavigationIcon(R.drawable.ic_nav_back)
             setNavigationOnClickListener { finish() }
         }
         root.addView(toolbar, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -182,6 +183,7 @@ class ShareExportActivity : AppCompatActivity() {
             }
             cbSubtitleTime = subtitleCheckBox(getString(R.string.share_export_field_time))
             cbSubtitleSpeed = subtitleCheckBox(getString(R.string.share_export_field_speed))
+            cbSubtitleStationaryWait = subtitleCheckBox(getString(R.string.share_export_field_stationary_wait))
             cbSubtitleGps = subtitleCheckBox(getString(R.string.share_export_field_gps))
             cbSubtitleSatellites = subtitleCheckBox(getString(R.string.share_export_field_satellites))
             cbSubtitleAddress = subtitleCheckBox(getString(R.string.share_export_field_address))
@@ -191,6 +193,7 @@ class ShareExportActivity : AppCompatActivity() {
             listOf(
                 cbSubtitleTime,
                 cbSubtitleSpeed,
+                cbSubtitleStationaryWait,
                 cbSubtitleGps,
                 cbSubtitleSatellites,
                 cbSubtitleAddress,
@@ -395,6 +398,7 @@ class ShareExportActivity : AppCompatActivity() {
             subtitleFields = ShareSubtitleFields(
                 showTime = cbSubtitleTime.isChecked,
                 showSpeed = cbSubtitleSpeed.isChecked,
+                showStationaryWait = cbSubtitleStationaryWait.isChecked,
                 showGps = cbSubtitleGps.isChecked,
                 showSatellites = cbSubtitleSatellites.isChecked,
                 showAddress = cbSubtitleAddress.isChecked,
