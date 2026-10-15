@@ -17,6 +17,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 
 class RadarAlertSettingsActivity : AppCompatActivity() {
     private lateinit var toolbar: MaterialToolbar
@@ -234,15 +236,18 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
 
     private fun showRadarThresholdDialog() {
         val current = RadarAlertSettingsStore.formatThresholds(RadarAlertSettingsStore.load(this).thresholdsSeconds)
-        val input = android.widget.EditText(this).apply {
-            setText(current)
-            selectAll()
-            inputType = InputType.TYPE_CLASS_TEXT
-            hint = getString(R.string.radar_thresholds_hint)
-        }
+        val content = layoutInflater.cloneInContext(
+            android.view.ContextThemeWrapper(this, R.style.ThemeOverlay_CarSpeed_Dialog)
+        ).inflate(R.layout.dialog_text_field, null)
+        val field = content.findViewById<TextInputLayout>(R.id.tilDialogInput)
+        val input = content.findViewById<TextInputEditText>(R.id.etDialogInput)
+        field.hint = getString(R.string.radar_thresholds_hint)
+        input.setText(current)
+        input.selectAll()
+        input.inputType = InputType.TYPE_CLASS_TEXT
         AlertDialog.Builder(this)
             .setTitle(R.string.radar_thresholds_title)
-            .setView(input)
+            .setView(content)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val thresholds = RadarAlertSettingsStore.parseThresholds(input.text.toString())
                 RadarAlertSettingsStore.saveThresholds(this, thresholds)

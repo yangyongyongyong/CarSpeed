@@ -43,26 +43,23 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/photo_filter_label"
-                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVideoDate"
-                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        style="@style/Widget.CarSpeed.Button.Outlined"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/photo_filter_all" />
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:minHeight="48dp"
+                        android:text="@string/photo_filter_all"
+                        android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVideoDateClear"
@@ -70,31 +67,21 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="4dp"
+                        android:minWidth="48dp"
                         android:text="@string/video_filter_clear" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvVideoTimeFilterLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="@string/video_filter_label"
-                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVideoFilterDialog"
-                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        style="@style/Widget.CarSpeed.Button.Outlined"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
                         android:layout_weight="1"
-                        android:text="@string/video_filter_none" />
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:minHeight="48dp"
+                        android:text="@string/video_filter_none"
+                        android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVideoFilterClear"
@@ -102,6 +89,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="4dp"
+                        android:minWidth="48dp"
                         android:text="@string/video_filter_clear" />
                 </LinearLayout>
 

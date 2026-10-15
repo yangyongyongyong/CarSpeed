@@ -43,7 +43,7 @@
                     android:text="@string/track_status_off"
                     android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
 
-                <CheckBox
+                <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/cbTrackRecordingEnabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -74,7 +74,7 @@
                     android:text="@string/bluetooth_selected_none"
                     android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-                <CheckBox
+                <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/cbTrackTriggerBtSpeed"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -82,7 +82,7 @@
                     android:text="@string/track_trigger_bt_speed"
                     android:textColor="@color/text_primary" />
 
-                <CheckBox
+                <com.google.android.material.checkbox.MaterialCheckBox
                     android:id="@+id/cbTrackTriggerBtDistance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

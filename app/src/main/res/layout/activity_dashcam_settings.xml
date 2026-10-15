@@ -66,7 +66,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="52dp"
                         android:layout_marginTop="4dp"
-                        android:backgroundTint="@color/surface_secondary" />
+                        />
 
                     <TextView
                         android:layout_width="match_parent"
@@ -80,7 +80,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="52dp"
                         android:layout_marginTop="4dp"
-                        android:backgroundTint="@color/surface_secondary" />
+                        />
 
                     <TextView
                         android:layout_width="match_parent"
@@ -94,7 +94,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="52dp"
                         android:layout_marginTop="6dp"
-                        android:backgroundTint="@color/surface_secondary" />
+                        />
 
                     <TextView
                         android:id="@+id/tvHdrStartLabel"
@@ -197,7 +197,7 @@
                         android:text="@string/settings_auto_start_title"
                         android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbAutoStartRecording"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -205,7 +205,30 @@
                         android:text="@string/auto_start_recording_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
+                        android:id="@+id/cbAutoTriggerStartOnAmap"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/auto_trigger_start_on_amap_toggle"
+                        android:textColor="@color/text_primary" />
+
+                    <TextView
+                        android:id="@+id/tvAmapWatchHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/amap_watch_helper"
+                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAmapWatchGrant"
+                        style="@style/Widget.CarSpeed.Button.Text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/amap_watch_grant" />
+
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbAutoTriggerStartOnConnect"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -213,7 +236,7 @@
                         android:text="@string/auto_trigger_start_on_connect_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbAutoTriggerStartOnBluetoothSpeed"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -228,7 +251,7 @@
                         android:text="@string/settings_auto_stop_title"
                         android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbAutoTriggerStopOnPowerDisconnected"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -236,7 +259,7 @@
                         android:text="@string/auto_trigger_stop_on_power_disconnected_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbAutoTriggerStopOnBluetoothDisconnected"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -244,7 +267,7 @@
                         android:text="@string/auto_trigger_stop_on_bluetooth_disconnected_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbAutoTriggerStopOnBluetoothStationary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -275,7 +298,7 @@
                         android:text="@string/bluetooth_selected_none"
                         android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbParkingStop"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -307,56 +330,6 @@
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/sectionFocusHeader"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:foreground="?attr/selectableItemBackground"
-                    android:paddingTop="8dp"
-                    android:paddingBottom="8dp"
-                    android:text="@string/settings_section_focus"
-                    android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-                <LinearLayout
-                    android:id="@+id/sectionFocusContent"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/tvFocusLabel"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/focus_auto_label"
-                        android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-                    <CheckBox
-                        android:id="@+id/cbManualFocus"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/manual_focus_toggle"
-                        android:textColor="@color/text_primary" />
-
-                    <com.thomas.carspeed.HorizontalOnlySeekBar
-                        android:id="@+id/sbFocus"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:max="100"
-                        android:progress="0" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/focus_helper"
-                        android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
-                </LinearLayout>
-
-                <TextView
                     android:id="@+id/sectionPlateRecognitionHeader"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -375,7 +348,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbPlateRecognition"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -409,7 +382,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbRecordAudio"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -417,7 +390,7 @@
                         android:text="@string/record_audio_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbVoicePhoto"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -425,7 +398,7 @@
                         android:text="@string/voice_photo_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkTime"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -434,7 +407,7 @@
                         android:text="@string/watermark_time_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkSpeed"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -442,7 +415,7 @@
                         android:text="@string/watermark_speed_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkStationaryWait"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -450,7 +423,7 @@
                         android:text="@string/watermark_stationary_wait_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkGps"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -458,7 +431,7 @@
                         android:text="@string/watermark_gps_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkSatellites"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -466,21 +439,21 @@
                         android:text="@string/watermark_satellites_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkAddress"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/watermark_address_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkRoadLayer"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/watermark_road_layer_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkVideoMode"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -488,7 +461,7 @@
                         android:text="@string/watermark_video_mode_toggle"
                         android:textColor="@color/text_primary" />
 
-                    <CheckBox
+                    <com.google.android.material.checkbox.MaterialCheckBox
                         android:id="@+id/cbWatermarkFocus"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

@@ -14,7 +14,6 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -24,7 +23,10 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -272,64 +274,77 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showVideoFilterDialog() {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
+        val content = layoutInflater.cloneInContext(
+            android.view.ContextThemeWrapper(this, R.style.ThemeOverlay_CarSpeed_Dialog)
+        ).inflate(R.layout.dialog_video_filter, null)
+        val cbDuration = content.findViewById<CheckBox>(R.id.cbFilterDuration)
+        val cbDistance = content.findViewById<CheckBox>(R.id.cbFilterDistance)
+        val cbPhotos = content.findViewById<CheckBox>(R.id.cbFilterPhotos)
+        val minDuration = content.findViewById<TextInputLayout>(R.id.tilFilterMinDuration)
+        val maxDuration = content.findViewById<TextInputLayout>(R.id.tilFilterMaxDuration)
+        val minDistance = content.findViewById<TextInputLayout>(R.id.tilFilterMinDistance)
+        val maxDistance = content.findViewById<TextInputLayout>(R.id.tilFilterMaxDistance)
+        val photos = content.findViewById<TextInputLayout>(R.id.tilFilterPhotos)
+        val etMinDuration = content.findViewById<TextView>(R.id.etFilterMinDuration)
+        val etMaxDuration = content.findViewById<TextView>(R.id.etFilterMaxDuration)
+        val etMinDistance = content.findViewById<TextView>(R.id.etFilterMinDistance)
+        val etMaxDistance = content.findViewById<TextView>(R.id.etFilterMaxDistance)
+        val etPhotos = content.findViewById<TextView>(R.id.etFilterPhotos)
+        val error = content.findViewById<TextView>(R.id.tvFilterError)
+        cbDuration.isChecked = filterMinDurationMs != null || filterMaxDurationMs != null
+        cbDistance.isChecked = filterMinDistanceMeters != null || filterMaxDistanceMeters != null
+        cbPhotos.isChecked = filterMinPhotoCount != null
+        etMinDuration.text = filterMinDurationMs?.let { (it / 1000L).toString() }.orEmpty()
+        etMaxDuration.text = filterMaxDurationMs?.let { (it / 1000L).toString() }.orEmpty()
+        etMinDistance.text = filterMinDistanceMeters?.let { trimNumber(it / 1000f) }.orEmpty()
+        etMaxDistance.text = filterMaxDistanceMeters?.let { trimNumber(it / 1000f) }.orEmpty()
+        etPhotos.text = filterMinPhotoCount?.toString().orEmpty()
+        fun syncFields() {
+            minDuration.isEnabled = cbDuration.isChecked
+            maxDuration.isEnabled = cbDuration.isChecked
+            minDistance.isEnabled = cbDistance.isChecked
+            maxDistance.isEnabled = cbDistance.isChecked
+            photos.isEnabled = cbPhotos.isChecked
+            error.visibility = View.GONE
         }
-
-        val cbDuration = filterCheckBox(getString(R.string.video_filter_duration), filterMinDurationMs != null || filterMaxDurationMs != null)
-        val durationRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val etMinDuration = filterEditText(R.string.video_filter_min_duration_hint, filterMinDurationMs?.let { (it / 1000L).toString() })
-        val etMaxDuration = filterEditText(R.string.video_filter_max_duration_hint, filterMaxDurationMs?.let { (it / 1000L).toString() })
-        durationRow.addView(etMinDuration, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-        durationRow.addView(etMaxDuration, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) })
-        content.addView(cbDuration)
-        content.addView(durationRow)
-
-        val cbDistance = filterCheckBox(getString(R.string.video_filter_distance), filterMinDistanceMeters != null || filterMaxDistanceMeters != null)
-        val distanceRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val etMinDistance = filterEditText(R.string.video_filter_min_distance_hint, filterMinDistanceMeters?.let { trimNumber(it / 1000f) }, decimal = true)
-        val etMaxDistance = filterEditText(R.string.video_filter_max_distance_hint, filterMaxDistanceMeters?.let { trimNumber(it / 1000f) }, decimal = true)
-        distanceRow.addView(etMinDistance, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
-        distanceRow.addView(etMaxDistance, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) })
-        content.addView(cbDistance)
-        content.addView(distanceRow)
-
-        val cbPhotos = filterCheckBox(getString(R.string.video_filter_photos), filterMinPhotoCount != null)
-        val etPhotos = filterEditText(R.string.video_filter_photos_hint, filterMinPhotoCount?.toString())
-        content.addView(cbPhotos)
-        content.addView(etPhotos)
+        cbDuration.setOnCheckedChangeListener { _, _ -> syncFields() }
+        cbDistance.setOnCheckedChangeListener { _, _ -> syncFields() }
+        cbPhotos.setOnCheckedChangeListener { _, _ -> syncFields() }
+        syncFields()
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.video_filter_dialog_title)
             .setView(content)
             .setPositiveButton(R.string.video_filter_apply, null)
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val nextMinDurationMs = if (cbDuration.isChecked) etMinDuration.text.toString().toLongOrNull()?.times(1000L) else null
-            val nextMaxDurationMs = if (cbDuration.isChecked) etMaxDuration.text.toString().toLongOrNull()?.times(1000L) else null
-            val nextMinDistanceMeters = if (cbDistance.isChecked) etMinDistance.text.toString().toFloatOrNull()?.times(1000f) else null
-            val nextMaxDistanceMeters = if (cbDistance.isChecked) etMaxDistance.text.toString().toFloatOrNull()?.times(1000f) else null
-            val nextMinPhotoCount = if (cbPhotos.isChecked) etPhotos.text.toString().toIntOrNull() ?: 0 else null
-            if (invalidRange(nextMinDurationMs, nextMaxDurationMs) ||
-                invalidRange(nextMinDistanceMeters, nextMaxDistanceMeters) ||
-                (nextMinPhotoCount != null && nextMinPhotoCount < 0)
-            ) {
-                Toast.makeText(this, R.string.video_filter_invalid, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val nextMinDurationMs = if (cbDuration.isChecked) etMinDuration.text.toString().toLongOrNull()?.times(1000L) else null
+                val nextMaxDurationMs = if (cbDuration.isChecked) etMaxDuration.text.toString().toLongOrNull()?.times(1000L) else null
+                val nextMinDistanceMeters = if (cbDistance.isChecked) etMinDistance.text.toString().toFloatOrNull()?.times(1000f) else null
+                val nextMaxDistanceMeters = if (cbDistance.isChecked) etMaxDistance.text.toString().toFloatOrNull()?.times(1000f) else null
+                val nextMinPhotoCount = if (cbPhotos.isChecked) etPhotos.text.toString().toIntOrNull() ?: 0 else null
+                if (invalidRange(nextMinDurationMs, nextMaxDurationMs) ||
+                    invalidRange(nextMinDistanceMeters, nextMaxDistanceMeters) ||
+                    (nextMinPhotoCount != null && nextMinPhotoCount < 0)
+                ) {
+                    error.visibility = View.VISIBLE
+                    return@setOnClickListener
+                }
+                filterMinDurationMs = nextMinDurationMs
+                filterMaxDurationMs = nextMaxDurationMs
+                filterMinDistanceMeters = nextMinDistanceMeters
+                filterMaxDistanceMeters = nextMaxDistanceMeters
+                filterMinPhotoCount = nextMinPhotoCount
+                videoPageIndex = 0
+                persistTimeFilterPref()
+                updateTimeFilterButtons()
+                render()
+                dialog.dismiss()
             }
-            filterMinDurationMs = nextMinDurationMs
-            filterMaxDurationMs = nextMaxDurationMs
-            filterMinDistanceMeters = nextMinDistanceMeters
-            filterMaxDistanceMeters = nextMaxDistanceMeters
-            filterMinPhotoCount = nextMinPhotoCount
-            videoPageIndex = 0
-            persistTimeFilterPref()
-            updateTimeFilterButtons()
-            render()
-            dialog.dismiss()
         }
+        dialog.show()
     }
 
     private fun updateTimeFilterButtons() {
@@ -337,12 +352,14 @@ class HistoryActivity : AppCompatActivity() {
         val extra = hasExtraVideoFilter()
         btnVideoDate.text = currentDaySelection()?.let { PhotoCalendar.formatSelection(it, TimeZone.getDefault()) }
             ?: getString(R.string.photo_filter_all)
+        btnVideoDate.contentDescription = btnVideoDate.text
         btnVideoDateClear.isEnabled = dateOnly
         btnVideoFilterDialog.text = if (extra) {
             getString(R.string.video_filter_summary, videoFilterSummary())
         } else {
             getString(R.string.video_filter_none)
         }
+        btnVideoFilterDialog.contentDescription = btnVideoFilterDialog.text
         btnVideoFilterClear.isEnabled = extra || dateOnly
     }
 
@@ -369,27 +386,6 @@ class HistoryActivity : AppCompatActivity() {
         filterMinDistanceMeters = null
         filterMaxDistanceMeters = null
         filterMinPhotoCount = null
-    }
-
-    private fun filterCheckBox(textValue: String, checked: Boolean): CheckBox {
-        return CheckBox(this).apply {
-            text = textValue
-            isChecked = checked
-            setTextColor(getColorCompat(R.color.text_primary))
-        }
-    }
-
-    private fun filterEditText(hintRes: Int, value: String?, decimal: Boolean = false): EditText {
-        return EditText(this).apply {
-            hint = getString(hintRes)
-            setText(value.orEmpty())
-            inputType = if (decimal) {
-                InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            } else {
-                InputType.TYPE_CLASS_NUMBER
-            }
-            setSingleLine(true)
-        }
     }
 
     private fun videoFilterSummary(): String {
@@ -1105,7 +1101,7 @@ class HistoryActivity : AppCompatActivity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         if (batchDeleteMode) {
-            row.addView(CheckBox(this).apply {
+            row.addView(MaterialCheckBox(this).apply {
                 tag = BATCH_CHECK_TAG_PREFIX + trip.id
                 isChecked = trip.id in batchSelectedTripIds
                 isClickable = false
@@ -1135,12 +1131,10 @@ class HistoryActivity : AppCompatActivity() {
             )
         }
         loadVideoThumbnail(trip.firstVideo, image)
-        val play = TextView(this).apply {
-            text = "▶"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 22f
-            gravity = Gravity.CENTER
-            setShadowLayer(4f, 1f, 1f, android.graphics.Color.BLACK)
+        val play = ImageView(this).apply {
+            setImageResource(R.drawable.ic_play)
+            scaleType = ImageView.ScaleType.CENTER
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -1481,15 +1475,18 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun showRenameDialog(video: File) {
-        val input = EditText(this).apply {
-            setText(video.nameWithoutExtension)
-            selectAll()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            hint = getString(R.string.video_rename_hint)
-        }
+        val content = layoutInflater.cloneInContext(
+            android.view.ContextThemeWrapper(this, R.style.ThemeOverlay_CarSpeed_Dialog)
+        ).inflate(R.layout.dialog_text_field, null)
+        val field = content.findViewById<TextInputLayout>(R.id.tilDialogInput)
+        val input = content.findViewById<TextInputEditText>(R.id.etDialogInput)
+        field.hint = getString(R.string.video_rename_hint)
+        input.setText(video.nameWithoutExtension)
+        input.selectAll()
+        input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         AlertDialog.Builder(this)
             .setTitle(R.string.video_rename_title)
-            .setView(input)
+            .setView(content)
             .setPositiveButton(R.string.video_rename) { _, _ ->
                 val renamed = VideoStorage.renameVideoGroup(this, video, input.text.toString())
                 if (renamed == null) {

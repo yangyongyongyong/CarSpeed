@@ -45,7 +45,7 @@
     <string name="photo_history_page_filtered_summary">照片：第 %1$d-%2$d 张 / 筛选 %3$d 张 / 共 %4$d 张，本页占用 %5$s</string>
     <string name="photo_history_empty">暂无照片</string>
     <string name="photo_filter_label">按日期</string>
-    <string name="photo_filter_all">全部日期</string>
+    <string name="photo_filter_all">日期过滤</string>
     <string name="photo_filter_day">%1$d年%2$d月%3$d日</string>
     <string name="photo_filter_empty">当前日期没有照片</string>
     <string name="photo_calendar_hint">点一天筛选当天，再点一天筛选范围</string>
@@ -80,6 +80,18 @@
     <string name="settings_auto_start_title">自动触发录制</string>
     <string name="settings_auto_stop_title">自动触发停止</string>
     <string name="auto_start_recording_toggle">打开 App 时开始录像</string>
+    <string name="auto_trigger_start_on_amap_toggle">打开高德地图时开始录像</string>
+    <string name="amap_watch_helper">系统不允许被关掉的应用直接开摄像头。开启无障碍后，只在高德出现在前台时唤醒本应用，短暂取得前台开始录像，然后马上回到高德。不读取屏幕内容。若提示受限设置，请先到应用信息里允许。iQOO 还需允许自启动。</string>
+    <string name="amap_watch_accessibility_desc">打开高德地图时唤醒行车记录并开始录像。只判断高德是否在前台，不读取屏幕上的文字或画面。</string>
+    <string name="amap_watch_grant">开启后台唤醒权限</string>
+    <string name="amap_watch_ready">后台唤醒已就绪。打开高德地图会自动开始录像。</string>
+    <string name="amap_watch_prompt_title">打开高德时自动录像</string>
+    <string name="amap_watch_prompt_message">需要依次允许无障碍、悬浮窗，并忽略电池优化。允许之后不用打开本应用，打开高德地图就会开始录像。</string>
+    <string name="amap_watch_prompt_go">去开启</string>
+    <string name="amap_watch_prompt_later">以后再说</string>
+    <string name="amap_watch_notif_channel">高德唤醒</string>
+    <string name="amap_watch_notif_title">高德已打开，点击开始录像</string>
+    <string name="amap_watch_notif_text">系统拦住了后台直接开摄像头，点一下即可开始录像。</string>
     <string name="auto_trigger_toggle">自动触发：使用已选车机蓝牙控制录像</string>
     <string name="auto_trigger_start_on_connect_toggle">连接车机蓝牙时开始录像</string>
     <string name="auto_trigger_start_on_bluetooth_speed_toggle">连接车机蓝牙且车速 &gt; 10km/h 时开始录像</string>
@@ -166,7 +178,6 @@
     <string name="video_mode_label">录像规格</string>
     <string name="settings_section_video">录像规格与存储</string>
     <string name="settings_section_trigger">自动触发与停止</string>
-    <string name="settings_section_focus">对焦</string>
     <string name="settings_section_plate_recognition">车牌识别实验</string>
     <string name="settings_section_radar">测速雷达提醒</string>
     <string name="settings_section_watermark">声音与字幕</string>
@@ -198,7 +209,6 @@
     <string name="focus_far_label">远处/∞</string>
     <string name="focus_near_label">近处</string>
     <string name="focus_unsupported_label">当前镜头不支持手动对焦</string>
-    <string name="focus_helper" formatted="false">关闭手动时使用连续自动对焦 AF；打开后滑杆控制镜头对焦距离，不会放大画面。0% 为远处/无穷远，100% 为最近对焦。</string>
     <string name="plate_recognition_toggle">车牌识别实验模式</string>
     <string name="plate_recognition_helper">开启后录像时增加低频帧分析通道，通过本地中文 OCR 筛选车牌候选，并为每段视频生成同名 .plate.json；不会把标注写入原视频画面。</string>
     <string name="storage_too_low_for_recording">旧视频已清理完但可用空间仍不足，已暂停开始新录像分段。</string>
@@ -222,8 +232,7 @@
     <string name="dashcam_action_photo">拍照</string>
     <string name="history_title">驾驶记录</string>
     <string name="history_subtitle">按时间、距离或速度筛选录像和 GPS 轨迹。</string>
-    <string name="video_filter_label">录像筛选</string>
-    <string name="video_filter_none">筛选：不限</string>
+    <string name="video_filter_none">录像筛选</string>
     <string name="video_filter_start_none">开始：不限</string>
     <string name="video_filter_end_none">结束：不限</string>
     <string name="video_filter_date_none">日期：不限</string>
@@ -240,6 +249,11 @@
     <string name="video_filter_photos_hint">至少几张</string>
     <string name="video_photo_count">抓拍 %1$d 张</string>
     <string name="video_filter_apply">应用筛选</string>
+    <string name="video_filter_min_duration_label">最短（秒）</string>
+    <string name="video_filter_max_duration_label">最长（秒）</string>
+    <string name="video_filter_min_distance_label">最短（公里）</string>
+    <string name="video_filter_max_distance_label">最长（公里）</string>
+    <string name="video_filter_photos_label">至少（张）</string>
     <string name="video_filter_min_duration_hint">最短秒数，可空</string>
     <string name="video_filter_max_duration_hint">最长秒数，可空</string>
     <string name="video_filter_min_distance_hint">最短里程 km，可空</string>

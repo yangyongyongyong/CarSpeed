@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -15,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.checkbox.MaterialCheckBox
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -174,6 +174,7 @@ class PhotoGalleryActivity : AppCompatActivity() {
         btnPhotoNextPage.isEnabled = visible.isNotEmpty() && pageIndex + 1 < pages
         btnPhotoDate.text = daySelection?.let { PhotoCalendar.formatSelection(it, zone) }
             ?: getString(R.string.photo_filter_all)
+        btnPhotoDate.contentDescription = btnPhotoDate.text
         btnPhotoDateClear.isEnabled = daySelection != null
         btnPhotoDeletePage.isEnabled = page.isNotEmpty()
         btnPhotoDeleteAll.isEnabled = visible.isNotEmpty()
@@ -227,7 +228,7 @@ class PhotoGalleryActivity : AppCompatActivity() {
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         if (batchMode) {
-            row.addView(CheckBox(this).apply {
+            row.addView(MaterialCheckBox(this).apply {
                 isChecked = path in selectedPaths
                 isClickable = false
                 layoutParams = LinearLayout.LayoutParams(
@@ -236,10 +237,22 @@ class PhotoGalleryActivity : AppCompatActivity() {
                 ).apply { marginEnd = dp(8) }
             })
         }
-        row.addView(ImageView(this).apply {
+        val thumb = android.widget.FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 12f * resources.displayMetrics.density
+                setColor(android.graphics.Color.BLACK)
+            }
+            clipToOutline = true
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        }
+        thumb.addView(ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             setImageBitmap(loadScaledBitmap(photo.file, dp(96)))
-        }, LinearLayout.LayoutParams(dp(96), dp(96)))
+        }, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+        row.addView(thumb, LinearLayout.LayoutParams(dp(96), dp(96)))
         row.addView(TextView(this).apply {
             text = fmt.format(Date(photo.timeMs))
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleSmall)

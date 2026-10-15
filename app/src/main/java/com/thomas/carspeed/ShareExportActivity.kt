@@ -23,6 +23,7 @@ import androidx.core.content.FileProvider
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.checkbox.MaterialCheckBox
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -205,7 +206,7 @@ class ShareExportActivity : AppCompatActivity() {
             }
             box.addView(subtitleGrid)
             box.addView(sectionTitle(getString(R.string.share_export_route_map_title)))
-            cbRouteMap = CheckBox(this@ShareExportActivity).apply {
+            cbRouteMap = MaterialCheckBox(this@ShareExportActivity).apply {
                 text = getString(R.string.share_export_route_map_toggle)
                 isChecked = true
                 setTextColor(color(R.color.text_primary))
@@ -302,7 +303,7 @@ class ShareExportActivity : AppCompatActivity() {
     }
 
     private fun subtitleCheckBox(textValue: String): CheckBox {
-        return CheckBox(this).apply {
+        return MaterialCheckBox(this).apply {
             text = textValue
             isChecked = true
             setTextColor(color(R.color.text_primary))

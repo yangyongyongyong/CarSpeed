@@ -7,6 +7,7 @@ data class AutoTriggerSettings(
     val bluetoothNamesByAddress: Map<String, String> = emptyMap(),
     val speedThresholdKmh: Float = TriggerRules.DEFAULT_SPEED_THRESHOLD_KMH,
     val startOnAppOpen: Boolean = false,
+    val startOnAmap: Boolean = true,
     val startOnBluetoothConnected: Boolean = false,
     val startOnBluetoothConnectedAndSpeed: Boolean = false,
     val stopOnPowerDisconnected: Boolean = false,
@@ -14,7 +15,7 @@ data class AutoTriggerSettings(
     val stopOnBluetoothDisconnectedAndStationary: Boolean = false
 ) {
     val enabled: Boolean
-        get() = startOnAppOpen || startOnBluetoothConnected || startOnBluetoothConnectedAndSpeed ||
+        get() = startOnAppOpen || startOnAmap || startOnBluetoothConnected || startOnBluetoothConnectedAndSpeed ||
             stopOnPowerDisconnected || stopOnBluetoothDisconnected || stopOnBluetoothDisconnectedAndStationary
 
     val usesBluetooth: Boolean
@@ -36,6 +37,7 @@ object TriggerSettings {
     const val PREF_AUTO_TRIGGER_BT_NAMES = "auto_trigger_bt_names"
     const val PREF_AUTO_TRIGGER_START_ON_CONNECT = "auto_trigger_start_on_connect"
     const val PREF_START_ON_APP_OPEN = "auto_trigger_start_on_app_open"
+    const val PREF_START_ON_AMAP = "auto_trigger_start_on_amap"
     const val PREF_START_ON_BT_CONNECTED = "auto_trigger_start_on_bt_connected"
     const val PREF_START_ON_BT_CONNECTED_AND_SPEED = "auto_trigger_start_on_bt_connected_and_speed"
     const val PREF_STOP_ON_POWER_DISCONNECTED = "auto_trigger_stop_on_power_disconnected"
@@ -70,6 +72,7 @@ object TriggerSettings {
             bluetoothAddresses = addresses,
             bluetoothNamesByAddress = namesByAddress,
             startOnAppOpen = prefs.getBoolean(PREF_START_ON_APP_OPEN, prefs.getBoolean(DashcamSettings.PREF_AUTO_START_RECORDING, false)),
+            startOnAmap = prefs.getBoolean(PREF_START_ON_AMAP, true),
             startOnBluetoothConnected = prefs.getBoolean(
                 PREF_START_ON_BT_CONNECTED,
                 legacyEnabled && legacyStartOnConnect
@@ -105,6 +108,7 @@ object TriggerSettings {
             .putString(PREF_AUTO_TRIGGER_BT_NAME, settings.bluetoothName)
             .putBoolean(PREF_AUTO_TRIGGER_START_ON_CONNECT, settings.startOnBluetoothConnected)
             .putBoolean(PREF_START_ON_APP_OPEN, settings.startOnAppOpen)
+            .putBoolean(PREF_START_ON_AMAP, settings.startOnAmap)
             .putBoolean(PREF_START_ON_BT_CONNECTED, settings.startOnBluetoothConnected)
             .putBoolean(PREF_START_ON_BT_CONNECTED_AND_SPEED, settings.startOnBluetoothConnectedAndSpeed)
             .putBoolean(PREF_STOP_ON_POWER_DISCONNECTED, settings.stopOnPowerDisconnected)

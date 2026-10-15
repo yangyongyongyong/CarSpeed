@@ -155,8 +155,7 @@
                         android:id="@+id/spSpeedUnit"
                         android:layout_width="match_parent"
                         android:layout_height="52dp"
-                        android:layout_marginTop="6dp"
-                        android:backgroundTint="@color/surface_secondary" />
+                        android:layout_marginTop="6dp" />
 
                     <TextView
                         android:id="@+id/tvWarningLabel"
