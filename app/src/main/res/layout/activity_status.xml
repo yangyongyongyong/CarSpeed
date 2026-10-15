@@ -20,11 +20,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:backgroundTint="@android:color/transparent"
-<<<<<<< HEAD
-            app:navigationIcon="@android:drawable/ic_menu_revert"
-=======
             app:navigationIcon="@drawable/ic_nav_back"
->>>>>>> zipcopy/main
             app:title="@string/status_check_title"
             app:titleTextColor="@color/text_primary" />
 

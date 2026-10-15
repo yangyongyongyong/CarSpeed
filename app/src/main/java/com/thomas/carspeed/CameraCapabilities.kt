@@ -1,10 +1,7 @@
 package com.thomas.carspeed
 
 import android.content.Context
-<<<<<<< HEAD
-=======
 import android.graphics.SurfaceTexture
->>>>>>> zipcopy/main
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.CamcorderProfile
@@ -104,8 +101,6 @@ object CameraCapabilities {
             ?: modes.first()
     }
 
-<<<<<<< HEAD
-=======
     fun mainRecordingPreviewSize(context: Context, videoMode: VideoMode): Size {
         val cameraId = backCameraId(context) ?: return Size(videoMode.width, videoMode.height)
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -120,7 +115,6 @@ object CameraCapabilities {
         return fourByThree ?: Size(videoMode.width, videoMode.height)
     }
 
->>>>>>> zipcopy/main
     fun resolutionOptions(context: Context): List<VideoResolution> {
         val detected = supportedVideoModes(context).map { VideoResolution(it.qualityKey, it.width, it.height) }
         val common = listOf(

@@ -1,17 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<<<<<<< HEAD
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical">
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     style="@style/Widget.CarSpeed.Card"
     android:layout_width="match_parent"
@@ -24,20 +11,15 @@
         android:orientation="vertical"
         android:paddingTop="6dp"
         android:paddingBottom="6dp">
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -49,30 +31,11 @@
                 android:id="@+id/tvLocationStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLocation"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_location_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -86,20 +49,15 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:background="@color/divider_soft" />
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -111,30 +69,11 @@
                 android:id="@+id/tvMicrophoneStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMicrophone"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_microphone_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -148,20 +87,15 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:background="@color/divider_soft" />
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -173,30 +107,11 @@
                 android:id="@+id/tvCameraStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCamera"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_camera_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -210,20 +125,15 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:background="@color/divider_soft" />
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -235,30 +145,11 @@
                 android:id="@+id/tvOverlayStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnOverlay"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_overlay_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -272,20 +163,15 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:background="@color/divider_soft" />
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -297,30 +183,11 @@
                 android:id="@+id/tvNotificationStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnNotification"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_notification_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -334,20 +201,15 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:background="@color/divider_soft" />
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -359,30 +221,11 @@
                 android:id="@+id/tvGpsStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGps"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_gps_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.CarSpeed.Card"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="14dp">
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -396,20 +239,15 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:background="@color/divider_soft" />
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="18dp">
-=======
             android:paddingStart="16dp"
             android:paddingTop="12dp"
             android:paddingEnd="16dp"
             android:paddingBottom="12dp">
->>>>>>> zipcopy/main
 
             <TextView
                 android:layout_width="match_parent"
@@ -421,25 +259,11 @@
                 android:id="@+id/tvBatteryStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-<<<<<<< HEAD
-                android:layout_marginTop="8dp"
-=======
                 android:layout_marginTop="4dp"
->>>>>>> zipcopy/main
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBattery"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/status_battery_action" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-</LinearLayout>
-=======
                 style="@style/Widget.CarSpeed.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -448,4 +272,3 @@
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
->>>>>>> zipcopy/main

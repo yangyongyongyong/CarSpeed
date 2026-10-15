@@ -2,25 +2,18 @@ package com.thomas.carspeed
 
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
-<<<<<<< HEAD
-import android.hardware.camera2.CaptureRequest
-=======
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import java.util.Locale
->>>>>>> zipcopy/main
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
-<<<<<<< HEAD
-=======
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import java.util.concurrent.TimeUnit
->>>>>>> zipcopy/main
 
 object CameraFocus {
     fun isManualEnabled(context: Context): Boolean {
@@ -78,8 +71,6 @@ object CameraFocus {
         if (maxFocusDistanceDiopters <= 0f) return 0f
         return maxFocusDistanceDiopters * (percent(context) / 100f)
     }
-<<<<<<< HEAD
-=======
 
     fun maxFocusDistanceDiopters(context: Context): Float? {
         cachedMaxDiopters?.let { return it }
@@ -143,5 +134,4 @@ object CameraFocus {
             false
         }
     }
->>>>>>> zipcopy/main
 }

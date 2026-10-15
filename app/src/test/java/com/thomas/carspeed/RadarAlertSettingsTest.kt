@@ -1,30 +1,12 @@
 package com.thomas.carspeed
 
 import org.junit.Assert.assertEquals
-<<<<<<< HEAD
-=======
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
->>>>>>> zipcopy/main
 import org.junit.Test
 
 class RadarAlertSettingsTest {
     @Test
-<<<<<<< HEAD
-    fun parseThresholds_acceptsCommonSeparatorsAndSortsDescending() {
-        assertEquals(
-            listOf(30, 20, 10, 5),
-            RadarAlertSettingsStore.parseThresholds("20, 5，30 10")
-        )
-    }
-
-    @Test
-    fun parseThresholds_fallsBackWhenInputIsEmpty() {
-        assertEquals(
-            listOf(20, 10, 5),
-            RadarAlertSettingsStore.parseThresholds("abc")
-        )
-=======
     fun independent_radar_is_not_enabled_by_default() {
         assertFalse(RadarAlertSettingsStore.DEFAULT_ENABLED)
     }
@@ -60,6 +42,5 @@ class RadarAlertSettingsTest {
     @Test
     fun format_thresholds_is_stable() {
         assertEquals("30,20,5", RadarAlertSettingsStore.formatThresholds(listOf(5, 30, 20, 20)))
->>>>>>> zipcopy/main
     }
 }

@@ -1,43 +1,27 @@
 package com.thomas.carspeed
 
 import android.content.Context
-<<<<<<< HEAD
-import android.os.Bundle
-=======
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
->>>>>>> zipcopy/main
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.amap.api.navi.AMapNavi
 import com.amap.api.navi.AimlessModeListener
-<<<<<<< HEAD
-import com.amap.api.navi.enums.AimLessMode
-=======
 import com.amap.api.navi.ParallelRoadListener
 import com.amap.api.navi.SimpleNaviListener
 import com.amap.api.navi.enums.AimLessMode
 import com.amap.api.navi.model.AMapNaviLocation
->>>>>>> zipcopy/main
 import com.amap.api.navi.model.AMapNaviTrafficFacilityInfo
 import com.amap.api.navi.model.AimLessModeCongestionInfo
 import com.amap.api.navi.model.AimLessModeStat
 import java.util.Locale
-<<<<<<< HEAD
-import kotlin.math.abs
-import kotlin.math.roundToInt
-
-data class RadarAlertState(
-    val enabled: Boolean = true,
-=======
 import kotlin.math.roundToInt
 
 data class RadarAlertState(
     val enabled: Boolean = false,
->>>>>>> zipcopy/main
     val active: Boolean = false,
     val thresholdsSeconds: List<Int> = listOf(20, 10, 5),
     val leadSeconds: Int = 2,
@@ -47,21 +31,6 @@ data class RadarAlertState(
     val lastCameraDistanceMeters: Int? = null,
     val lastCameraEtaSeconds: Int? = null,
     val lastCameraSpeedLimit: Int? = null,
-<<<<<<< HEAD
-    val lastSpokenText: String? = null,
-    val lastSpokenAtMs: Long = 0L
-)
-
-object RadarAlertController {
-    private const val MIN_SPEED_FOR_ETA_KMH = 5f
-    private const val SPEAK_MIN_GAP_MS = 2_500L
-    private const val UNKNOWN_CAMERA_TYPE = 0
-    private const val SPEED_CAMERA_TYPE = 4
-    private const val SPEEDING_VIOLATION_TYPE = 102
-
-    @Volatile private var state = RadarAlertState()
-    @Volatile private var latestSpeedKmh = 0f
-=======
     val lastRadarDataAtMs: Long = 0L,
     val radarDataNetworkAvailable: Boolean? = null,
     val lastDataWarningText: String? = null,
@@ -83,15 +52,11 @@ object RadarAlertController {
     @Volatile private var naviSpeedKmh = 0f
     @Volatile private var naviSpeedAtMs = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
->>>>>>> zipcopy/main
     private var appContext: Context? = null
     private var navi: AMapNavi? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var pendingText: String? = null
-<<<<<<< HEAD
-    private val firedThresholdsByCamera = mutableMapOf<String, MutableSet<Int>>()
-=======
     private var activeCameraLock: RadarCameraLock? = null
     private var dataHealth = RadarDataHealthState(serviceStartedAtMs = 0L, lastDataAtMs = 0L)
     private val firedThresholdsByCamera = mutableMapOf<String, MutableSet<Int>>()
@@ -107,7 +72,6 @@ object RadarAlertController {
     private var elevatedFlag = RoadLayerAlertGate.ELEVATED_NONE
     private var pendingSwitchSinceMs = 0L
     private var lastSwitchAtMs = 0L
->>>>>>> zipcopy/main
 
     private val aimlessListener = object : AimlessModeListener {
         override fun onUpdateTrafficFacility(infos: Array<AMapNaviTrafficFacilityInfo>?) = Unit
@@ -121,8 +85,6 @@ object RadarAlertController {
         override fun updateAimlessModeCongestionInfo(aimLessModeCongestionInfo: AimLessModeCongestionInfo?) = Unit
     }
 
-<<<<<<< HEAD
-=======
     private val parallelRoadListener = ParallelRoadListener { status ->
         onParallelRoad(status?.getmElevatedRoadStatusFlag() ?: RoadLayerAlertGate.ELEVATED_NONE)
     }
@@ -136,7 +98,6 @@ object RadarAlertController {
         }
     }
 
->>>>>>> zipcopy/main
     fun start(context: Context) {
         val settings = RadarAlertSettingsStore.load(context)
         appContext = context.applicationContext
@@ -147,19 +108,6 @@ object RadarAlertController {
             speechRatePercent = settings.speechRatePercent
         )
         if (!settings.enabled || state.active) return
-<<<<<<< HEAD
-        try {
-            ensureTts(context.applicationContext, settings)
-            val activeNavi = AMapNavi.getInstance(context.applicationContext)
-            activeNavi.setUseInnerVoice(false, true)
-            activeNavi.addAimlessModeListener(aimlessListener)
-            activeNavi.startGPS(1_000L)
-            activeNavi.startAimlessMode(AimLessMode.CAMERA_DETECTED)
-            navi = activeNavi
-            firedThresholdsByCamera.clear()
-            state = state.copy(active = true, lastError = null)
-        } catch (error: Exception) {
-=======
         var activeNavi: AMapNavi? = null
         try {
             ensureTts(context.applicationContext, settings)
@@ -195,7 +143,6 @@ object RadarAlertController {
             runCatching { activeNavi?.removeAimlessModeListener(aimlessListener) }
             runCatching { activeNavi?.removeParallelRoadListener(parallelRoadListener) }
             navi = null
->>>>>>> zipcopy/main
             state = state.copy(active = false, lastError = error.message ?: error.javaClass.simpleName)
         }
     }
@@ -219,22 +166,15 @@ object RadarAlertController {
     fun stop() {
         runCatching { navi?.stopAimlessMode() }
         runCatching { navi?.stopGPS() }
-<<<<<<< HEAD
-        runCatching { navi?.removeAimlessModeListener(aimlessListener) }
-=======
         runCatching { navi?.removeAMapNaviListener(naviListener) }
         runCatching { navi?.removeAimlessModeListener(aimlessListener) }
         runCatching { navi?.removeParallelRoadListener(parallelRoadListener) }
->>>>>>> zipcopy/main
         runCatching { tts?.stop() }
         runCatching { tts?.shutdown() }
         navi = null
         tts = null
         ttsReady = false
         pendingText = null
-<<<<<<< HEAD
-        firedThresholdsByCamera.clear()
-=======
         activeCameraLock = null
         naviSpeedKmh = 0f
         naviSpeedAtMs = 0L
@@ -242,15 +182,12 @@ object RadarAlertController {
         firedThresholdsByCamera.clear()
         etaAnchorByCamera.clear()
         passedCameraKeys.clear()
->>>>>>> zipcopy/main
         AMapNavi.setTtsPlaying(false)
         state = state.copy(active = false)
     }
 
     fun updateSpeed(speedKmh: Float) {
         latestSpeedKmh = speedKmh.coerceAtLeast(0f)
-<<<<<<< HEAD
-=======
         if (state.active) maybeSwitchElevated()
     }
 
@@ -387,7 +324,6 @@ object RadarAlertController {
                 lastSpokenAtMs = if (spoke) nowMs else state.lastSpokenAtMs
             )
         }
->>>>>>> zipcopy/main
     }
 
     fun currentState(): RadarAlertState = state
@@ -399,10 +335,7 @@ object RadarAlertController {
             if (ttsReady) {
                 val activeTts = tts ?: return@TextToSpeech
                 activeTts.language = Locale.CHINA
-<<<<<<< HEAD
-=======
                 activeTts.setAudioAttributes(AppPlaybackDuck.speechAttributes())
->>>>>>> zipcopy/main
                 activeTts.setSpeechRate(settings.speechRate)
                 activeTts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
@@ -411,19 +344,13 @@ object RadarAlertController {
 
                     override fun onDone(utteranceId: String?) {
                         AMapNavi.setTtsPlaying(false)
-<<<<<<< HEAD
-=======
                         mainHandler.post { finishSpeech(utteranceId) }
->>>>>>> zipcopy/main
                     }
 
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
                         AMapNavi.setTtsPlaying(false)
-<<<<<<< HEAD
-=======
                         mainHandler.post { finishSpeech(utteranceId) }
->>>>>>> zipcopy/main
                     }
                 })
                 pendingText?.let { text ->
@@ -439,18 +366,6 @@ object RadarAlertController {
     private fun handleCameraInfo(cameraInfo: Array<out AMapNaviTrafficFacilityInfo>) {
         val settings = appContext?.let { RadarAlertSettingsStore.load(it) } ?: return
         if (!settings.enabled || !state.active) return
-<<<<<<< HEAD
-        val speedKmh = latestSpeedKmh.takeIf { it >= MIN_SPEED_FOR_ETA_KMH } ?: return
-        val speedMps = speedKmh / 3.6f
-        val nearest = cameraInfo
-            .filter { it.getDistance() > 0 && isSpeedCamera(it.getBroadcastType()) }
-            .minByOrNull { it.getDistance() }
-            ?: return
-
-        val distance = nearest.getDistance()
-        val etaSeconds = (distance / speedMps).roundToInt().coerceAtLeast(0)
-        val threshold = nextDueThreshold(nearest, etaSeconds, settings) ?: run {
-=======
         val now = System.currentTimeMillis()
         dataHealth = dataHealth.copy(lastDataAtMs = now)
         state = state.copy(lastRadarDataAtMs = now)
@@ -512,19 +427,12 @@ object RadarAlertController {
             if (spoke) {
                 firedThresholdsByCamera.getOrPut(nearest.key) { mutableSetOf() } += RadarAlertPlanner.FAR_UNKNOWN_LIMIT_ALERT_MARKER
             }
->>>>>>> zipcopy/main
             state = state.copy(
                 enabled = settings.enabled,
                 active = true,
                 thresholdsSeconds = settings.thresholdsSeconds,
                 leadSeconds = settings.leadSeconds,
                 speechRatePercent = settings.speechRatePercent,
-<<<<<<< HEAD
-                lastCameraType = nearest.getBroadcastType(),
-                lastCameraDistanceMeters = distance,
-                lastCameraEtaSeconds = etaSeconds,
-                lastCameraSpeedLimit = nearest.getLimitSpeed().takeIf { it > 0 }
-=======
                 lastError = null,
                 lastCameraType = nearest.cameraType,
                 lastCameraDistanceMeters = distance,
@@ -549,23 +457,15 @@ object RadarAlertController {
                 lastCameraEtaSeconds = etaSeconds,
                 lastCameraSpeedLimit = nearest.speedLimit,
                 lastRadarDataAtMs = now
->>>>>>> zipcopy/main
             )
             return
         }
 
-<<<<<<< HEAD
-        firedThresholdsByCamera.getOrPut(cameraKey(nearest)) { mutableSetOf() } += threshold
-        val speedLimit = nearest.getLimitSpeed().takeIf { it > 0 }
-        val text = buildAlertText(threshold, distance, speedLimit)
-        speak(text)
-=======
         firedThresholdsByCamera.getOrPut(nearest.key) { mutableSetOf() } +=
             RadarAlertPlanner.thresholdsToMark(dueThresholds, threshold)
         val speedLimit = nearest.speedLimit
         val text = withRoadLayer(layerPrefix, buildAlertText(threshold, speedKmh, speedLimit))
         val spoke = speak(text)
->>>>>>> zipcopy/main
         state = state.copy(
             enabled = settings.enabled,
             active = true,
@@ -573,33 +473,6 @@ object RadarAlertController {
             leadSeconds = settings.leadSeconds,
             speechRatePercent = settings.speechRatePercent,
             lastError = null,
-<<<<<<< HEAD
-            lastCameraType = nearest.getBroadcastType(),
-            lastCameraDistanceMeters = distance,
-            lastCameraEtaSeconds = etaSeconds,
-            lastCameraSpeedLimit = speedLimit,
-            lastSpokenText = text,
-            lastSpokenAtMs = System.currentTimeMillis()
-        )
-    }
-
-    private fun nextDueThreshold(
-        info: AMapNaviTrafficFacilityInfo,
-        etaSeconds: Int,
-        settings: RadarAlertSettings
-    ): Int? {
-        val fired = firedThresholdsByCamera[cameraKey(info)].orEmpty()
-        val due = settings.thresholdsSeconds.filter { threshold ->
-            threshold !in fired && etaSeconds <= threshold + settings.leadSeconds
-        }
-        return due.minByOrNull { threshold -> abs(etaSeconds - (threshold + settings.leadSeconds)) }
-    }
-
-    private fun isSpeedCamera(type: Int): Boolean {
-        return type == SPEED_CAMERA_TYPE || type == SPEEDING_VIOLATION_TYPE || type == UNKNOWN_CAMERA_TYPE
-    }
-
-=======
             lastCameraType = nearest.cameraType,
             lastCameraDistanceMeters = distance,
             lastCameraEtaSeconds = etaSeconds,
@@ -610,33 +483,12 @@ object RadarAlertController {
         )
     }
 
->>>>>>> zipcopy/main
     private fun cameraKey(info: AMapNaviTrafficFacilityInfo): String {
         val longitude = (info.getCoorX() * 100_000).roundToInt()
         val latitude = (info.getCoorY() * 100_000).roundToInt()
         return "$longitude:$latitude:${info.getBroadcastType()}:${info.getLimitSpeed()}"
     }
 
-<<<<<<< HEAD
-    private fun buildAlertText(thresholdSeconds: Int, distanceMeters: Int, speedLimit: Int?): String {
-        val limit = speedLimit?.let { "限速${it}" }.orEmpty()
-        val distance = if (distanceMeters >= 1000) {
-            String.format(Locale.CHINA, "%.1f公里", distanceMeters / 1000f)
-        } else {
-            "${distanceMeters.coerceAtLeast(0)}米"
-        }
-        return "测速雷达，${thresholdSeconds}秒，${distance}，$limit".trimEnd('，')
-    }
-
-    private fun speak(text: String) {
-        val now = System.currentTimeMillis()
-        if (now - state.lastSpokenAtMs < SPEAK_MIN_GAP_MS) return
-        if (!ttsReady) {
-            pendingText = text
-            return
-        }
-        speakNow(text)
-=======
     private fun withRoadLayer(prefix: String?, text: String): String {
         return if (prefix.isNullOrEmpty()) text else "$prefix，$text"
     }
@@ -657,19 +509,12 @@ object RadarAlertController {
         }
         speakNow(text)
         return true
->>>>>>> zipcopy/main
     }
 
     private fun speakNow(text: String) {
         val utteranceId = "radar-${System.currentTimeMillis()}"
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-<<<<<<< HEAD
-        }
-        AMapNavi.setTtsPlaying(true)
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-    }
-=======
             putString(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC.toString())
             putString(TextToSpeech.Engine.KEY_PARAM_VOLUME, "1.0")
         }
@@ -755,5 +600,4 @@ object RadarAlertController {
         }
     }
 
->>>>>>> zipcopy/main
 }

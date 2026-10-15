@@ -38,8 +38,6 @@ object CameraRotation {
             else -> "竖屏"
         }
     }
-<<<<<<< HEAD
-=======
 
     fun isLandscape(rotation: Int): Boolean {
         return rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
@@ -62,5 +60,4 @@ object CameraRotation {
             else -> 90
         }
     }
->>>>>>> zipcopy/main
 }

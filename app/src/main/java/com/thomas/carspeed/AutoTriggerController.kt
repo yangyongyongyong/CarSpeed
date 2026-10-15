@@ -5,10 +5,7 @@ import android.content.Context
 object AutoTriggerController {
     fun sync(context: Context, stopUnavailable: Boolean = false) {
         val appContext = context.applicationContext
-<<<<<<< HEAD
-=======
         TrackRecordingController.sync(appContext, stopUnavailable)
->>>>>>> zipcopy/main
         val settings = TriggerSettings.load(appContext)
         if (!settings.usesBluetooth || settings.bluetoothAddresses.isEmpty() || !BluetoothDeviceList.hasPermission(appContext)) {
             TriggerConnectionState.replaceConnectedSelected(appContext, emptySet())
@@ -30,14 +27,7 @@ object AutoTriggerController {
             val device = connectedDevices.firstOrNull()
             if (device != null) {
                 if (settings.startOnBluetoothConnected) {
-<<<<<<< HEAD
-                    DashcamService.startRecording(appContext)
-                    if (OverlayController.canStart(appContext) && !OverlayController.isRunning(appContext)) {
-                        OverlayController.start(appContext)
-                    }
-=======
                     BackgroundRecordingStart.start(appContext)
->>>>>>> zipcopy/main
                 } else if (settings.startOnBluetoothConnectedAndSpeed) {
                     TriggerMonitorService.arm(appContext, device.address, device.name)
                 } else {

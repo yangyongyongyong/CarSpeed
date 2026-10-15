@@ -2,13 +2,6 @@ package com.thomas.carspeed
 
 import android.content.Context
 import android.content.Intent
-<<<<<<< HEAD
-import android.graphics.Color
-import android.os.Bundle
-import android.util.AttributeSet
-import android.view.Gravity
-import android.view.MotionEvent
-=======
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -19,25 +12,15 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
->>>>>>> zipcopy/main
 import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
-<<<<<<< HEAD
-=======
 import androidx.appcompat.content.res.AppCompatResources
->>>>>>> zipcopy/main
 import com.amap.api.maps.AMap
 import com.amap.api.maps.AMapException
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.CoordinateConverter
-<<<<<<< HEAD
-import com.amap.api.maps.MapView
-import com.amap.api.maps.offlinemap.OfflineMapManager
-import com.amap.api.maps.offlinemap.OfflineMapProvince
-import com.amap.api.maps.offlinemap.OfflineMapStatus
-=======
 import com.amap.api.maps.TextureMapView
 import com.amap.api.maps.offlinemap.OfflineMapManager
 import com.amap.api.maps.offlinemap.OfflineMapProvince
@@ -45,16 +28,12 @@ import com.amap.api.maps.offlinemap.OfflineMapStatus
 import com.amap.api.maps.model.BitmapDescriptor
 import com.amap.api.maps.model.BitmapDescriptorFactory
 import com.amap.api.maps.model.CameraPosition
->>>>>>> zipcopy/main
 import com.amap.api.maps.model.Circle
 import com.amap.api.maps.model.CircleOptions
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.LatLngBounds
-<<<<<<< HEAD
-=======
 import com.amap.api.maps.model.Marker
 import com.amap.api.maps.model.MarkerOptions
->>>>>>> zipcopy/main
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
 import java.text.SimpleDateFormat
@@ -71,13 +50,9 @@ class MapRouteView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : FrameLayout(context, attrs), OfflineMapManager.OfflineMapDownloadListener,
     OfflineMapManager.OfflineLoadedListener {
-<<<<<<< HEAD
-    private val mapView = MapView(context)
-=======
     private class MaxSpeedTag(val speedKmh: Float)
 
     private val mapView = TextureMapView(context)
->>>>>>> zipcopy/main
     private val aMap: AMap
     private val statsView = TextView(context)
     private val viewportButton = Button(context)
@@ -92,11 +67,6 @@ class MapRouteView @JvmOverloads constructor(
     private var summary: TrackSummary = TrackSummary(0L, 0f, 0f, 0f, null, 0f)
     private var routeKey: String? = null
     private val routeSegments = mutableListOf<Polyline>()
-<<<<<<< HEAD
-    private var playedPolyline: Polyline? = null
-    private var currentCircle: Circle? = null
-    private var maxSpeedCircle: Circle? = null
-=======
     private val playedPolylines = mutableListOf<Polyline>()
     private var playedRunScales: List<Float> = emptyList()
     private var currentPulseCircle: Circle? = null
@@ -111,27 +81,19 @@ class MapRouteView @JvmOverloads constructor(
     private var radarLatLngs: List<LatLng> = emptyList()
     private val radarMarkers = mutableListOf<Marker>()
     private val radarMarkerIcons = mutableMapOf<Int, RadarMarkerBitmap>()
->>>>>>> zipcopy/main
     private var fitWholeRoute = false
     private var currentMapType = AMap.MAP_TYPE_NORMAL
     private var userCameraLocked = false
     private var routeCameraInitialized = false
-<<<<<<< HEAD
-=======
     private var viewportScaleIndex = DEFAULT_VIEWPORT_SCALE_INDEX
     private var contentRotationDegrees = 0
     private var overlayControlsVisible = false
->>>>>>> zipcopy/main
     private var activeAutoProvince: String? = null
     private var activeAutoProgress: Int? = null
     private val autoDownloadFailedNames = mutableSetOf<String>()
     private var downTouchX = 0f
     private var downTouchY = 0f
     var onMapTap: (() -> Unit)? = null
-<<<<<<< HEAD
-
-    init {
-=======
     var onScaleChanged: (() -> Unit)? = null
     var onPhotoClick: ((String) -> Unit)? = null
     var onRadarClick: ((VideoTrackRadar) -> Unit)? = null
@@ -139,7 +101,6 @@ class MapRouteView @JvmOverloads constructor(
     init {
         clipChildren = false
         clipToPadding = false
->>>>>>> zipcopy/main
         mapView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         mapView.onCreate(null as Bundle?)
         addView(mapView)
@@ -173,9 +134,6 @@ class MapRouteView @JvmOverloads constructor(
         updateStats()
     }
 
-<<<<<<< HEAD
-    fun resetViewport() {
-=======
     internal fun setPhotoMarks(marks: List<RoutePhotoMark>) {
         photoMarks = marks
         renderPhotoMarks()
@@ -201,13 +159,10 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     fun showCurrentViewport() {
->>>>>>> zipcopy/main
         fitWholeRoute = false
         userCameraLocked = false
         routeCameraInitialized = false
         updateCamera()
-<<<<<<< HEAD
-=======
         updateButtons()
     }
 
@@ -260,7 +215,6 @@ class MapRouteView @JvmOverloads constructor(
 
     fun mapScaleLabel(): String {
         return if (fitWholeRoute) "全程" else formatScaleMeters(VIEWPORT_SCALE_METERS[viewportScaleIndex])
->>>>>>> zipcopy/main
     }
 
     override fun onAttachedToWindow() {
@@ -332,8 +286,6 @@ class MapRouteView @JvmOverloads constructor(
             }
         }
         aMap.setOnMapClickListener { onMapTap?.invoke() }
-<<<<<<< HEAD
-=======
         aMap.setOnCameraChangeListener(object : AMap.OnCameraChangeListener {
             override fun onCameraChange(position: CameraPosition?) {
                 resizeCurrentMarkers()
@@ -362,7 +314,6 @@ class MapRouteView @JvmOverloads constructor(
                 true
             }
         }
->>>>>>> zipcopy/main
     }
 
     private fun buildControls() {
@@ -382,33 +333,6 @@ class MapRouteView @JvmOverloads constructor(
         )
 
         viewportButton.text = "全程"
-<<<<<<< HEAD
-        viewportButton.setOnClickListener {
-            fitWholeRoute = true
-            userCameraLocked = false
-            routeCameraInitialized = false
-            updateCamera()
-            updateButtons()
-        }
-        currentButton.text = "当前"
-        currentButton.setOnClickListener {
-            fitWholeRoute = false
-            userCameraLocked = false
-            routeCameraInitialized = false
-            updateCamera()
-            updateButtons()
-        }
-        mapTypeButton.text = "道路"
-        mapTypeButton.setOnClickListener {
-            currentMapType = if (currentMapType == AMap.MAP_TYPE_NORMAL) AMap.MAP_TYPE_SATELLITE else AMap.MAP_TYPE_NORMAL
-            aMap.mapType = currentMapType
-            updateButtons()
-        }
-        offlineButton.text = "离线"
-        offlineButton.setOnClickListener { context.startActivity(Intent(context, OfflineMapActivity::class.java)) }
-
-        listOf(viewportButton, currentButton, mapTypeButton, offlineButton).forEachIndexed { index, button ->
-=======
         viewportButton.setOnClickListener { showWholeRoute() }
         currentButton.text = "当前"
         currentButton.setOnClickListener { showCurrentViewport() }
@@ -419,7 +343,6 @@ class MapRouteView @JvmOverloads constructor(
 
         listOf(viewportButton, currentButton, mapTypeButton, offlineButton).forEachIndexed { index, button ->
             styleOverlayButton(button)
->>>>>>> zipcopy/main
             addView(
                 button,
                 LayoutParams(dp(76), dp(44)).apply {
@@ -428,31 +351,12 @@ class MapRouteView @JvmOverloads constructor(
                 }
             )
         }
-<<<<<<< HEAD
-=======
         updateOverlayControlsVisibility()
->>>>>>> zipcopy/main
     }
 
     private fun renderRoute() {
         routeSegments.forEach { it.remove() }
         routeSegments.clear()
-<<<<<<< HEAD
-        playedPolyline?.remove()
-        playedPolyline = null
-        currentCircle?.remove()
-        currentCircle = null
-        maxSpeedCircle?.remove()
-        maxSpeedCircle = null
-
-        if (convertedPoints.size < 2) return
-        for (i in 1 until convertedPoints.size) {
-            routeSegments += aMap.addPolyline(
-                PolylineOptions()
-                    .add(convertedPoints[i - 1], convertedPoints[i])
-                    .width(dp(5).toFloat())
-                    .color(speedColor((points[i - 1].speedKmh + points[i].speedKmh) / 2f))
-=======
         clearPlayedRoute()
         currentPulseCircle?.remove()
         currentPulseCircle = null
@@ -469,26 +373,11 @@ class MapRouteView @JvmOverloads constructor(
                     .add(convertedPoints[i - 1], convertedPoints[i])
                     .width(routeWidthPx(RouteTrackStyle.widthScale(speedKmh)))
                     .color(ROUTE_COLOR)
->>>>>>> zipcopy/main
                     .zIndex(20f)
             )
         }
         val maxIndex = points.indices.maxByOrNull { points[it].speedKmh } ?: -1
         if (maxIndex >= 0 && points[maxIndex].speedKmh > 0f) {
-<<<<<<< HEAD
-            maxSpeedCircle = aMap.addCircle(
-                CircleOptions()
-                    .center(convertedPoints[maxIndex])
-                    .radius(2.5)
-                    .strokeWidth(dp(5).toFloat())
-                    .strokeColor(Color.WHITE)
-                    .fillColor(Color.rgb(255, 64, 129))
-                    .zIndex(40f)
-            )
-        }
-    }
-
-=======
             val marker = aMap.addMarker(
                 MarkerOptions()
                     .position(convertedPoints[maxIndex])
@@ -639,26 +528,11 @@ class MapRouteView @JvmOverloads constructor(
         val anchorY: Float
     )
 
->>>>>>> zipcopy/main
     private fun renderPlaybackState() {
         if (points.isEmpty() || convertedPoints.isEmpty()) return
         val current = VideoTrackSync.pointAt(points, elapsedMs) ?: points.first()
         val currentLatLng = current.toAmapLatLng()
         val playedIndex = VideoTrackSync.lastPlayedIndex(points, elapsedMs).coerceIn(0, convertedPoints.lastIndex)
-<<<<<<< HEAD
-        val playedPoints = convertedPoints.take(playedIndex + 1) + currentLatLng
-
-        if (playedPolyline == null) {
-            playedPolyline = aMap.addPolyline(
-                PolylineOptions()
-                    .addAll(playedPoints)
-                    .width(dp(3).toFloat())
-                    .color(Color.WHITE)
-                    .zIndex(30f)
-            )
-        } else {
-            playedPolyline?.points = playedPoints
-=======
         renderPlayedRoute(playedIndex, currentLatLng)
         if (currentPulseCircle == null) {
             currentPulseCircle = aMap.addCircle(
@@ -678,22 +552,11 @@ class MapRouteView @JvmOverloads constructor(
                 circle.strokeColor = currentPulseStrokeColor()
                 circle.fillColor = currentPulseFillColor()
             }
->>>>>>> zipcopy/main
         }
         if (currentCircle == null) {
             currentCircle = aMap.addCircle(
                 CircleOptions()
                     .center(currentLatLng)
-<<<<<<< HEAD
-                    .radius(2.5)
-                    .strokeWidth(dp(5).toFloat())
-                    .strokeColor(Color.WHITE)
-                    .fillColor(Color.rgb(79, 214, 151))
-                    .zIndex(50f)
-            )
-        } else {
-            currentCircle?.center = currentLatLng
-=======
                     .radius(currentMarkerRadius())
                     .strokeWidth(currentMarkerStrokeWidth())
                     .strokeColor(currentMarkerStrokeColor())
@@ -708,7 +571,6 @@ class MapRouteView @JvmOverloads constructor(
                 circle.strokeColor = currentMarkerStrokeColor()
                 circle.fillColor = currentMarkerColor()
             }
->>>>>>> zipcopy/main
         }
     }
 
@@ -717,10 +579,7 @@ class MapRouteView @JvmOverloads constructor(
         if (fitWholeRoute && convertedPoints.size > 1) {
             val builder = LatLngBounds.builder()
             convertedPoints.forEach { builder.include(it) }
-<<<<<<< HEAD
-=======
             radarLatLngs.forEach { builder.include(it) }
->>>>>>> zipcopy/main
             runCatching { aMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), dp(18))) }
             routeCameraInitialized = true
         } else if (userCameraLocked) {
@@ -730,11 +589,6 @@ class MapRouteView @JvmOverloads constructor(
             aMap.moveCamera(CameraUpdateFactory.changeLatLng(current))
         } else {
             val current = VideoTrackSync.pointAt(points, elapsedMs)?.toAmapLatLng() ?: convertedPoints.first()
-<<<<<<< HEAD
-            aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(current, chooseZoomForScreenWidth(current.latitude, width.toFloat()).toFloat()))
-            routeCameraInitialized = true
-        }
-=======
             aMap.moveCamera(
                 CameraUpdateFactory.newLatLngZoom(
                     current,
@@ -767,7 +621,6 @@ class MapRouteView @JvmOverloads constructor(
         mapView.pivotX = viewWidth / 2f
         mapView.pivotY = viewHeight / 2f
         mapView.rotation = contentRotationDegrees.toFloat()
->>>>>>> zipcopy/main
     }
 
     private fun updateStats(extraLine: String? = null) {
@@ -808,9 +661,6 @@ class MapRouteView @JvmOverloads constructor(
     private fun updateButtons() {
         viewportButton.text = "全程"
         currentButton.text = "当前"
-<<<<<<< HEAD
-        mapTypeButton.text = if (currentMapType == AMap.MAP_TYPE_NORMAL) "道路" else "卫星"
-=======
         mapTypeButton.text = mapTypeLabel()
         notifyScaleChanged()
     }
@@ -945,7 +795,6 @@ class MapRouteView @JvmOverloads constructor(
 
     private fun currentPulseFraction(): Float {
         return (SystemClock.uptimeMillis() % 900L).toFloat() / 900f
->>>>>>> zipcopy/main
     }
 
     private fun ensureNeededOfflineMap() {
@@ -996,13 +845,9 @@ class MapRouteView @JvmOverloads constructor(
         }
     }
 
-<<<<<<< HEAD
-    private fun VideoTrackPoint.toAmapLatLng(): LatLng {
-=======
     private fun VideoTrackPoint.toAmapLatLng(): LatLng = toAmapLatLng(latitude, longitude)
 
     private fun toAmapLatLng(latitude: Double, longitude: Double): LatLng {
->>>>>>> zipcopy/main
         val raw = LatLng(latitude, longitude)
         return if (CoordinateConverter.isAMapDataAvailable(latitude, longitude)) {
             runCatching {
@@ -1021,14 +866,6 @@ class MapRouteView @JvmOverloads constructor(
         return "${size}:${first().timeMs}:${last().timeMs}"
     }
 
-<<<<<<< HEAD
-    private fun speedColor(speedKmh: Float): Int {
-        return when {
-            speedKmh < 30f -> Color.rgb(79, 214, 151)
-            speedKmh < 80f -> Color.rgb(255, 205, 86)
-            else -> Color.rgb(255, 91, 91)
-        }
-=======
     private data class PlayedRun(val scale: Float, val points: MutableList<LatLng>)
 
     private fun routeWidthPx(scale: Float): Float = dp(ROUTE_BASE_WIDTH_DP).toFloat() * scale
@@ -1087,7 +924,6 @@ class MapRouteView @JvmOverloads constructor(
         playedPolylines.forEach { it.remove() }
         playedPolylines.clear()
         playedRunScales = emptyList()
->>>>>>> zipcopy/main
     }
 
     private fun compactAmapName(name: String): String = AmapOfflineMapStore.compactName(name)
@@ -1096,27 +932,14 @@ class MapRouteView @JvmOverloads constructor(
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(Date(timeMs))
     }
 
-<<<<<<< HEAD
-    private fun chooseZoomForScreenWidth(latitude: Double, width: Float): Int {
-        val targetMetersPerPixel = TARGET_SCREEN_WIDTH_METERS / width.coerceAtLeast(1f)
-=======
     private fun chooseZoomForScreenWidth(latitude: Double, width: Float, targetScreenWidthMeters: Double): Int {
         val targetMetersPerPixel = targetScreenWidthMeters / width.coerceAtLeast(1f)
->>>>>>> zipcopy/main
         val latitudeFactor = cos(Math.toRadians(latitude)).coerceAtLeast(0.2)
         val metersPerPixelAtZoomZero = WEB_MERCATOR_EQUATOR_METERS_PER_PIXEL * latitudeFactor
         val zoom = (ln(metersPerPixelAtZoomZero / targetMetersPerPixel) / ln(2.0)).roundToInt()
         return zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
     }
 
-<<<<<<< HEAD
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    companion object {
-        private const val MIN_ZOOM = 3
-        private const val MAX_ZOOM = 21
-        private const val TARGET_SCREEN_WIDTH_METERS = 100.0
-=======
     private fun formatScaleMeters(meters: Double): String {
         return if (meters >= 1000.0) {
             val km = meters / 1000.0
@@ -1156,7 +979,6 @@ class MapRouteView @JvmOverloads constructor(
         private const val CURRENT_PULSE_MAX_DP = 16f / 3f
         private const val ROUTE_BASE_WIDTH_DP = 5
         private val ROUTE_COLOR = Color.rgb(79, 214, 151)
->>>>>>> zipcopy/main
         private const val WEB_MERCATOR_EQUATOR_METERS_PER_PIXEL = 156543.03392
     }
 }

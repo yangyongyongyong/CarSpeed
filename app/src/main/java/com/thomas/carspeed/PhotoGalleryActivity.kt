@@ -2,55 +2,28 @@ package com.thomas.carspeed
 
 import android.content.Intent
 import android.graphics.BitmapFactory
-<<<<<<< HEAD
-import android.net.Uri
-import android.os.Bundle
-import android.view.Gravity
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-=======
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
->>>>>>> zipcopy/main
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-<<<<<<< HEAD
-import androidx.core.content.FileProvider
-import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-=======
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.checkbox.MaterialCheckBox
->>>>>>> zipcopy/main
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-<<<<<<< HEAD
-=======
 import java.util.TimeZone
->>>>>>> zipcopy/main
 
 class PhotoGalleryActivity : AppCompatActivity() {
 
     private val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-<<<<<<< HEAD
-
-    private lateinit var toolbar: MaterialToolbar
-    private lateinit var tvPhotoSummary: TextView
-    private lateinit var layoutPhotoList: LinearLayout
-    private lateinit var btnDeleteAllPhotos: MaterialButton
-=======
     private val zone = TimeZone.getDefault()
 
     private lateinit var toolbar: MaterialToolbar
@@ -74,21 +47,10 @@ class PhotoGalleryActivity : AppCompatActivity() {
     private var daySelection: DaySelection? = null
     private var batchMode = false
     private val selectedPaths = linkedSetOf<String>()
->>>>>>> zipcopy/main
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_photo_gallery)
-<<<<<<< HEAD
-
-        toolbar = findViewById(R.id.toolbar)
-        tvPhotoSummary = findViewById(R.id.tvPhotoSummary)
-        layoutPhotoList = findViewById(R.id.layoutPhotoList)
-        btnDeleteAllPhotos = findViewById(R.id.btnDeleteAllPhotos)
-
-        toolbar.setNavigationOnClickListener { finish() }
-        btnDeleteAllPhotos.setOnClickListener { confirmDeleteAllPhotos() }
-=======
         toolbar = findViewById(R.id.toolbar)
         btnPhotoDate = findViewById(R.id.btnPhotoDate)
         btnPhotoDateClear = findViewById(R.id.btnPhotoDateClear)
@@ -143,41 +105,10 @@ class PhotoGalleryActivity : AppCompatActivity() {
         btnPhotoBatchDeleteSelected.setOnClickListener { confirmDeleteSelected() }
         btnPhotoDeletePage.setOnClickListener { confirmDeletePage() }
         btnPhotoDeleteAll.setOnClickListener { confirmDeleteAll() }
->>>>>>> zipcopy/main
     }
 
     override fun onResume() {
         super.onResume()
-<<<<<<< HEAD
-        renderPhotos()
-    }
-
-    private fun renderPhotos() {
-        layoutPhotoList.removeAllViews()
-        val photos = VideoStorage.photoFiles(this).sortedByDescending { it.lastModified() }
-        val totalBytes = photos.sumOf { it.length() }
-        tvPhotoSummary.text = if (photos.isEmpty()) {
-            getString(R.string.photo_history_empty)
-        } else {
-            getString(R.string.photo_history_summary, photos.size, formatBytes(totalBytes))
-        }
-        btnDeleteAllPhotos.isEnabled = photos.isNotEmpty()
-
-        photos.forEach { photo ->
-            layoutPhotoList.addView(photoRow(photo))
-        }
-    }
-
-    private fun photoRow(photo: File): MaterialCardView {
-        val card = MaterialCardView(this).apply {
-            useCompatPadding = true
-            radius = dp(16).toFloat()
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, dp(8))
-=======
         reload()
     }
 
@@ -289,7 +220,6 @@ class PhotoGalleryActivity : AppCompatActivity() {
             ).apply { bottomMargin = dp(8) }
             setOnClickListener {
                 if (batchMode) toggleSelection(path) else openPhoto(photo.file)
->>>>>>> zipcopy/main
             }
         }
         val row = LinearLayout(this).apply {
@@ -297,48 +227,6 @@ class PhotoGalleryActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
-<<<<<<< HEAD
-
-        val thumbnail = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            setImageBitmap(loadScaledBitmap(photo, dp(96)))
-            setOnClickListener { showPhoto(photo) }
-        }
-        row.addView(thumbnail, LinearLayout.LayoutParams(dp(96), dp(96)))
-
-        val detail = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-        }
-        detail.addView(TextView(this).apply {
-            text = photo.name
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleSmall)
-        })
-        detail.addView(TextView(this).apply {
-            text = "${fmt.format(Date(photo.lastModified()))}\n${formatBytes(photo.length())}\n${photo.absolutePath}"
-            textSize = 12f
-        })
-
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, 0)
-        }
-        actions.addView(MaterialButton(this).apply {
-            text = getString(R.string.photo_view)
-            setOnClickListener { showPhoto(photo) }
-        })
-        actions.addView(MaterialButton(this).apply {
-            text = getString(R.string.photo_share)
-            setOnClickListener { sharePhoto(photo) }
-        })
-        actions.addView(MaterialButton(this).apply {
-            text = getString(R.string.video_delete_one)
-            setOnClickListener { confirmDeletePhoto(photo) }
-        })
-        detail.addView(actions)
-
-        row.addView(detail, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-=======
         if (batchMode) {
             row.addView(MaterialCheckBox(this).apply {
                 isChecked = path in selectedPaths
@@ -379,53 +267,10 @@ class PhotoGalleryActivity : AppCompatActivity() {
                 setOnClickListener { confirmDelete(photo) }
             })
         }
->>>>>>> zipcopy/main
         card.addView(row)
         return card
     }
 
-<<<<<<< HEAD
-    private fun showPhoto(photo: File) {
-        val image = ImageView(this).apply {
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageBitmap(loadScaledBitmap(photo, 1600))
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val container = ScrollView(this).apply {
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            addView(image)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(photo.name)
-            .setView(container)
-            .setPositiveButton(R.string.photo_share) { _, _ -> sharePhoto(photo) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun sharePhoto(photo: File) {
-        val uri = photoUri(photo)
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/jpeg"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(shareIntent, getString(R.string.photo_share_title)))
-    }
-
-    private fun confirmDeletePhoto(photo: File) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.photo_delete_one)
-            .setMessage(photo.name)
-            .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = if (VideoStorage.deletePhoto(photo)) 1 else 0
-                Toast.makeText(this, getString(R.string.photo_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                renderPhotos()
-=======
     private fun toggleSelection(path: String) {
         if (!selectedPaths.add(path)) selectedPaths.remove(path)
         render()
@@ -447,17 +292,11 @@ class PhotoGalleryActivity : AppCompatActivity() {
             .setMessage(fmt.format(Date(photo.timeMs)))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
                 deletePhotos(listOf(photo))
->>>>>>> zipcopy/main
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-<<<<<<< HEAD
-    private fun confirmDeleteAllPhotos() {
-        val photos = VideoStorage.photoFiles(this)
-        if (photos.isEmpty()) {
-=======
     private fun confirmDeletePage() {
         val page = PhotoCalendar.pageOf(filtered(), pageIndex)
         if (page.isEmpty()) {
@@ -475,31 +314,17 @@ class PhotoGalleryActivity : AppCompatActivity() {
     private fun confirmDeleteAll() {
         val visible = filtered()
         if (visible.isEmpty()) {
->>>>>>> zipcopy/main
             Toast.makeText(this, R.string.photo_history_empty, Toast.LENGTH_SHORT).show()
             return
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.photo_delete_all)
-<<<<<<< HEAD
-            .setMessage(getString(R.string.photo_delete_all_confirm, photos.size))
-            .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = VideoStorage.deleteAllPhotos(this)
-                Toast.makeText(this, getString(R.string.photo_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                renderPhotos()
-            }
-=======
             .setMessage(getString(R.string.photo_delete_all_confirm, visible.size))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ -> deletePhotos(visible) }
->>>>>>> zipcopy/main
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-<<<<<<< HEAD
-    private fun photoUri(photo: File): Uri {
-        return FileProvider.getUriForFile(this, "$packageName.files", photo)
-=======
     private fun confirmDeleteSelected() {
         val selected = filtered().filter { it.file.absolutePath in selectedPaths }
         if (selected.isEmpty()) {
@@ -525,20 +350,13 @@ class PhotoGalleryActivity : AppCompatActivity() {
             Intent(this, PhotoPreviewActivity::class.java)
                 .putExtra(PhotoPreviewActivity.EXTRA_PATH, photo.absolutePath)
         )
->>>>>>> zipcopy/main
     }
 
     private fun loadScaledBitmap(file: File, maxSize: Int) = BitmapFactory.Options().run {
         inJustDecodeBounds = true
         BitmapFactory.decodeFile(file.absolutePath, this)
         var sample = 1
-<<<<<<< HEAD
-        while (outWidth / sample > maxSize || outHeight / sample > maxSize) {
-            sample *= 2
-        }
-=======
         while (outWidth / sample > maxSize || outHeight / sample > maxSize) sample *= 2
->>>>>>> zipcopy/main
         inJustDecodeBounds = false
         inSampleSize = sample
         BitmapFactory.decodeFile(file.absolutePath, this)
@@ -554,9 +372,6 @@ class PhotoGalleryActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-<<<<<<< HEAD
-=======
 
     private data class GalleryPhoto(val file: File, val timeMs: Long)
->>>>>>> zipcopy/main
 }

@@ -2,12 +2,9 @@ package com.thomas.carspeed
 
 import android.Manifest
 import android.content.pm.PackageManager
-<<<<<<< HEAD
-=======
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
->>>>>>> zipcopy/main
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
@@ -19,10 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.OrientationEventListener
 import android.view.Surface
-<<<<<<< HEAD
-=======
 import android.view.TextureView
->>>>>>> zipcopy/main
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
@@ -41,11 +35,8 @@ import java.util.Locale
 
 class CameraFullscreenActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
-<<<<<<< HEAD
-=======
     private lateinit var recordingTextureView: TextureView
     private lateinit var plateOverlayView: PlateOverlayView
->>>>>>> zipcopy/main
     private lateinit var tvTimer: TextView
     private lateinit var tvOverlay: TextView
     private lateinit var btnRecord: Button
@@ -59,12 +50,9 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private var recordingStartRequestedAtMs = 0L
     private var targetRotation = Surface.ROTATION_0
     private var orientationListener: OrientationEventListener? = null
-<<<<<<< HEAD
-=======
     private var recordingPreviewSurface: Surface? = null
     private var resumed = false
     private var lastRecordingUiState = false
->>>>>>> zipcopy/main
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private val focusCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
@@ -100,10 +88,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-<<<<<<< HEAD
-=======
         instance = this
->>>>>>> zipcopy/main
         setContentView(R.layout.activity_camera_fullscreen)
         targetRotation = CameraRotation.displayRotation(this)
         window.decorView.systemUiVisibility =
@@ -115,11 +100,8 @@ class CameraFullscreenActivity : AppCompatActivity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
 
         previewView = findViewById(R.id.fullscreenPreviewView)
-<<<<<<< HEAD
-=======
         recordingTextureView = findViewById(R.id.fullscreenRecordingTextureView)
         plateOverlayView = findViewById(R.id.fullscreenPlateOverlayView)
->>>>>>> zipcopy/main
         tvTimer = findViewById(R.id.tvFullscreenTimer)
         tvOverlay = findViewById(R.id.tvFullscreenOverlay)
         btnRecord = findViewById(R.id.btnFullscreenRecord)
@@ -130,18 +112,12 @@ class CameraFullscreenActivity : AppCompatActivity() {
         btnClose.setOnClickListener { finish() }
         btnRecord.setOnClickListener { toggleRecording() }
         btnPhoto.setOnClickListener { DashcamService.takePhoto(this) }
-<<<<<<< HEAD
-=======
         setupRecordingPreviewSurface()
->>>>>>> zipcopy/main
     }
 
     override fun onResume() {
         super.onResume()
-<<<<<<< HEAD
-=======
         resumed = true
->>>>>>> zipcopy/main
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         if (DashcamService.isRecording(this)) {
             stopIdlePreview()
@@ -155,10 +131,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-<<<<<<< HEAD
-=======
         resumed = false
->>>>>>> zipcopy/main
         uiHandler.removeCallbacks(uiTicker)
         stopOrientationListener()
         if (!DashcamService.isRecording(this)) {
@@ -183,11 +156,8 @@ class CameraFullscreenActivity : AppCompatActivity() {
         } else {
             stopIdlePreview()
         }
-<<<<<<< HEAD
-=======
         clearRecordingPreviewSurface()
         if (instance === this) instance = null
->>>>>>> zipcopy/main
         super.onDestroy()
     }
 
@@ -208,14 +178,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private fun startRecordingFromUi() {
         if (!ensureRecordingNotificationVisible()) return
         recordingStartRequestedAtMs = SystemClock.elapsedRealtime()
-<<<<<<< HEAD
-        stopIdlePreview()
-        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
-        DashcamService.startRecording(this)
-        syncUi()
-    }
-
-=======
         prepareRecordingPreviewForServiceStart()
         val requestAt = recordingStartRequestedAtMs
         recordingTextureView.postDelayed(
@@ -238,7 +200,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
         updateRecordingPreviewSurfaceIfReady()
     }
 
->>>>>>> zipcopy/main
     private fun ensureRecordingNotificationVisible(): Boolean {
         if (DashcamNotificationGuard.canShowRecordingNotification(this)) return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -305,22 +266,8 @@ class CameraFullscreenActivity : AppCompatActivity() {
     }
 
     private fun startOrientationListener() {
-<<<<<<< HEAD
-        orientationListener = object : OrientationEventListener(this) {
-            override fun onOrientationChanged(orientation: Int) {
-                val rotation = CameraRotation.rotationFromOrientationDegrees(orientation) ?: return
-                if (rotation != targetRotation) {
-                    targetRotation = rotation
-                    applyTargetRotation()
-                }
-            }
-        }.also { listener ->
-            if (listener.canDetectOrientation()) listener.enable()
-        }
-=======
         targetRotation = CameraRotation.displayRotation(this)
         applyTargetRotation()
->>>>>>> zipcopy/main
     }
 
     private fun stopOrientationListener() {
@@ -336,15 +283,10 @@ class CameraFullscreenActivity : AppCompatActivity() {
         val recording = DashcamService.isRecording(this)
         if (recording) recordingStartRequestedAtMs = 0L
         val startPending = isRecordingStartPending()
-<<<<<<< HEAD
-        btnRecord.setText(if (recording || startPending) R.string.video_stop_recording else R.string.video_start_recording)
-        btnPhoto.isEnabled = recording
-=======
         val activeRecordingUiState = recording || startPending
         btnRecord.setText(if (activeRecordingUiState) R.string.video_stop_recording else R.string.video_start_recording)
         btnPhoto.isEnabled = recording
         syncRecordingPreviewSurface(activeRecordingUiState)
->>>>>>> zipcopy/main
         tvTimer.visibility = if (recording) View.VISIBLE else View.GONE
         if (recording) {
             tvTimer.text = getString(
@@ -353,8 +295,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
             )
         }
         tvOverlay.text = buildOverlayText()
-<<<<<<< HEAD
-=======
         plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
         if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
             scheduleIdlePreviewRestart()
@@ -444,7 +384,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     private fun rotationDegreesForTexture(): Float {
         return CameraRotation.previewRotationDegrees(targetRotation)
->>>>>>> zipcopy/main
     }
 
     private fun isRecordingStartPending(): Boolean {
@@ -474,9 +413,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
 
     companion object {
         private const val PREVIEW_REBIND_DELAY_MS = 700L
-<<<<<<< HEAD
-        private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
-=======
         private const val RECORDING_PREVIEW_PREPARE_MS = 150L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
 
@@ -490,6 +426,5 @@ class CameraFullscreenActivity : AppCompatActivity() {
                 activity.prepareRecordingPreviewForServiceStart()
             }
         }
->>>>>>> zipcopy/main
     }
 }

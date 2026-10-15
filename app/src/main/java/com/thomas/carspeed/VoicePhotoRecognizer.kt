@@ -12,13 +12,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
 import java.util.Locale
-<<<<<<< HEAD
-import java.util.concurrent.Executors
-=======
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
->>>>>>> zipcopy/main
 import java.util.zip.ZipInputStream
 
 data class VoicePhotoRecognizerState(
@@ -35,9 +31,6 @@ data class VoicePhotoRecognizerState(
 enum class VoiceCommand {
     TAKE_PHOTO,
     START_RECORDING,
-<<<<<<< HEAD
-    STOP_RECORDING
-=======
     STOP_RECORDING,
     RADAR_ALERT_ON,
     RADAR_ALERT_OFF
@@ -120,7 +113,6 @@ internal object AppSpeechGuard {
         val elapsedMs = nowMs - lastSpeechStartedAtMs
         return elapsedMs in 0..COMMAND_SUPPRESSION_WINDOW_MS
     }
->>>>>>> zipcopy/main
 }
 
 object VoicePhotoRecognizer {
@@ -136,9 +128,6 @@ object VoicePhotoRecognizer {
     @Volatile private var state = VoicePhotoRecognizerState()
 
     private var model: Model? = null
-<<<<<<< HEAD
-    private var speechService: SpeechService? = null
-=======
     private var recognizer: Recognizer? = null
     private var speechService: SpeechService? = null
     @Volatile private var externalMic = false
@@ -146,45 +135,31 @@ object VoicePhotoRecognizer {
     private val downsampler = PcmDownsampler()
     private val pcmQueue = ArrayBlockingQueue<PcmChunk>(4)
     private val pcmWorkerStarted = AtomicBoolean(false)
->>>>>>> zipcopy/main
     private var activeOwner: String? = null
     private var activeContext: Context? = null
     private var activeOnCommand: ((VoiceCommand) -> Unit)? = null
     private var starting = false
     private var lastAcceptedCommand: VoiceCommand? = null
     private var lastAcceptedCommandAtMs = 0L
-<<<<<<< HEAD
-=======
     private val commandGate = IsolatedCommandGate()
     private var pauseToken = 0
     private var pauseRunnable: Runnable? = null
     private var armedText: String? = null
     private var sawWordTimes = false
->>>>>>> zipcopy/main
 
     fun currentState(): VoicePhotoRecognizerState = state
 
     fun start(context: Context, owner: String, onCommand: (VoiceCommand) -> Unit) {
         if (activeOwner != null && activeOwner != owner) {
             val previousOwner = activeOwner
-<<<<<<< HEAD
-            speechService?.stop()
-            speechService?.shutdown()
-            speechService = null
-            starting = false
-=======
             releaseSpeechService()
             starting = false
             resetCommandGate()
->>>>>>> zipcopy/main
             previousOwner?.let { VoicePhotoMonitor.markStopped(it) }
         }
         activeContext = context.applicationContext
         activeOwner = owner
         activeOnCommand = onCommand
-<<<<<<< HEAD
-        if (speechService != null || starting) return
-=======
         if (externalMic) {
             if (recognizer != null || starting) return
         } else if (speechService != null || starting) {
@@ -193,7 +168,6 @@ object VoicePhotoRecognizer {
             attachMicrophone(owner)
             return
         }
->>>>>>> zipcopy/main
         starting = true
         updateState(owner, modelState = "preparing", listening = false, lastError = null)
         worker.execute {
@@ -207,10 +181,6 @@ object VoicePhotoRecognizer {
                         return@post
                     }
                     try {
-<<<<<<< HEAD
-                        val recognizer = Recognizer(loadedModel, SAMPLE_RATE, commandGrammar())
-                        speechService = SpeechService(recognizer, SAMPLE_RATE).also { service ->
-=======
                         val readyRecognizer = recognizer ?: newRecognizer(loadedModel).also { recognizer = it }
                         resetCommandGate()
                         if (externalMic) {
@@ -227,7 +197,6 @@ object VoicePhotoRecognizer {
                             return@post
                         }
                         speechService = SpeechService(readyRecognizer, SAMPLE_RATE).also { service ->
->>>>>>> zipcopy/main
                             service.startListening(listener(owner))
                         }
                         starting = false
@@ -240,11 +209,7 @@ object VoicePhotoRecognizer {
                             lastError = null
                         )
                         VoicePhotoMonitor.markStarted(owner, ENGINE)
-<<<<<<< HEAD
-                    } catch (e: RuntimeException) {
-=======
                     } catch (e: Exception) {
->>>>>>> zipcopy/main
                         starting = false
                         handleError(owner, e)
                     }
@@ -258,14 +223,6 @@ object VoicePhotoRecognizer {
         }
     }
 
-<<<<<<< HEAD
-    fun stop(owner: String) {
-        if (activeOwner != owner) return
-        mainHandler.removeCallbacksAndMessages(null)
-        speechService?.stop()
-        speechService?.shutdown()
-        speechService = null
-=======
     fun beginExternalCapture(context: Context, owner: String, onCommand: (VoiceCommand) -> Unit) {
         activeContext = context.applicationContext
         activeOwner = owner
@@ -319,7 +276,6 @@ object VoicePhotoRecognizer {
             recognizer = null
         }
         pcmQueue.clear()
->>>>>>> zipcopy/main
         activeOwner = null
         activeContext = null
         activeOnCommand = null
@@ -331,17 +287,6 @@ object VoicePhotoRecognizer {
     private fun listener(owner: String): RecognitionListener {
         return object : RecognitionListener {
             override fun onPartialResult(hypothesis: String?) {
-<<<<<<< HEAD
-                handleText(owner, hypothesis, allowCommand = false)
-            }
-
-            override fun onResult(hypothesis: String?) {
-                handleText(owner, hypothesis, allowCommand = true)
-            }
-
-            override fun onFinalResult(hypothesis: String?) {
-                handleText(owner, hypothesis, allowCommand = true)
-=======
                 handleText(owner, hypothesis, endpoint = false)
             }
 
@@ -351,7 +296,6 @@ object VoicePhotoRecognizer {
 
             override fun onFinalResult(hypothesis: String?) {
                 handleText(owner, hypothesis, endpoint = true)
->>>>>>> zipcopy/main
                 if (activeOwner == owner && speechService == null) restart(owner)
             }
 
@@ -365,16 +309,6 @@ object VoicePhotoRecognizer {
         }
     }
 
-<<<<<<< HEAD
-    private fun handleText(owner: String, hypothesis: String?, allowCommand: Boolean) {
-        val text = recognizedText(hypothesis)
-        if (text.isBlank()) return
-        updateState(owner, lastText = text, lastError = null)
-        VoicePhotoMonitor.markHeard(owner, text)
-        if (!allowCommand) return
-        val command = parseCommand(text) ?: return
-        if (activeOwner != owner || !shouldAcceptCommand(command)) return
-=======
     private fun handleText(owner: String, hypothesis: String?, endpoint: Boolean) {
         val text = recognizedText(hypothesis)
         if (text.isNotBlank()) {
@@ -406,14 +340,11 @@ object VoicePhotoRecognizer {
 
     private fun deliver(owner: String, command: VoiceCommand?) {
         if (command == null || activeOwner != owner || !shouldAcceptCommand(command)) return
->>>>>>> zipcopy/main
         state = state.copy(lastCommand = command.name)
         VoicePhotoMonitor.markTriggered(owner)
         activeOnCommand?.invoke(command)
     }
 
-<<<<<<< HEAD
-=======
     private fun schedulePause(owner: String, streamEndMs: Long?) {
         pauseRunnable?.let { mainHandler.removeCallbacks(it) }
         val token = ++pauseToken
@@ -439,7 +370,6 @@ object VoicePhotoRecognizer {
         commandGate.reset()
     }
 
->>>>>>> zipcopy/main
     private fun shouldAcceptCommand(command: VoiceCommand): Boolean {
         val now = System.currentTimeMillis()
         if (command == lastAcceptedCommand && now - lastAcceptedCommandAtMs < COMMAND_DEBOUNCE_MS) {
@@ -450,34 +380,10 @@ object VoicePhotoRecognizer {
         return true
     }
 
-<<<<<<< HEAD
-    private fun parseCommand(text: String): VoiceCommand? {
-        val normalized = normalize(text)
-        return when {
-            STOP_RECORDING_COMMANDS.any { normalized.contains(it) } -> VoiceCommand.STOP_RECORDING
-            START_RECORDING_COMMANDS.any { normalized.contains(it) } -> VoiceCommand.START_RECORDING
-            PHOTO_COMMANDS.any { normalized.contains(it) } -> VoiceCommand.TAKE_PHOTO
-            else -> null
-        }
-    }
-
-=======
->>>>>>> zipcopy/main
     private fun handleError(owner: String, error: Exception) {
         val message = error.message ?: error.javaClass.simpleName
         updateState(owner, listening = false, lastError = message)
         VoicePhotoMonitor.markError(owner, -3, message)
-<<<<<<< HEAD
-        speechService?.shutdown()
-        speechService = null
-        restart(owner)
-    }
-
-    private fun restart(owner: String) {
-        if (activeOwner != owner) return
-        speechService?.shutdown()
-        speechService = null
-=======
         releaseSpeechService()
         synchronized(recognizerLock) {
             runCatching { recognizer?.close() }
@@ -564,7 +470,6 @@ object VoicePhotoRecognizer {
         if (activeOwner != owner) return
         resetCommandGate()
         releaseSpeechService()
->>>>>>> zipcopy/main
         val context = activeContext ?: return
         val onCommand = activeOnCommand ?: return
         mainHandler.postDelayed({ start(context, owner, onCommand) }, RESTART_DELAY_MS)
@@ -629,16 +534,6 @@ object VoicePhotoRecognizer {
         return File(dir, "am/final.mdl").exists() && File(dir, "conf/model.conf").exists()
     }
 
-<<<<<<< HEAD
-    private fun commandGrammar(): String {
-        val commands = (PHOTO_COMMANDS + START_RECORDING_COMMANDS + STOP_RECORDING_COMMANDS + GRAMMAR_ONLY_COMMANDS)
-            .distinct()
-            .joinToString(", ") { "\"$it\"" }
-        return "[$commands, \"[unk]\"]"
-    }
-
-=======
->>>>>>> zipcopy/main
     private fun recognizedText(hypothesis: String?): String {
         if (hypothesis.isNullOrBlank()) return ""
         return try {
@@ -649,22 +544,6 @@ object VoicePhotoRecognizer {
         }
     }
 
-<<<<<<< HEAD
-    private fun normalize(text: String): String {
-        return text.lowercase(Locale.CHINA)
-            .replace(" ", "")
-            .replace("，", "")
-            .replace(",", "")
-            .replace("。", "")
-            .replace(".", "")
-            .replace("！", "")
-            .replace("!", "")
-            .replace("？", "")
-            .replace("?", "")
-    }
-
-=======
->>>>>>> zipcopy/main
     private fun updateState(
         owner: String?,
         modelState: String = state.modelState,
@@ -685,27 +564,4 @@ object VoicePhotoRecognizer {
         )
     }
 
-<<<<<<< HEAD
-    private val PHOTO_COMMANDS = listOf("我要拍照", "帮我拍照", "给我拍照", "拍照", "照相", "照一张", "拍一张")
-    private val START_RECORDING_COMMANDS = listOf("开始录像", "开始录制", "开始拍摄", "我要录像", "我要录制")
-    private val STOP_RECORDING_COMMANDS = listOf("停止录像", "停止录制", "停止拍摄", "结束录像", "结束录制")
-    private val GRAMMAR_ONLY_COMMANDS = listOf(
-        "我 要 拍 照",
-        "帮 我 拍 照",
-        "给 我 拍 照",
-        "拍 照",
-        "照 相",
-        "开 始 录 像",
-        "开 始 录 制",
-        "开 始 拍 摄",
-        "我 要 录 像",
-        "我 要 录 制",
-        "停 止 录 像",
-        "停 止 录 制",
-        "停 止 拍 摄",
-        "结 束 录 像",
-        "结 束 录 制"
-    )
-=======
->>>>>>> zipcopy/main
 }

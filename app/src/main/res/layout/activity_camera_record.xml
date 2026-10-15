@@ -1,20 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<<<<<<< HEAD
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-=======
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
->>>>>>> zipcopy/main
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/brand_sand"
-<<<<<<< HEAD
-    android:orientation="vertical"
-    android:paddingStart="16dp"
-    android:paddingTop="18dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="16dp">
-=======
     android:fillViewport="true">
 
     <LinearLayout
@@ -25,7 +14,6 @@
         android:paddingTop="18dp"
         android:paddingEnd="16dp"
         android:paddingBottom="16dp">
->>>>>>> zipcopy/main
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
@@ -36,10 +24,7 @@
         app:titleTextColor="@color/text_primary" />
 
     <com.google.android.material.card.MaterialCardView
-<<<<<<< HEAD
-=======
         android:id="@+id/previewCard"
->>>>>>> zipcopy/main
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -50,12 +35,8 @@
 
         <FrameLayout
             android:layout_width="match_parent"
-<<<<<<< HEAD
-            android:layout_height="match_parent">
-=======
             android:layout_height="match_parent"
             android:background="@android:color/black">
->>>>>>> zipcopy/main
 
             <androidx.camera.view.PreviewView
                 android:id="@+id/previewView"
@@ -64,8 +45,6 @@
                 android:background="@android:color/black"
                 app:implementationMode="compatible" />
 
-<<<<<<< HEAD
-=======
             <com.thomas.carspeed.AspectRatioTextureView
                 android:id="@+id/recordingTextureView"
                 android:layout_width="match_parent"
@@ -79,7 +58,6 @@
                 android:layout_height="match_parent"
                 android:visibility="gone" />
 
->>>>>>> zipcopy/main
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -166,11 +144,7 @@
                 android:text="@string/video_background_hint"
                 android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
-<<<<<<< HEAD
-            <CheckBox
-=======
             <com.google.android.material.checkbox.MaterialCheckBox
->>>>>>> zipcopy/main
                 android:id="@+id/cbManualFocus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -196,11 +170,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRecordVideo"
-<<<<<<< HEAD
-                style="@style/Widget.Material3.Button"
-=======
                 style="@style/Widget.CarSpeed.Button"
->>>>>>> zipcopy/main
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -215,11 +185,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnTakePhoto"
-<<<<<<< HEAD
-                    style="@style/Widget.Material3.Button.TonalButton"
-=======
                     style="@style/Widget.CarSpeed.Button.Tonal"
->>>>>>> zipcopy/main
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -228,11 +194,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenPhotos"
-<<<<<<< HEAD
-                    style="@style/Widget.Material3.Button.TonalButton"
-=======
                     style="@style/Widget.CarSpeed.Button.Tonal"
->>>>>>> zipcopy/main
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -241,11 +203,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenSettings"
-<<<<<<< HEAD
-                    style="@style/Widget.Material3.Button.TonalButton"
-=======
                     style="@style/Widget.CarSpeed.Button.Tonal"
->>>>>>> zipcopy/main
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -261,11 +219,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenHistory"
-<<<<<<< HEAD
-                    style="@style/Widget.Material3.Button.TextButton"
-=======
                     style="@style/Widget.CarSpeed.Button.Text"
->>>>>>> zipcopy/main
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -273,11 +227,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenStatus"
-<<<<<<< HEAD
-                    style="@style/Widget.Material3.Button.TextButton"
-=======
                     style="@style/Widget.CarSpeed.Button.Text"
->>>>>>> zipcopy/main
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -285,21 +235,11 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnOpenHud"
-<<<<<<< HEAD
-                    style="@style/Widget.Material3.Button.TextButton"
-=======
                     style="@style/Widget.CarSpeed.Button.Text"
->>>>>>> zipcopy/main
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/speed_hud_title" />
-<<<<<<< HEAD
-            </LinearLayout>
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-</LinearLayout>
-=======
 
             </LinearLayout>
 
@@ -337,4 +277,3 @@
     </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 </ScrollView>
->>>>>>> zipcopy/main

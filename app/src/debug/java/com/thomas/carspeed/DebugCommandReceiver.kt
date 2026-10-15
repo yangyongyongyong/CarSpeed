@@ -255,15 +255,12 @@ class DebugCommandReceiver : BroadcastReceiver() {
         if (intent.hasExtra("watermark_focus")) {
             editor.putBoolean(DashcamSettings.PREF_WATERMARK_FOCUS, intent.getBooleanExtra("watermark_focus", false))
         }
-<<<<<<< HEAD
-=======
         if (intent.hasExtra("plate_recognition_enabled")) {
             editor.putBoolean(
                 DashcamSettings.PREF_PLATE_RECOGNITION_ENABLED,
                 intent.getBooleanExtra("plate_recognition_enabled", false)
             )
         }
->>>>>>> zipcopy/main
         if (intent.hasExtra("radar_alert_enabled")) {
             editor.putBoolean(RadarAlertSettingsStore.PREF_RADAR_ALERT_ENABLED, intent.getBooleanExtra("radar_alert_enabled", true))
         }
@@ -311,10 +308,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .put("videoSummary", videoSummaryJson(context))
             .put("photoSummary", photoSummaryJson(context))
             .put("radarAlert", radarAlertJson())
-<<<<<<< HEAD
-=======
             .put("plateRecognition", plateRecognitionJson(context))
->>>>>>> zipcopy/main
             .put("voicePhoto", voicePhotoJson(context))
             .put("power", powerJson(context))
             .put("debugDir", debugDir(context).absolutePath)
@@ -462,10 +456,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .put("parkingStopMinutes", watermarks.parkingStopMinutes)
             .put("watermarkAddress", watermarks.showAddress)
             .put("watermarkFocus", watermarks.showFocus)
-<<<<<<< HEAD
-=======
             .put("plateRecognitionEnabled", watermarks.plateRecognitionEnabled)
->>>>>>> zipcopy/main
     }
 
     private fun telemetryJson(): JSONObject {
@@ -495,8 +486,6 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .put("lastSpokenAtMs", state.lastSpokenAtMs)
     }
 
-<<<<<<< HEAD
-=======
     private fun plateRecognitionJson(context: Context): JSONObject {
         val settings = DashcamSettings.load(context)
         val state = PlateRecognitionMonitor.currentState()
@@ -521,7 +510,6 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .putNullable("lastError", state.lastError)
     }
 
->>>>>>> zipcopy/main
     private fun voicePhotoJson(context: Context): JSONObject {
         val settings = DashcamSettings.load(context)
         val state = VoicePhotoMonitor.currentState()
@@ -530,11 +518,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .put("enabled", settings.voicePhotoEnabled)
             .put("recordAudioRequested", settings.recordAudio)
             .put("audioPermission", hasPermission(context, Manifest.permission.RECORD_AUDIO))
-<<<<<<< HEAD
-            .put("recordAudioEffective", settings.recordAudio && !settings.voicePhotoEnabled && hasPermission(context, Manifest.permission.RECORD_AUDIO))
-=======
             .put("recordAudioEffective", settings.recordAudio && hasPermission(context, Manifest.permission.RECORD_AUDIO))
->>>>>>> zipcopy/main
             .put("preferredEngine", "vosk")
             .putNullable("lastEngine", state.lastEngine)
             .put("modelState", recognizerState.modelState)
@@ -567,11 +551,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
 
     private fun videoSummaryJson(context: Context): JSONObject {
         val trips = VideoStorage.videoTrips(context)
-<<<<<<< HEAD
-        val totalBytes = trips.sumOf { trip -> VideoStorage.companionFilesFor(trip).sumOf { it.length() } }
-=======
         val totalBytes = trips.sumOf { trip -> VideoStorage.companionFilesFor(context, trip).sumOf { it.length() } }
->>>>>>> zipcopy/main
         return JSONObject()
             .put("count", trips.size)
             .put("totalBytes", totalBytes)
@@ -589,11 +569,7 @@ class DebugCommandReceiver : BroadcastReceiver() {
     private fun videosJson(context: Context): JSONArray {
         val array = JSONArray()
         VideoStorage.videoTrips(context).sortedByDescending { it.lastModified }.forEach { trip ->
-<<<<<<< HEAD
-            val companions = VideoStorage.companionFilesFor(trip)
-=======
             val companions = VideoStorage.companionFilesFor(context, trip)
->>>>>>> zipcopy/main
             array.put(
                 JSONObject()
                     .put("name", trip.title)
@@ -603,14 +579,9 @@ class DebugCommandReceiver : BroadcastReceiver() {
                     .put("bytes", companions.sumOf { it.length() })
                     .put("modified", formatTime(trip.lastModified))
                     .put("hasSubtitle", trip.segments.any { VideoStorage.subtitleFileFor(it).exists() })
-<<<<<<< HEAD
-                    .put("hasTrack", trip.segments.any { VideoStorage.trackFileFor(it).exists() })
-                    .put("favorite", VideoStorage.isFavorite(trip))
-=======
                     .put("hasTrack", trip.segments.any { video -> VideoStorage.trackFilesFor(context, video).any { it.exists() } })
                     .put("favorite", VideoStorage.isFavorite(context, trip))
                     .put("hasPlateRecognition", trip.segments.any { video -> VideoStorage.plateFilesFor(context, video).any { it.exists() } })
->>>>>>> zipcopy/main
                     .put("groupBytes", companions.sumOf { it.length() })
             )
         }

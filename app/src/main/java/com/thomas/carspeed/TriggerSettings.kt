@@ -7,10 +7,7 @@ data class AutoTriggerSettings(
     val bluetoothNamesByAddress: Map<String, String> = emptyMap(),
     val speedThresholdKmh: Float = TriggerRules.DEFAULT_SPEED_THRESHOLD_KMH,
     val startOnAppOpen: Boolean = false,
-<<<<<<< HEAD
-=======
     val startOnAmap: Boolean = true,
->>>>>>> zipcopy/main
     val startOnBluetoothConnected: Boolean = false,
     val startOnBluetoothConnectedAndSpeed: Boolean = false,
     val stopOnPowerDisconnected: Boolean = false,
@@ -40,10 +37,7 @@ object TriggerSettings {
     const val PREF_AUTO_TRIGGER_BT_NAMES = "auto_trigger_bt_names"
     const val PREF_AUTO_TRIGGER_START_ON_CONNECT = "auto_trigger_start_on_connect"
     const val PREF_START_ON_APP_OPEN = "auto_trigger_start_on_app_open"
-<<<<<<< HEAD
-=======
     const val PREF_START_ON_AMAP = "auto_trigger_start_on_amap"
->>>>>>> zipcopy/main
     const val PREF_START_ON_BT_CONNECTED = "auto_trigger_start_on_bt_connected"
     const val PREF_START_ON_BT_CONNECTED_AND_SPEED = "auto_trigger_start_on_bt_connected_and_speed"
     const val PREF_STOP_ON_POWER_DISCONNECTED = "auto_trigger_stop_on_power_disconnected"
@@ -78,10 +72,7 @@ object TriggerSettings {
             bluetoothAddresses = addresses,
             bluetoothNamesByAddress = namesByAddress,
             startOnAppOpen = prefs.getBoolean(PREF_START_ON_APP_OPEN, prefs.getBoolean(DashcamSettings.PREF_AUTO_START_RECORDING, false)),
-<<<<<<< HEAD
-=======
             startOnAmap = prefs.getBoolean(PREF_START_ON_AMAP, true),
->>>>>>> zipcopy/main
             startOnBluetoothConnected = prefs.getBoolean(
                 PREF_START_ON_BT_CONNECTED,
                 legacyEnabled && legacyStartOnConnect
@@ -117,10 +108,7 @@ object TriggerSettings {
             .putString(PREF_AUTO_TRIGGER_BT_NAME, settings.bluetoothName)
             .putBoolean(PREF_AUTO_TRIGGER_START_ON_CONNECT, settings.startOnBluetoothConnected)
             .putBoolean(PREF_START_ON_APP_OPEN, settings.startOnAppOpen)
-<<<<<<< HEAD
-=======
             .putBoolean(PREF_START_ON_AMAP, settings.startOnAmap)
->>>>>>> zipcopy/main
             .putBoolean(PREF_START_ON_BT_CONNECTED, settings.startOnBluetoothConnected)
             .putBoolean(PREF_START_ON_BT_CONNECTED_AND_SPEED, settings.startOnBluetoothConnectedAndSpeed)
             .putBoolean(PREF_STOP_ON_POWER_DISCONNECTED, settings.stopOnPowerDisconnected)

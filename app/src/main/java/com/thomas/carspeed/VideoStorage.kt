@@ -1,15 +1,10 @@
 package com.thomas.carspeed
 
-<<<<<<< HEAD
-import android.content.Context
-import android.content.ContentValues
-=======
 import android.content.ContentUris
 import android.content.Context
 import android.content.ContentValues
 import android.media.MediaScannerConnection
 import android.net.Uri
->>>>>>> zipcopy/main
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -20,12 +15,6 @@ import java.util.Locale
 
 object VideoStorage {
     private const val DIR_NAME = "CarSpeed"
-<<<<<<< HEAD
-    private const val TRIP_PREFIX = "carspeed-trip-"
-    const val MIN_FREE_BYTES = 1_000L * 1024L * 1024L
-    private val AUTO_VIDEO_NAME = Regex("carspeed-\\d{8}-\\d{6}")
-    private val AUTO_TRIP_NAME = Regex("carspeed-trip-\\d{8}-\\d{6}")
-=======
     private const val SHARE_DIR_NAME = "Share"
     private const val TRIP_PREFIX = "carspeed-trip-"
     private const val TRIP_FOLDER_PREFIX = "行车 "
@@ -33,7 +22,6 @@ object VideoStorage {
     private val AUTO_VIDEO_NAME = Regex("carspeed-\\d{8}-\\d{6}")
     private val VIDEO_STAMP = Regex("carspeed-(\\d{8})-(\\d{6})")
     private val consolidateLock = Any()
->>>>>>> zipcopy/main
 
     data class VideoTrip(
         val id: String,
@@ -66,10 +54,6 @@ object VideoStorage {
     }
 
     fun tripFolderNameFor(startTimeMs: Long): String {
-<<<<<<< HEAD
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(startTimeMs))
-        return "$TRIP_PREFIX$stamp"
-=======
         return SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(startTimeMs))
     }
 
@@ -127,7 +111,6 @@ object VideoStorage {
     fun galleryFileName(tripFolderName: String?, fileName: String): String {
         val token = galleryTripToken(fileName) ?: return fileName
         return fileName.removePrefix("${token}__").ifBlank { fileName }
->>>>>>> zipcopy/main
     }
 
     fun outputFile(
@@ -139,11 +122,6 @@ object VideoStorage {
         return File(dir, fileNameFor(startTimeMs))
     }
 
-<<<<<<< HEAD
-    fun videoDir(context: Context): File {
-        val baseDir = publicMediaDir(Environment.DIRECTORY_MOVIES) ?: context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir
-        return File(baseDir, DIR_NAME).apply { mkdirs() }
-=======
     fun privateOutputFile(
         context: Context,
         startTimeMs: Long = System.currentTimeMillis(),
@@ -159,22 +137,12 @@ object VideoStorage {
      */
     fun videoDir(context: Context): File {
         return sharedAlbumRoot(context)
->>>>>>> zipcopy/main
     }
 
     fun tripDir(context: Context, tripFolderName: String): File {
         return File(videoDir(context), sanitizeFolderName(tripFolderName)).apply { mkdirs() }
     }
 
-<<<<<<< HEAD
-    fun videoRelativePath(tripFolderName: String?): String {
-        return listOfNotNull(Environment.DIRECTORY_MOVIES, DIR_NAME, tripFolderName?.let { sanitizeFolderName(it) })
-            .joinToString("/") + "/"
-    }
-
-    fun photoOutputFile(context: Context, timeMs: Long = System.currentTimeMillis()): File {
-        return File(photoDir(context), photoFileNameFor(timeMs))
-=======
     fun photoOutputFile(
         context: Context,
         timeMs: Long = System.currentTimeMillis(),
@@ -182,7 +150,6 @@ object VideoStorage {
     ): File {
         val folder = canonicalTripFolderName(tripFolderName) ?: tripFolderNameFor(timeMs)
         return File(photoDir(context), "$folder/${photoFileNameFor(timeMs)}")
->>>>>>> zipcopy/main
     }
 
     fun tempPhotoFile(context: Context, timeMs: Long = System.currentTimeMillis()): File {
@@ -190,10 +157,6 @@ object VideoStorage {
         return File(dir, photoFileNameFor(timeMs))
     }
 
-<<<<<<< HEAD
-    fun publishPhotoToGallery(context: Context, sourceFile: File, fileName: String = sourceFile.name): File {
-        val targetFile = File(photoDir(context), fileName)
-=======
     fun publishPhotoToGallery(
         context: Context,
         sourceFile: File,
@@ -204,16 +167,11 @@ object VideoStorage {
             ?: canonicalTripFolderName(photoStampFolder(fileName))
             ?: tripFolderNameFor(sourceFile.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis())
         val targetFile = File(photoDir(context), "$folder/$fileName")
->>>>>>> zipcopy/main
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-<<<<<<< HEAD
-                put(MediaStore.Images.Media.RELATIVE_PATH, photoRelativePath())
-=======
                 put(MediaStore.Images.Media.RELATIVE_PATH, photoRelativePath(folder))
->>>>>>> zipcopy/main
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
             val resolver = context.contentResolver
@@ -237,10 +195,6 @@ object VideoStorage {
         return File(baseDir, DIR_NAME).apply { mkdirs() }
     }
 
-<<<<<<< HEAD
-    fun photoRelativePath(): String {
-        return "${Environment.DIRECTORY_PICTURES}/$DIR_NAME/"
-=======
     fun photoRelativePath(tripFolderName: String? = null): String {
         val folder = canonicalTripFolderName(tripFolderName)
         return if (folder.isNullOrBlank()) {
@@ -286,18 +240,11 @@ object VideoStorage {
         }
         targetFile.setLastModified(sourceFile.lastModified())
         return targetFile
->>>>>>> zipcopy/main
     }
 
     fun photoFiles(context: Context): List<File> {
         return photoDirs(context).flatMap { dir ->
-<<<<<<< HEAD
-            dir.listFiles()
-            ?.filter { isAppPhotoFile(it) }
-            .orEmpty()
-=======
             dir.walkTopDown().filter { isAppPhotoFile(it) }.toList()
->>>>>>> zipcopy/main
         }.distinctBy { it.absolutePath }
     }
 
@@ -314,17 +261,6 @@ object VideoStorage {
     }
 
     fun subtitleFileFor(videoFile: File): File {
-<<<<<<< HEAD
-        return File(videoFile.parentFile, videoFile.nameWithoutExtension + ".srt")
-    }
-
-    fun trackFileFor(videoFile: File): File {
-        return File(videoFile.parentFile, videoFile.nameWithoutExtension + ".track.json")
-    }
-
-    fun favoriteFileFor(videoFile: File): File {
-        return File(videoFile.parentFile, videoFile.nameWithoutExtension + ".favorite")
-=======
         return resolveCompanion(videoFile, ".srt")
     }
 
@@ -362,15 +298,12 @@ object VideoStorage {
 
     fun favoriteFilesFor(context: Context, videoFile: File): List<File> {
         return companionCandidates(context, videoFile, ".favorite")
->>>>>>> zipcopy/main
     }
 
     fun videoFiles(context: Context): List<File> {
         return videoDirs(context).flatMap { videoFiles(it) }.distinctBy { it.absolutePath }
     }
 
-<<<<<<< HEAD
-=======
     fun recordingDurationMs(file: File): Long {
         val match = VIDEO_STAMP.find(file.name) ?: return 0L
         val startMs = parseCompactDateTime(match.groupValues[1], match.groupValues[2]) ?: return 0L
@@ -379,7 +312,6 @@ object VideoStorage {
         return (endMs - startMs).coerceAtLeast(0L)
     }
 
->>>>>>> zipcopy/main
     fun latestVideoFile(context: Context): File? {
         return videoFiles(context).maxByOrNull { it.lastModified() }
     }
@@ -391,12 +323,6 @@ object VideoStorage {
                 val sorted = files.sortedWith(compareBy<File> { it.parentFile?.absolutePath.orEmpty() }.thenBy { it.name })
                 val first = sorted.first()
                 val parent = first.parentFile ?: videoDir(context)
-<<<<<<< HEAD
-                val isTripDir = parent.name.startsWith(TRIP_PREFIX)
-                VideoTrip(
-                    id = key,
-                    title = if (isTripDir) parent.name else first.nameWithoutExtension,
-=======
                 val isTripDir = isTripDirectoryName(parent.name)
                 val flatToken = galleryTripToken(first.name)?.takeIf { parent.name == DIR_NAME }
                 VideoTrip(
@@ -406,7 +332,6 @@ object VideoStorage {
                         flatToken != null -> flatToken
                         else -> first.nameWithoutExtension
                     },
->>>>>>> zipcopy/main
                     directory = if (isTripDir) parent else first.parentFile ?: videoDir(context),
                     segments = sorted
                 )
@@ -415,9 +340,6 @@ object VideoStorage {
 
     fun companionFilesFor(videoFile: File): List<File> {
         if (!isAppVideoFile(videoFile)) return emptyList()
-<<<<<<< HEAD
-        return listOf(videoFile, subtitleFileFor(videoFile), trackFileFor(videoFile), favoriteFileFor(videoFile))
-=======
         return listOf(videoFile, subtitleFileFor(videoFile), trackFileFor(videoFile), plateFileFor(videoFile), favoriteFileFor(videoFile))
             .filter { it.exists() && it.isFile }
     }
@@ -431,7 +353,6 @@ object VideoStorage {
                 favoriteFilesFor(context, videoFile)
             )
             .distinctBy { it.absolutePath }
->>>>>>> zipcopy/main
             .filter { it.exists() && it.isFile }
     }
 
@@ -439,8 +360,6 @@ object VideoStorage {
         return trip.segments.flatMap { companionFilesFor(it) }.distinctBy { it.absolutePath }
     }
 
-<<<<<<< HEAD
-=======
     fun companionFilesFor(context: Context, trip: VideoTrip): List<File> {
         return trip.segments.flatMap { companionFilesFor(context, it) }.distinctBy { it.absolutePath }
     }
@@ -470,15 +389,10 @@ object VideoStorage {
         }.toSet()
     }
 
->>>>>>> zipcopy/main
     fun isFavorite(videoFile: File): Boolean {
         return favoriteFileFor(videoFile).exists()
     }
 
-<<<<<<< HEAD
-    fun isFavorite(trip: VideoTrip): Boolean {
-        return trip.segments.any { isFavorite(it) } || favoriteFileForTrip(trip).exists()
-=======
     fun isFavorite(context: Context, videoFile: File): Boolean {
         return favoriteFilesFor(context, videoFile).any { it.exists() }
     }
@@ -491,7 +405,6 @@ object VideoStorage {
 
     fun isFavorite(context: Context, trip: VideoTrip): Boolean {
         return trip.segments.any { isFavorite(context, it) } || favoriteFilesForTrip(context, trip).any { it.exists() }
->>>>>>> zipcopy/main
     }
 
     fun setFavorite(videoFile: File, favorite: Boolean): Boolean {
@@ -505,8 +418,6 @@ object VideoStorage {
         }
     }
 
-<<<<<<< HEAD
-=======
     fun setFavorite(context: Context, videoFile: File, favorite: Boolean): Boolean {
         if (!isAppVideoFile(videoFile)) return false
         val marker = favoriteFileFor(context, videoFile)
@@ -519,7 +430,6 @@ object VideoStorage {
         }
     }
 
->>>>>>> zipcopy/main
     fun setFavorite(trip: VideoTrip, favorite: Boolean): Boolean {
         val marker = favoriteFileForTrip(trip)
         return if (favorite) {
@@ -532,8 +442,6 @@ object VideoStorage {
         }
     }
 
-<<<<<<< HEAD
-=======
     fun setFavorite(context: Context, trip: VideoTrip, favorite: Boolean): Boolean {
         val marker = favoriteFileForTrip(context, trip)
         return if (favorite) {
@@ -547,7 +455,6 @@ object VideoStorage {
         }
     }
 
->>>>>>> zipcopy/main
     fun renameVideoGroup(videoFile: File, requestedName: String): File? {
         if (!isAppVideoFile(videoFile)) return null
         val baseName = sanitizeVideoBaseName(requestedName).ifBlank { return null }
@@ -563,10 +470,7 @@ object VideoStorage {
         listOf(
             oldSubtitle to subtitleFileFor(targetVideo),
             oldTrack to trackFileFor(targetVideo),
-<<<<<<< HEAD
-=======
             plateFileFor(videoFile) to plateFileFor(targetVideo),
->>>>>>> zipcopy/main
             favoriteFileFor(videoFile) to favoriteFileFor(targetVideo)
         ).forEach { (from, to) ->
             if (from.exists() && !to.exists()) {
@@ -577,8 +481,6 @@ object VideoStorage {
         return targetVideo
     }
 
-<<<<<<< HEAD
-=======
     fun renameVideoGroup(context: Context, videoFile: File, requestedName: String): File? {
         if (!isAppVideoFile(videoFile)) return null
         val baseName = sanitizeVideoBaseName(requestedName).ifBlank { return null }
@@ -597,19 +499,10 @@ object VideoStorage {
         return targetVideo
     }
 
->>>>>>> zipcopy/main
     fun deleteVideoGroup(videoFile: File): Int {
         return companionFilesFor(videoFile).count { file -> file.delete() || !file.exists() }
     }
 
-<<<<<<< HEAD
-    fun deleteVideoTrip(trip: VideoTrip): Int {
-        val filesDeleted = companionFilesFor(trip).count { file -> file.delete() || !file.exists() }
-        val favoriteDeleted = favoriteFileForTrip(trip).takeIf { it.exists() }?.let { if (it.delete() || !it.exists()) 1 else 0 } ?: 0
-        if (trip.directory.name.startsWith(TRIP_PREFIX)) {
-            trip.directory.delete()
-        }
-=======
     fun deleteVideoGroup(context: Context, videoFile: File): Int {
         return companionFilesFor(context, videoFile).count { deleteIfExists(it) }
     }
@@ -634,7 +527,6 @@ object VideoStorage {
             privateMirrorDirFor(context, trip.directory).delete()
         }
         deleteLegacyTripDir(trip.id)
->>>>>>> zipcopy/main
         return filesDeleted + favoriteDeleted
     }
 
@@ -642,32 +534,16 @@ object VideoStorage {
         return videoFiles.distinctBy { it.absolutePath }.sumOf { deleteVideoGroup(it) }
     }
 
-<<<<<<< HEAD
-    fun deleteAllVideos(context: Context): Int {
-        return videoTrips(context).sumOf { deleteVideoTrip(it) }
-=======
     fun deleteVideoGroups(context: Context, videoFiles: List<File>): Int {
         return videoFiles.distinctBy { it.absolutePath }.sumOf { deleteVideoGroup(context, it) }
     }
 
     fun deleteAllVideos(context: Context): Int {
         return videoTrips(context).sumOf { deleteVideoTrip(context, it) }
->>>>>>> zipcopy/main
     }
 
     fun videoFiles(dir: File): List<File> {
         return dir.walkTopDown()
-<<<<<<< HEAD
-            .filter { isAppVideoFile(it) }
-            .toList()
-    }
-
-    private fun videoDirs(context: Context): List<File> {
-        return listOfNotNull(
-            videoDir(context),
-            legacyAppMediaDir(context, Environment.DIRECTORY_MOVIES)
-        ).distinctBy { it.absolutePath }.onEach { it.mkdirs() }
-=======
             .filter { isAppVideoFile(it) && !isShareExportFile(it) }
             .toList()
     }
@@ -706,7 +582,6 @@ object VideoStorage {
         }
         cachedVideoDirs = dirs
         return dirs
->>>>>>> zipcopy/main
     }
 
     private fun photoDirs(context: Context): List<File> {
@@ -716,8 +591,6 @@ object VideoStorage {
         ).distinctBy { it.absolutePath }.onEach { it.mkdirs() }
     }
 
-<<<<<<< HEAD
-=======
     /**
      * 应用自己的共享媒体目录。系统媒体库会扫描这里，应用也可以直接用文件路径读写。
      */
@@ -788,7 +661,6 @@ object VideoStorage {
         }.getOrNull()
     }
 
->>>>>>> zipcopy/main
     @Suppress("DEPRECATION")
     private fun publicMediaDir(type: String): File? {
         return Environment.getExternalStoragePublicDirectory(type)?.takeIf { parent ->
@@ -803,13 +675,9 @@ object VideoStorage {
 
     private fun tripGroupKey(video: File): String {
         val parent = video.parentFile
-<<<<<<< HEAD
-        return if (parent != null && parent.name.startsWith(TRIP_PREFIX)) {
-=======
         val flatToken = parent?.takeIf { it.name == DIR_NAME }?.let { galleryTripToken(video.name) }
         if (flatToken != null) return flatToken
         return if (parent != null && isTripDirectoryName(parent.name)) {
->>>>>>> zipcopy/main
             parent.absolutePath
         } else {
             video.absolutePath
@@ -817,14 +685,6 @@ object VideoStorage {
     }
 
     private fun favoriteFileForTrip(trip: VideoTrip): File {
-<<<<<<< HEAD
-        return File(trip.directory, ".favorite")
-    }
-
-    private fun cleanupGroupKey(file: File): String {
-        val parent = file.parentFile
-        return if (parent != null && AUTO_TRIP_NAME.matches(parent.name)) {
-=======
         return tripFavoriteMarker(trip.directory, trip.id)
     }
 
@@ -846,7 +706,6 @@ object VideoStorage {
         galleryTripToken(file.name)?.takeIf { file.parentFile?.name == DIR_NAME }?.let { return it }
         val parent = file.parentFile
         return if (parent != null && isTripDirectoryName(parent.name)) {
->>>>>>> zipcopy/main
             parent.absolutePath
         } else {
             File(file.parentFile, companionBaseName(file)).absolutePath
@@ -855,13 +714,6 @@ object VideoStorage {
 
     private fun isTripProtected(file: File): Boolean {
         val parent = file.parentFile ?: return false
-<<<<<<< HEAD
-        return File(parent, ".favorite").exists()
-    }
-
-    fun isAutoGeneratedVideoFile(file: File): Boolean {
-        return isAppVideoFile(file) && AUTO_VIDEO_NAME.matches(file.nameWithoutExtension)
-=======
         if (File(parent, ".favorite").exists()) return true
         val token = galleryTripToken(file.name) ?: return false
         if (File(parent, ".${sanitizeFolderName(token)}.favorite").exists()) return true
@@ -870,35 +722,23 @@ object VideoStorage {
 
     fun isAutoGeneratedVideoFile(file: File): Boolean {
         return isAppVideoFile(file) && AUTO_VIDEO_NAME.matches(gallerySegmentBase(file.nameWithoutExtension))
->>>>>>> zipcopy/main
     }
 
     fun cleanupLoopStorage(context: Context, limitGb: Int, requiredFreeBytes: Long = 0L): Boolean {
         val dir = videoDir(context)
-<<<<<<< HEAD
-=======
         val dirs = videoDirs(context)
->>>>>>> zipcopy/main
         val limitBytes = limitGb.coerceIn(
             DashcamSettings.MIN_LOOP_STORAGE_GB,
             DashcamSettings.MAX_LOOP_STORAGE_GB
         ) * 1024L * 1024L * 1024L
         val plan = planCleanup(
-<<<<<<< HEAD
-            files = managedVideoFiles(dir),
-=======
             files = dirs.flatMap { managedVideoFiles(context, it) }.distinctBy { it.absolutePath },
->>>>>>> zipcopy/main
             limitBytes = limitBytes,
             usableSpaceBytes = dir.usableSpace,
             requiredFreeBytes = requiredFreeBytes
         )
-<<<<<<< HEAD
-        plan.filesToDelete.forEach { it.delete() }
-=======
         plan.filesToDelete.filter { isAppVideoFile(it) }.forEach { deleteVideoGroup(context, it) }
         plan.filesToDelete.filterNot { isAppVideoFile(it) }.forEach { deleteIfExists(it) }
->>>>>>> zipcopy/main
 
         return dir.usableSpace >= requiredFreeTarget(requiredFreeBytes)
     }
@@ -958,32 +798,16 @@ object VideoStorage {
                 file.isFile &&
                     isAutoGeneratedCompanionFile(file) &&
                     (
-<<<<<<< HEAD
-                    file.extension.equals("mp4", ignoreCase = true) ||
-                        file.extension.equals("srt", ignoreCase = true) ||
-                        file.name.endsWith(".track.json", ignoreCase = true) ||
-=======
                         file.extension.equals("mp4", ignoreCase = true) ||
                         file.extension.equals("srt", ignoreCase = true) ||
                         file.name.endsWith(".track.json", ignoreCase = true) ||
                         file.name.endsWith(".plate.json", ignoreCase = true) ||
->>>>>>> zipcopy/main
                         file.name.endsWith(".favorite", ignoreCase = true)
                         )
             }
             .toList()
     }
 
-<<<<<<< HEAD
-    private fun companionBaseName(file: File): String {
-        return if (file.name.endsWith(".track.json", ignoreCase = true)) {
-            file.name.dropLast(".track.json".length)
-        } else {
-            file.nameWithoutExtension
-        }
-    }
-
-=======
     fun managedVideoFiles(context: Context, dir: File): List<File> {
         return dir.walkTopDown()
             .filter { file ->
@@ -1097,18 +921,14 @@ object VideoStorage {
         return file.delete() || !file.exists()
     }
 
->>>>>>> zipcopy/main
     private fun isAppVideoFile(file: File): Boolean {
         return file.isFile && file.extension.equals("mp4", ignoreCase = true)
     }
 
-<<<<<<< HEAD
-=======
     private fun isShareExportFile(file: File): Boolean {
         return file.parentFile?.name == SHARE_DIR_NAME
     }
 
->>>>>>> zipcopy/main
     private fun isAppPhotoFile(file: File): Boolean {
         return file.isFile && file.extension.equals("jpg", ignoreCase = true)
     }
@@ -1116,9 +936,6 @@ object VideoStorage {
     private fun isAutoGeneratedCompanionFile(file: File): Boolean {
         val baseName = companionBaseName(file)
         val favorite = File(file.parentFile, "$baseName.favorite")
-<<<<<<< HEAD
-        return AUTO_VIDEO_NAME.matches(baseName) && !favorite.exists() && !isTripProtected(file)
-=======
         return AUTO_VIDEO_NAME.matches(gallerySegmentBase(baseName)) && !favorite.exists() && !isTripProtected(file)
     }
 
@@ -1297,7 +1114,6 @@ object VideoStorage {
             source.copyTo(target, overwrite = false)
             source.delete()
         }
->>>>>>> zipcopy/main
     }
 
     private fun sanitizeVideoBaseName(name: String): String {

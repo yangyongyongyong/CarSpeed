@@ -7,15 +7,10 @@ import java.util.Locale
 
 data class DashcamTelemetry(
     val speedKmh: Float = 0f,
-<<<<<<< HEAD
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-=======
     val stationaryWaitMs: Long = 0L,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val satelliteCount: Int? = null,
->>>>>>> zipcopy/main
     val address: String? = null,
     val focusDistanceDiopters: Float? = null,
     val autofocusState: String? = null
@@ -44,12 +39,9 @@ object DashcamOverlayText {
         if (settings.showSpeed) {
             result += String.format(Locale.US, "%.1f km/h", telemetry.speedKmh)
         }
-<<<<<<< HEAD
-=======
         if (settings.showStationaryWait) {
             result += formatStationaryWait(telemetry.stationaryWaitMs)
         }
->>>>>>> zipcopy/main
         if (settings.showGps) {
             val lat = telemetry.latitude
             val lon = telemetry.longitude
@@ -59,10 +51,6 @@ object DashcamOverlayText {
                 "GPS --"
             }
         }
-<<<<<<< HEAD
-        if (settings.showAddress) {
-            result += telemetry.address ?: context.getString(R.string.watermark_address_pending)
-=======
         if (settings.showSatellites) {
             val count = telemetry.satelliteCount
             result += if (count != null) {
@@ -81,7 +69,6 @@ object DashcamOverlayText {
         }
         if (settings.showRoadLayer && !settings.showAddress) {
             RoadLayerEngine.subtitleLabel()?.let { result += it }
->>>>>>> zipcopy/main
         }
         if (settings.showFocus) {
             result += formatFocus(telemetry, context)
@@ -93,8 +80,6 @@ object DashcamOverlayText {
         return result
     }
 
-<<<<<<< HEAD
-=======
     fun formatStationaryWait(waitDurationMs: Long): String {
         val totalSec = (waitDurationMs / 1000).coerceAtLeast(0)
         val hours = totalSec / 3600
@@ -103,7 +88,6 @@ object DashcamOverlayText {
         return String.format(Locale.US, "静止等待：%02d:%02d:%02d", hours, minutes, seconds)
     }
 
->>>>>>> zipcopy/main
     private fun formatFocus(telemetry: DashcamTelemetry, context: Context): String {
         val focus = telemetry.focusDistanceDiopters
         val focusText = when {

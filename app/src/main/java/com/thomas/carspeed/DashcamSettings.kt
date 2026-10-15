@@ -5,14 +5,6 @@ import android.content.Context
 data class WatermarkSettings(
     val showTime: Boolean,
     val showSpeed: Boolean,
-<<<<<<< HEAD
-    val showGps: Boolean,
-    val showAddress: Boolean,
-    val showVideoMode: Boolean,
-    val showFocus: Boolean,
-    val recordAudio: Boolean,
-    val voicePhotoEnabled: Boolean,
-=======
     val showStationaryWait: Boolean,
     val showGps: Boolean,
     val showSatellites: Boolean,
@@ -25,7 +17,6 @@ data class WatermarkSettings(
     val recordAudio: Boolean,
     val voicePhotoEnabled: Boolean,
     val cueSoundsEnabled: Boolean,
->>>>>>> zipcopy/main
     val autoStartRecording: Boolean,
     val parkingStopEnabled: Boolean,
     val parkingStopMinutes: Int
@@ -34,14 +25,6 @@ data class WatermarkSettings(
 object DashcamSettings {
     const val PREF_WATERMARK_TIME = "dashcam_watermark_time"
     const val PREF_WATERMARK_SPEED = "dashcam_watermark_speed"
-<<<<<<< HEAD
-    const val PREF_WATERMARK_GPS = "dashcam_watermark_gps"
-    const val PREF_WATERMARK_ADDRESS = "dashcam_watermark_address"
-    const val PREF_WATERMARK_VIDEO_MODE = "dashcam_watermark_video_mode"
-    const val PREF_WATERMARK_FOCUS = "dashcam_watermark_focus"
-    const val PREF_RECORD_AUDIO = "dashcam_record_audio"
-    const val PREF_VOICE_PHOTO = "dashcam_voice_photo"
-=======
     const val PREF_WATERMARK_STATIONARY_WAIT = "dashcam_watermark_stationary_wait"
     const val PREF_WATERMARK_GPS = "dashcam_watermark_gps"
     const val PREF_WATERMARK_SATELLITES = "dashcam_watermark_satellites"
@@ -55,7 +38,6 @@ object DashcamSettings {
     const val PREF_VOICE_PHOTO = "dashcam_voice_photo"
     const val PREF_CUE_SOUNDS = "dashcam_cue_sounds"
     const val PREF_CUE_VOLUME_PERCENT = "dashcam_cue_volume_percent"
->>>>>>> zipcopy/main
     const val PREF_AUTO_START_RECORDING = "dashcam_auto_start_recording"
     const val PREF_VIDEO_QUALITY = "dashcam_video_quality"
     const val PREF_VIDEO_WIDTH = "dashcam_video_width"
@@ -78,12 +60,9 @@ object DashcamSettings {
     const val DEFAULT_SEGMENT_MINUTES = 5
     const val MIN_SEGMENT_MINUTES = 1
     const val MAX_SEGMENT_MINUTES = 10
-<<<<<<< HEAD
-=======
     const val DEFAULT_CUE_VOLUME_PERCENT = 100
     const val MIN_CUE_VOLUME_PERCENT = 0
     const val MAX_CUE_VOLUME_PERCENT = 100
->>>>>>> zipcopy/main
     const val DEFAULT_PARKING_STOP_MINUTES = 3
     const val MIN_PARKING_STOP_MINUTES = 1
     const val MAX_PARKING_STOP_MINUTES = 30
@@ -99,14 +78,6 @@ object DashcamSettings {
         return WatermarkSettings(
             showTime = prefs.getBoolean(PREF_WATERMARK_TIME, true),
             showSpeed = prefs.getBoolean(PREF_WATERMARK_SPEED, true),
-<<<<<<< HEAD
-            showGps = prefs.getBoolean(PREF_WATERMARK_GPS, true),
-            showAddress = prefs.getBoolean(PREF_WATERMARK_ADDRESS, false),
-            showVideoMode = prefs.getBoolean(PREF_WATERMARK_VIDEO_MODE, true),
-            showFocus = prefs.getBoolean(PREF_WATERMARK_FOCUS, false),
-            recordAudio = prefs.getBoolean(PREF_RECORD_AUDIO, false),
-            voicePhotoEnabled = prefs.getBoolean(PREF_VOICE_PHOTO, false),
-=======
             showStationaryWait = prefs.getBoolean(PREF_WATERMARK_STATIONARY_WAIT, true),
             showGps = prefs.getBoolean(PREF_WATERMARK_GPS, true),
             showSatellites = prefs.getBoolean(PREF_WATERMARK_SATELLITES, true),
@@ -119,7 +90,6 @@ object DashcamSettings {
             recordAudio = prefs.getBoolean(PREF_RECORD_AUDIO, false),
             voicePhotoEnabled = prefs.getBoolean(PREF_VOICE_PHOTO, false),
             cueSoundsEnabled = prefs.getBoolean(PREF_CUE_SOUNDS, true),
->>>>>>> zipcopy/main
             autoStartRecording = prefs.getBoolean(PREF_AUTO_START_RECORDING, false),
             parkingStopEnabled = prefs.getBoolean(PREF_PARKING_STOP_ENABLED, false),
             parkingStopMinutes = prefs.getInt(PREF_PARKING_STOP_MINUTES, DEFAULT_PARKING_STOP_MINUTES)
@@ -127,8 +97,6 @@ object DashcamSettings {
         )
     }
 
-<<<<<<< HEAD
-=======
     fun cueSoundsEnabled(context: Context): Boolean {
         return context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
             .getBoolean(PREF_CUE_SOUNDS, true)
@@ -140,7 +108,6 @@ object DashcamSettings {
             .coerceIn(MIN_CUE_VOLUME_PERCENT, MAX_CUE_VOLUME_PERCENT)
     }
 
->>>>>>> zipcopy/main
     fun segmentDurationMs(context: Context): Long {
         val prefs = context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
         val minutes = prefs.getInt(PREF_SEGMENT_MINUTES, DEFAULT_SEGMENT_MINUTES)

@@ -6,29 +6,18 @@
     android:layout_height="match_parent"
     android:background="@color/brand_sand"
     android:orientation="vertical"
-<<<<<<< HEAD
-    android:paddingStart="16dp"
-    android:paddingTop="18dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="16dp">
-=======
     android:paddingStart="0dp"
     android:paddingTop="0dp"
     android:paddingEnd="0dp"
     android:paddingBottom="0dp">
->>>>>>> zipcopy/main
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:backgroundTint="@android:color/transparent"
-<<<<<<< HEAD
-        app:navigationIcon="@android:drawable/ic_menu_revert"
-=======
         android:visibility="gone"
         app:navigationIcon="@drawable/ic_nav_back"
->>>>>>> zipcopy/main
         app:title="@string/video_replay_title"
         app:titleTextColor="@color/text_primary" />
 
@@ -37,43 +26,16 @@
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-<<<<<<< HEAD
-        android:layout_marginTop="12dp"
-        android:layout_weight="1.1">
-=======
         android:layout_marginTop="0dp"
         android:layout_weight="1.08"
         android:clipChildren="false"
         android:clipToPadding="false"
         app:cardCornerRadius="0dp">
->>>>>>> zipcopy/main
 
         <FrameLayout
             android:id="@+id/videoFrame"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-<<<<<<< HEAD
-            android:background="@android:color/black">
-
-            <TextureView
-                android:id="@+id/videoTextureView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
-
-            <TextView
-                android:id="@+id/tvSubtitleOverlay"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
-                android:layout_margin="12dp"
-                android:background="@drawable/overlay_chip_dark_bg"
-                android:lineSpacingExtra="3dp"
-                android:layout_marginBottom="64dp"
-                android:padding="10dp"
-                android:textColor="@android:color/white"
-                android:textSize="12sp"
-                android:visibility="gone" />
-=======
             android:background="@android:color/black"
             android:clipChildren="false"
             android:clipToPadding="false">
@@ -113,7 +75,6 @@
                     android:textSize="12sp"
                     android:visibility="gone" />
             </FrameLayout>
->>>>>>> zipcopy/main
 
             <LinearLayout
                 android:id="@+id/layoutReplayControls"
@@ -138,8 +99,6 @@
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
-<<<<<<< HEAD
-=======
                 <TextView
                     android:id="@+id/tvReplaySpeed"
                     android:layout_width="48dp"
@@ -150,7 +109,6 @@
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
->>>>>>> zipcopy/main
                 <SeekBar
                     android:id="@+id/seekReplayProgress"
                     android:layout_width="0dp"
@@ -175,11 +133,6 @@
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
-<<<<<<< HEAD
-        </FrameLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-=======
 
             <TextView
                 android:id="@+id/tvReplayRotate"
@@ -211,57 +164,28 @@
             android:background="@drawable/video_map_divider_handle_bg" />
     </FrameLayout>
 
->>>>>>> zipcopy/main
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/infoCard"
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-<<<<<<< HEAD
-        android:layout_marginTop="12dp"
-        android:layout_weight="1">
-=======
         android:layout_marginTop="0dp"
         android:layout_weight="1.42"
         app:cardCornerRadius="0dp">
->>>>>>> zipcopy/main
 
         <LinearLayout
             android:id="@+id/infoContent"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-<<<<<<< HEAD
-            android:padding="14dp">
-
-            <TextView
-                android:id="@+id/tvReplayTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-            <TextView
-                android:id="@+id/tvReplayStats"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
-=======
             android:padding="0dp">
->>>>>>> zipcopy/main
 
             <FrameLayout
                 android:id="@+id/mapFrame"
                 android:layout_width="match_parent"
-<<<<<<< HEAD
-                android:layout_height="0dp"
-                android:layout_marginTop="12dp"
-                android:layout_weight="1">
-=======
                 android:layout_height="match_parent"
                 android:clipChildren="false"
                 android:clipToPadding="false">
->>>>>>> zipcopy/main
 
                 <com.thomas.carspeed.MapRouteView
                     android:id="@+id/mapRouteView"
@@ -292,8 +216,6 @@
                         android:textSize="13sp"
                         android:textStyle="bold" />
 
-<<<<<<< HEAD
-=======
                     <TextView
                         android:id="@+id/tvMapReplaySpeed"
                         android:layout_width="48dp"
@@ -304,7 +226,6 @@
                         android:textSize="13sp"
                         android:textStyle="bold" />
 
->>>>>>> zipcopy/main
                     <SeekBar
                         android:id="@+id/seekMapReplayProgress"
                         android:layout_width="0dp"
@@ -319,18 +240,6 @@
                         android:textColor="@android:color/white"
                         android:textSize="11sp" />
                 </LinearLayout>
-<<<<<<< HEAD
-            </FrameLayout>
-
-            <TextView
-                android:id="@+id/tvReplayPosition"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:fontFamily="monospace"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp" />
-=======
 
                 <LinearLayout
                     android:id="@+id/layoutMapBottomOverlay"
@@ -546,7 +455,6 @@
                         android:textSize="10sp" />
                 </LinearLayout>
             </FrameLayout>
->>>>>>> zipcopy/main
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

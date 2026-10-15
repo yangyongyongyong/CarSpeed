@@ -1,14 +1,5 @@
 package com.thomas.carspeed
 
-<<<<<<< HEAD
-import android.graphics.SurfaceTexture
-import android.media.MediaMetadataRetriever
-import android.media.MediaPlayer
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.Gravity
-=======
 import android.content.Intent
 import android.graphics.SurfaceTexture
 import android.media.MediaMetadataRetriever
@@ -20,7 +11,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
->>>>>>> zipcopy/main
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
@@ -28,17 +18,11 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-<<<<<<< HEAD
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.appbar.MaterialToolbar
-=======
 import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
->>>>>>> zipcopy/main
 import com.google.android.material.card.MaterialCardView
 import java.io.File
 import java.text.SimpleDateFormat
@@ -52,28 +36,18 @@ class VideoReplayActivity : AppCompatActivity() {
     private lateinit var infoCard: MaterialCardView
     private lateinit var infoContent: LinearLayout
     private lateinit var videoFrame: FrameLayout
-<<<<<<< HEAD
-    private lateinit var videoTextureView: TextureView
-    private lateinit var mapFrame: FrameLayout
-    private lateinit var mapRouteView: MapRouteView
-=======
     private lateinit var videoStage: FrameLayout
     private lateinit var videoTextureView: TextureView
     private lateinit var plateOverlayView: PlateOverlayView
     private lateinit var mapFrame: FrameLayout
     private lateinit var mapRouteView: MapRouteView
     private lateinit var videoMapDivider: View
->>>>>>> zipcopy/main
     private lateinit var tvReplayTitle: TextView
     private lateinit var tvReplayStats: TextView
     private lateinit var tvReplayPosition: TextView
     private lateinit var tvSubtitleOverlay: TextView
     private lateinit var layoutReplayControls: LinearLayout
     private lateinit var layoutMapReplayControls: LinearLayout
-<<<<<<< HEAD
-    private lateinit var tvReplayPlayPause: TextView
-    private lateinit var tvMapReplayPlayPause: TextView
-=======
     private lateinit var layoutMapBottomOverlay: LinearLayout
     private lateinit var layoutMapActionControls: LinearLayout
     private lateinit var layoutMapScaleControls: LinearLayout
@@ -81,14 +55,11 @@ class VideoReplayActivity : AppCompatActivity() {
     private lateinit var tvMapReplayPlayPause: TextView
     private lateinit var tvReplaySpeed: TextView
     private lateinit var tvMapReplaySpeed: TextView
->>>>>>> zipcopy/main
     private lateinit var seekReplayProgress: SeekBar
     private lateinit var seekMapReplayProgress: SeekBar
     private lateinit var tvReplayTime: TextView
     private lateinit var tvMapReplayTime: TextView
     private lateinit var tvReplayFullscreen: TextView
-<<<<<<< HEAD
-=======
     private lateinit var tvReplayRotate: TextView
     private lateinit var tvMapScale: TextView
     private lateinit var btnMapViewportAll: MaterialButton
@@ -97,7 +68,6 @@ class VideoReplayActivity : AppCompatActivity() {
     private lateinit var btnOfflineMap: MaterialButton
     private lateinit var btnMapScaleOut: MaterialButton
     private lateinit var btnMapScaleIn: MaterialButton
->>>>>>> zipcopy/main
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var videoFile: File? = null
@@ -105,30 +75,16 @@ class VideoReplayActivity : AppCompatActivity() {
     private var segmentDurationsMs: List<Long> = emptyList()
     private var segmentOffsetsMs: List<Long> = emptyList()
     private var currentSegmentIndex = 0
-<<<<<<< HEAD
-    private var track: VideoTrack? = null
-    private var trackSummary: TrackSummary? = null
-    private var subtitleCues: List<SrtCue> = emptyList()
-=======
     private var pendingSeekGlobalMs: Long? = null
     private var track: VideoTrack? = null
     private var trackSummary: TrackSummary? = null
     private var subtitleCues: List<SrtCue> = emptyList()
     private var plateSamples: List<PlateRecognitionSample> = emptyList()
->>>>>>> zipcopy/main
     private var mediaPlayer: MediaPlayer? = null
     private var videoSurface: Surface? = null
     private var playerPrepared = false
     private var controlsVisible = true
     private var fullscreen = false
-<<<<<<< HEAD
-    private var mapFullscreen = false
-    private var userSeeking = false
-    private var normalVideoRadius = 0f
-    private var normalInfoRadius = 0f
-    private var normalVideoSlotWidth = 0
-    private var normalVideoSlotHeight = 0
-=======
     private var videoRotationDegrees = 0
     private var flatVideoMapRatio: Float? = null
     private var mapFullscreen = false
@@ -147,7 +103,6 @@ class VideoReplayActivity : AppCompatActivity() {
     private var lastVideoHeight = 0
     private var playbackSpeedIndex = 0
     private var radarLookup: HistoricalRadarLookup? = null
->>>>>>> zipcopy/main
 
     private val syncTicker = object : Runnable {
         override fun run() {
@@ -169,28 +124,18 @@ class VideoReplayActivity : AppCompatActivity() {
         infoCard = findViewById(R.id.infoCard)
         infoContent = findViewById(R.id.infoContent)
         videoFrame = findViewById(R.id.videoFrame)
-<<<<<<< HEAD
-        videoTextureView = findViewById(R.id.videoTextureView)
-        mapFrame = findViewById(R.id.mapFrame)
-        mapRouteView = findViewById(R.id.mapRouteView)
-=======
         videoStage = findViewById(R.id.videoStage)
         videoTextureView = findViewById(R.id.videoTextureView)
         plateOverlayView = findViewById(R.id.replayPlateOverlayView)
         mapFrame = findViewById(R.id.mapFrame)
         mapRouteView = findViewById(R.id.mapRouteView)
         videoMapDivider = findViewById(R.id.videoMapDivider)
->>>>>>> zipcopy/main
         tvReplayTitle = findViewById(R.id.tvReplayTitle)
         tvReplayStats = findViewById(R.id.tvReplayStats)
         tvReplayPosition = findViewById(R.id.tvReplayPosition)
         tvSubtitleOverlay = findViewById(R.id.tvSubtitleOverlay)
         layoutReplayControls = findViewById(R.id.layoutReplayControls)
         layoutMapReplayControls = findViewById(R.id.layoutMapReplayControls)
-<<<<<<< HEAD
-        tvReplayPlayPause = findViewById(R.id.tvReplayPlayPause)
-        tvMapReplayPlayPause = findViewById(R.id.tvMapReplayPlayPause)
-=======
         layoutMapBottomOverlay = findViewById(R.id.layoutMapBottomOverlay)
         layoutMapActionControls = findViewById(R.id.layoutMapActionControls)
         layoutMapScaleControls = findViewById(R.id.layoutMapScaleControls)
@@ -198,16 +143,11 @@ class VideoReplayActivity : AppCompatActivity() {
         tvMapReplayPlayPause = findViewById(R.id.tvMapReplayPlayPause)
         tvReplaySpeed = findViewById(R.id.tvReplaySpeed)
         tvMapReplaySpeed = findViewById(R.id.tvMapReplaySpeed)
->>>>>>> zipcopy/main
         seekReplayProgress = findViewById(R.id.seekReplayProgress)
         seekMapReplayProgress = findViewById(R.id.seekMapReplayProgress)
         tvReplayTime = findViewById(R.id.tvReplayTime)
         tvMapReplayTime = findViewById(R.id.tvMapReplayTime)
         tvReplayFullscreen = findViewById(R.id.tvReplayFullscreen)
-<<<<<<< HEAD
-        normalVideoRadius = videoCard.radius
-        normalInfoRadius = infoCard.radius
-=======
         tvReplayRotate = findViewById(R.id.tvReplayRotate)
         tvMapScale = findViewById(R.id.tvMapScale)
         btnMapViewportAll = findViewById(R.id.btnMapViewportAll)
@@ -227,17 +167,10 @@ class VideoReplayActivity : AppCompatActivity() {
         videoMapRatio = loadVideoMapRatio()
         applyVideoMapRatio(videoMapRatio)
         applyPlaybackSystemUi()
->>>>>>> zipcopy/main
 
         toolbar.setNavigationOnClickListener { finish() }
         tvReplayPlayPause.setOnClickListener { togglePlayPause() }
         tvMapReplayPlayPause.setOnClickListener { togglePlayPause() }
-<<<<<<< HEAD
-        tvReplayFullscreen.setOnClickListener { setFullscreen(!fullscreen) }
-        mapRouteView.onMapTap = { if (!mapFullscreen) setMapFullscreen(true) }
-        setupSeekBar(seekReplayProgress)
-        setupSeekBar(seekMapReplayProgress)
-=======
         tvReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvMapReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvReplayFullscreen.setOnClickListener { setFullscreen(!fullscreen) }
@@ -268,7 +201,6 @@ class VideoReplayActivity : AppCompatActivity() {
             setupTrackOnlyReplay()
             return
         }
->>>>>>> zipcopy/main
         val files = intent.getStringArrayListExtra(EXTRA_VIDEO_PATHS)
             ?.map { File(it) }
             ?.filter { it.exists() }
@@ -283,16 +215,10 @@ class VideoReplayActivity : AppCompatActivity() {
         videoFile = files.first()
         segmentDurationsMs = files.map { segmentDurationMs(it) }
         segmentOffsetsMs = segmentDurationsMs.runningFold(0L) { total, duration -> total + duration }.dropLast(1)
-<<<<<<< HEAD
-        track = VideoTrackStorage.readMergedTrack(files)
-        trackSummary = track?.let { TrackMetrics.summary(it.points) }
-        subtitleCues = readSubtitleCues(files)
-=======
         track = VideoTrackStorage.readMergedTrack(this, files, segmentOffsetsMs, segmentDurationsMs)
         trackSummary = track?.let { TrackMetrics.summary(it.points) }
         subtitleCues = SrtSubtitle.readCues(files, segmentOffsetsMs, segmentDurationsMs)
         plateSamples = PlateRecognitionStorage.readSamples(this, files, segmentOffsetsMs, segmentDurationsMs)
->>>>>>> zipcopy/main
         setupVideo(files)
         renderStaticInfo(files)
     }
@@ -310,11 +236,8 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-<<<<<<< HEAD
-=======
         radarLookup?.cancel()
         radarLookup = null
->>>>>>> zipcopy/main
         mainHandler.removeCallbacks(syncTicker)
         mainHandler.removeCallbacks(hideControlsRunnable)
         releasePlayer()
@@ -356,8 +279,6 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
-<<<<<<< HEAD
-=======
     private fun setupTrackOnlyReplay() {
         val startMs = intent.getLongExtra(EXTRA_TRACK_START_MS, 0L)
         val endMs = intent.getLongExtra(EXTRA_TRACK_END_MS, 0L)
@@ -406,7 +327,6 @@ class VideoReplayActivity : AppCompatActivity() {
         updateControls()
     }
 
->>>>>>> zipcopy/main
     private fun prepareSegment(files: List<File>, index: Int, surface: Surface, seekMs: Long, autoStart: Boolean = true) {
         releasePlayer(releaseSurface = false)
         videoSurface = surface
@@ -419,27 +339,20 @@ class VideoReplayActivity : AppCompatActivity() {
             setOnPreparedListener { player ->
                 playerPrepared = true
                 updateVideoLayout(player.videoWidth, player.videoHeight)
-<<<<<<< HEAD
-                if (seekMs > 0L) player.seekTo(seekMs.coerceAtMost(player.duration.toLong()).toInt())
-=======
                 if (seekMs > 0L) {
                     pendingSeekGlobalMs = segmentOffsetsMs.getOrElse(currentSegmentIndex) { 0L } + seekMs
                     player.seekTo(seekMs.coerceAtMost(player.duration.toLong()).toInt())
                 }
                 applyPlaybackSpeed(player)
->>>>>>> zipcopy/main
                 syncRouteToVideo()
                 if (autoStart) player.start()
                 showControls()
             }
-<<<<<<< HEAD
-=======
             setOnSeekCompleteListener {
                 pendingSeekGlobalMs = null
                 syncRouteToVideo()
                 updateControls()
             }
->>>>>>> zipcopy/main
             setOnVideoSizeChangedListener { _, width, height ->
                 updateVideoLayout(width, height)
             }
@@ -468,8 +381,6 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
-<<<<<<< HEAD
-=======
     private fun switchPlaybackSpeed() {
         if (trackOnly) {
             trackReplayBaseMs = currentVideoPositionMs()
@@ -512,7 +423,6 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
->>>>>>> zipcopy/main
     private fun setupSeekBar(target: SeekBar) {
         target.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) = Unit
@@ -532,8 +442,6 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     private fun togglePlayPause() {
-<<<<<<< HEAD
-=======
         if (trackOnly) {
             val current = currentVideoPositionMs()
             trackReplayBaseMs = current
@@ -542,7 +450,6 @@ class VideoReplayActivity : AppCompatActivity() {
             updateControls()
             return
         }
->>>>>>> zipcopy/main
         if (!playerPrepared) return
         val player = mediaPlayer ?: return
         if (player.isPlaying) {
@@ -556,11 +463,7 @@ class VideoReplayActivity : AppCompatActivity() {
 
     private fun showControls() {
         controlsVisible = true
-<<<<<<< HEAD
-        layoutReplayControls.visibility = View.VISIBLE
-=======
         if (!trackOnly) layoutReplayControls.visibility = View.VISIBLE
->>>>>>> zipcopy/main
         mainHandler.removeCallbacks(hideControlsRunnable)
         mainHandler.postDelayed(hideControlsRunnable, CONTROLS_AUTO_HIDE_MS)
     }
@@ -583,22 +486,6 @@ class VideoReplayActivity : AppCompatActivity() {
         tvReplayTime.text = "${formatShortDuration(current.toLong())}/${formatShortDuration(duration)}"
         tvMapReplayTime.text = tvReplayTime.text
         tvReplayPlayPause.text = if (playerPrepared && mediaPlayer?.isPlaying == true) "暂停" else "播放"
-<<<<<<< HEAD
-        tvMapReplayPlayPause.text = tvReplayPlayPause.text
-        tvReplayFullscreen.text = if (fullscreen) "退出" else "全屏"
-    }
-
-    private fun setFullscreen(enabled: Boolean) {
-        if (enabled && mapFullscreen) setMapFullscreen(false)
-        fullscreen = enabled
-        toolbar.visibility = if (enabled) View.GONE else View.VISIBLE
-        infoCard.visibility = if (enabled) View.GONE else View.VISIBLE
-        replayRoot.setPadding(
-            if (enabled) 0 else dp(16),
-            if (enabled) 0 else dp(18),
-            if (enabled) 0 else dp(16),
-            if (enabled) 0 else dp(16)
-=======
         if (trackOnly) tvReplayPlayPause.text = if (trackReplayPlaying) "暂停" else "播放"
         tvMapReplayPlayPause.text = tvReplayPlayPause.text
         tvReplaySpeed.text = playbackSpeedLabel()
@@ -624,31 +511,11 @@ class VideoReplayActivity : AppCompatActivity() {
             0,
             0,
             0
->>>>>>> zipcopy/main
         )
         replayRoot.setBackgroundColor(
             if (enabled) android.graphics.Color.BLACK else androidx.core.content.ContextCompat.getColor(this, R.color.brand_sand)
         )
         videoCard.radius = if (enabled) 0f else normalVideoRadius
-<<<<<<< HEAD
-        videoCard.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            if (enabled) 1f else 1.1f
-        ).apply {
-            topMargin = if (enabled) 0 else dp(12)
-        }
-        window.decorView.systemUiVisibility = if (enabled) {
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        } else {
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        }
-=======
         if (enabled) {
             videoCard.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -659,7 +526,6 @@ class VideoReplayActivity : AppCompatActivity() {
             applyVideoMapRatio(videoMapRatio)
         }
         applyPlaybackSystemUi()
->>>>>>> zipcopy/main
         mediaPlayer?.let { player -> videoFrame.post { updateVideoLayout(player.videoWidth, player.videoHeight) } }
         showControls()
         updateControls()
@@ -668,11 +534,6 @@ class VideoReplayActivity : AppCompatActivity() {
     private fun setMapFullscreen(enabled: Boolean) {
         if (fullscreen) return
         mapFullscreen = enabled
-<<<<<<< HEAD
-        toolbar.visibility = if (enabled) View.GONE else View.VISIBLE
-        videoCard.visibility = if (enabled) View.GONE else View.VISIBLE
-        layoutMapReplayControls.visibility = if (enabled) View.VISIBLE else View.GONE
-=======
         toolbar.visibility = View.GONE
         videoCard.visibility = if (enabled) View.GONE else View.VISIBLE
         videoMapDivider.visibility = if (enabled || trackOnly) View.GONE else View.VISIBLE
@@ -681,54 +542,20 @@ class VideoReplayActivity : AppCompatActivity() {
         layoutMapBottomOverlay.visibility = if (enabled) View.GONE else View.VISIBLE
         layoutMapActionControls.visibility = if (enabled) View.GONE else View.VISIBLE
         layoutMapScaleControls.visibility = if (enabled) View.GONE else View.VISIBLE
->>>>>>> zipcopy/main
         tvReplayTitle.visibility = if (enabled) View.GONE else View.VISIBLE
         tvReplayStats.visibility = if (enabled) View.GONE else View.VISIBLE
         tvReplayPosition.visibility = if (enabled) View.GONE else View.VISIBLE
         replayRoot.setPadding(
-<<<<<<< HEAD
-            if (enabled) 0 else dp(16),
-            if (enabled) 0 else dp(18),
-            if (enabled) 0 else dp(16),
-            if (enabled) 0 else dp(16)
-=======
             0,
             0,
             0,
             0
->>>>>>> zipcopy/main
         )
         replayRoot.setBackgroundColor(
             if (enabled) android.graphics.Color.BLACK else androidx.core.content.ContextCompat.getColor(this, R.color.brand_sand)
         )
         infoCard.radius = if (enabled) 0f else normalInfoRadius
         infoContent.setPadding(
-<<<<<<< HEAD
-            if (enabled) 0 else dp(14),
-            if (enabled) 0 else dp(14),
-            if (enabled) 0 else dp(14),
-            if (enabled) 0 else dp(14)
-        )
-        infoCard.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            if (enabled) 1f else 1f
-        ).apply { topMargin = if (enabled) 0 else dp(12) }
-        window.decorView.systemUiVisibility = if (enabled) {
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        } else {
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        }
-    }
-
-    private fun renderStaticInfo(files: List<File>) {
-        val title = files.firstOrNull()?.parentFile?.takeIf { files.size > 1 }?.name ?: files.first().name
-=======
             0,
             0,
             0,
@@ -760,7 +587,6 @@ class VideoReplayActivity : AppCompatActivity() {
         val title = VideoStorage.tripListTitle(startMs, durationMs)
             ?: files.firstOrNull()?.parentFile?.takeIf { files.size > 1 }?.name
             ?: files.first().name
->>>>>>> zipcopy/main
         tvReplayTitle.text = getString(R.string.video_replay_file_title, title)
         val points = track?.points.orEmpty()
         tvReplayStats.text = if (points.isEmpty()) {
@@ -776,9 +602,6 @@ class VideoReplayActivity : AppCompatActivity() {
                 summary.averageSpeedKmh
             )
         }
-<<<<<<< HEAD
-        mapRouteView.setRoute(points, 0L)
-=======
         publishRoute(points, 0L)
         requestHistoricalRadars(points)
     }
@@ -884,7 +707,6 @@ class VideoReplayActivity : AppCompatActivity() {
             return
         }
         startActivity(Intent(this, PhotoPreviewActivity::class.java).putExtra(PhotoPreviewActivity.EXTRA_PATH, file.absolutePath))
->>>>>>> zipcopy/main
     }
 
     private fun syncRouteToVideo() {
@@ -892,10 +714,7 @@ class VideoReplayActivity : AppCompatActivity() {
         val elapsedMs = currentVideoPositionMs()
         mapRouteView.setRoute(points, elapsedMs)
         syncSubtitle(elapsedMs)
-<<<<<<< HEAD
-=======
         syncPlateOverlay(elapsedMs)
->>>>>>> zipcopy/main
         val point = VideoTrackSync.pointAt(points, elapsedMs)
         tvReplayPosition.text = if (point == null) {
             getString(R.string.video_replay_position_empty)
@@ -916,11 +735,7 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     private fun syncSubtitle(elapsedMs: Long) {
-<<<<<<< HEAD
-        val cue = subtitleCues.firstOrNull { elapsedMs in it.startMs until it.endMs }
-=======
         val cue = SrtSubtitle.cueAt(subtitleCues, elapsedMs, SUBTITLE_GAP_HOLD_MS)
->>>>>>> zipcopy/main
         if (cue == null) {
             tvSubtitleOverlay.visibility = View.GONE
         } else {
@@ -929,9 +744,6 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
-<<<<<<< HEAD
-    private fun currentVideoPositionMs(): Long {
-=======
     private fun syncPlateOverlay(elapsedMs: Long) {
         val sample = plateSamples.lastOrNull { sample ->
             sample.elapsedMs <= elapsedMs && elapsedMs - sample.elapsedMs <= PLATE_REPLAY_HOLD_MS
@@ -963,7 +775,6 @@ class VideoReplayActivity : AppCompatActivity() {
             return current
         }
         pendingSeekGlobalMs?.let { return it }
->>>>>>> zipcopy/main
         if (!playerPrepared) return 0L
         return try {
             segmentOffsetsMs.getOrElse(currentSegmentIndex) { 0L } +
@@ -980,8 +791,6 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     private fun seekToGlobal(positionMs: Long) {
-<<<<<<< HEAD
-=======
         if (trackOnly) {
             trackReplayBaseMs = positionMs.coerceIn(0L, totalDurationMs().coerceAtLeast(0L))
             trackReplayStartElapsedMs = SystemClock.elapsedRealtime()
@@ -989,22 +798,11 @@ class VideoReplayActivity : AppCompatActivity() {
             updateControls()
             return
         }
->>>>>>> zipcopy/main
         val files = videoFiles
         if (files.isEmpty()) return
         val clamped = positionMs.coerceIn(0L, totalDurationMs().coerceAtLeast(0L))
         val index = segmentIndexFor(clamped)
         val localMs = (clamped - segmentOffsetsMs.getOrElse(index) { 0L }).coerceAtLeast(0L)
-<<<<<<< HEAD
-        if (index == currentSegmentIndex && playerPrepared) {
-            mediaPlayer?.seekTo(localMs.toInt())
-            syncRouteToVideo()
-        } else {
-            videoSurface?.let { prepareSegment(files, index, it, localMs) }
-        }
-    }
-
-=======
         pendingSeekGlobalMs = clamped
         if (index == currentSegmentIndex && playerPrepared) {
             mediaPlayer?.seekTo(localMs.toInt())
@@ -1091,7 +889,6 @@ class VideoReplayActivity : AppCompatActivity() {
             .apply()
     }
 
->>>>>>> zipcopy/main
     private fun segmentIndexFor(positionMs: Long): Int {
         if (segmentOffsetsMs.isEmpty()) return 0
         return segmentOffsetsMs.indexOfLast { it <= positionMs }.coerceIn(0, videoFiles.lastIndex)
@@ -1105,32 +902,6 @@ class VideoReplayActivity : AppCompatActivity() {
             retriever.release()
             duration.coerceAtLeast(0L)
         } catch (_: RuntimeException) {
-<<<<<<< HEAD
-            VideoTrackStorage.readTrack(file)?.points?.maxOfOrNull { it.elapsedMs } ?: 0L
-        }
-    }
-
-    private fun updateVideoLayout(videoWidth: Int, videoHeight: Int) {
-        if (videoWidth <= 0 || videoHeight <= 0) return
-        if (!fullscreen) {
-            updateNormalVideoCardLayout(videoWidth, videoHeight)
-            return
-        }
-        if (videoFrame.width <= 0 || videoFrame.height <= 0) {
-            videoFrame.post { updateVideoLayout(videoWidth, videoHeight) }
-            return
-        }
-        val frameWidth = videoFrame.width.toFloat()
-        val frameHeight = videoFrame.height.toFloat()
-        val displayWidth = videoWidth.toFloat()
-        val displayHeight = videoHeight.toFloat()
-        val scale = minOf(frameWidth / displayWidth, frameHeight / displayHeight)
-        val targetWidth = (displayWidth * scale).toInt().coerceAtLeast(1)
-        val targetHeight = (displayHeight * scale).toInt().coerceAtLeast(1)
-        val params = FrameLayout.LayoutParams(targetWidth, targetHeight, Gravity.CENTER)
-        if (videoTextureView.layoutParams?.width != targetWidth || videoTextureView.layoutParams?.height != targetHeight) {
-            videoTextureView.layoutParams = params
-=======
             VideoTrackStorage.readTrack(this, file)?.points?.maxOfOrNull { it.elapsedMs } ?: 0L
         }
     }
@@ -1194,47 +965,10 @@ class VideoReplayActivity : AppCompatActivity() {
         if (subtitleParams.bottomMargin != bottomMargin) {
             subtitleParams.bottomMargin = bottomMargin
             tvSubtitleOverlay.layoutParams = subtitleParams
->>>>>>> zipcopy/main
         }
         videoTextureView.setTransform(null)
     }
 
-<<<<<<< HEAD
-    private fun updateNormalVideoCardLayout(videoWidth: Int, videoHeight: Int) {
-        if (videoCard.width <= 0 || videoCard.height <= 0) {
-            videoCard.post { updateVideoLayout(videoWidth, videoHeight) }
-            return
-        }
-        val params = videoCard.layoutParams as? LinearLayout.LayoutParams
-        if (normalVideoSlotWidth <= 0 || normalVideoSlotHeight <= 0 || (params?.weight ?: 0f) > 0f) {
-            normalVideoSlotWidth = videoCard.width
-            normalVideoSlotHeight = videoCard.height
-        }
-        val slotWidth = normalVideoSlotWidth.coerceAtLeast(1)
-        val slotHeight = normalVideoSlotHeight.coerceAtLeast(1)
-        val scale = minOf(slotWidth.toFloat() / videoWidth.toFloat(), slotHeight.toFloat() / videoHeight.toFloat())
-        val targetWidth = (videoWidth * scale).toInt().coerceAtLeast(1)
-        val targetHeight = (videoHeight * scale).toInt().coerceAtLeast(1)
-        val targetParams = LinearLayout.LayoutParams(targetWidth, targetHeight).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = dp(12)
-        }
-        val currentParams = videoCard.layoutParams as? LinearLayout.LayoutParams
-        if (currentParams?.width != targetWidth || currentParams.height != targetHeight || currentParams.weight != 0f) {
-            videoCard.layoutParams = targetParams
-        }
-        val textureParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            Gravity.CENTER
-        )
-        if (videoTextureView.layoutParams?.width != FrameLayout.LayoutParams.MATCH_PARENT ||
-            videoTextureView.layoutParams?.height != FrameLayout.LayoutParams.MATCH_PARENT
-        ) {
-            videoTextureView.layoutParams = textureParams
-        }
-        videoTextureView.setTransform(null)
-=======
     private fun applyPlaybackSystemUi() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -1242,7 +976,6 @@ class VideoReplayActivity : AppCompatActivity() {
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
->>>>>>> zipcopy/main
     }
 
     private fun formatDuration(ms: Long): String {
@@ -1265,8 +998,6 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
-<<<<<<< HEAD
-=======
     private fun currentPlaybackSpeed(): Float = PLAYBACK_SPEEDS[playbackSpeedIndex]
 
     private fun playbackSpeedLabel(): String {
@@ -1282,7 +1013,6 @@ class VideoReplayActivity : AppCompatActivity() {
         }
     }
 
->>>>>>> zipcopy/main
     private fun dp(value: Int): Int {
         return (value * resources.displayMetrics.density).toInt()
     }
@@ -1292,62 +1022,6 @@ class VideoReplayActivity : AppCompatActivity() {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(ms))
     }
 
-<<<<<<< HEAD
-    private fun readSubtitleCues(videos: List<File>): List<SrtCue> {
-        return videos.flatMapIndexed { index, video ->
-            val subtitle = VideoStorage.subtitleFileFor(video)
-            if (!subtitle.exists()) return@flatMapIndexed emptyList()
-            val offsetMs = segmentOffsetsMs.getOrElse(index) { 0L }
-            try {
-                subtitle.readText(Charsets.UTF_8)
-                    .replace("\r\n", "\n")
-                    .split(Regex("\n{2,}"))
-                    .mapNotNull { block -> parseSrtBlock(block, offsetMs) }
-            } catch (_: RuntimeException) {
-                emptyList()
-            }
-        }
-    }
-
-    private fun parseSrtBlock(block: String, offsetMs: Long): SrtCue? {
-        val lines = block.lines().filter { it.isNotBlank() }
-        if (lines.size < 3) return null
-        val timeLine = lines.firstOrNull { it.contains("-->") } ?: return null
-        val match = SRT_TIME_REGEX.find(timeLine) ?: return null
-        val startMs = offsetMs + parseSrtTime(match.groupValues, 1)
-        val endMs = offsetMs + parseSrtTime(match.groupValues, 5)
-        if (endMs <= startMs) return null
-        val text = lines.dropWhile { !it.contains("-->") }
-            .drop(1)
-            .joinToString("\n")
-            .replace("  |  ", "\n")
-            .trim()
-        if (text.isBlank()) return null
-        return SrtCue(startMs, endMs, text)
-    }
-
-    private fun parseSrtTime(values: List<String>, offset: Int): Long {
-        val hours = values[offset].toLongOrNull() ?: 0L
-        val minutes = values[offset + 1].toLongOrNull() ?: 0L
-        val seconds = values[offset + 2].toLongOrNull() ?: 0L
-        val millis = values[offset + 3].toLongOrNull() ?: 0L
-        return hours * 3_600_000L + minutes * 60_000L + seconds * 1_000L + millis
-    }
-
-    private data class SrtCue(
-        val startMs: Long,
-        val endMs: Long,
-        val text: String
-    )
-
-    companion object {
-        const val EXTRA_VIDEO_PATH = "video_path"
-        const val EXTRA_VIDEO_PATHS = "video_paths"
-        private const val CONTROLS_AUTO_HIDE_MS = 1_500L
-        private val SRT_TIME_REGEX = Regex(
-            "(\\d{2}):(\\d{2}):(\\d{2}),(\\d{3})\\s+-->\\s+(\\d{2}):(\\d{2}):(\\d{2}),(\\d{3})"
-        )
-=======
     companion object {
         const val EXTRA_VIDEO_PATH = "video_path"
         const val EXTRA_VIDEO_PATHS = "video_paths"
@@ -1363,6 +1037,5 @@ class VideoReplayActivity : AppCompatActivity() {
         private const val PLATE_REPLAY_HOLD_MS = 1_500L
         private const val SUBTITLE_GAP_HOLD_MS = 1_500L
         private val PLAYBACK_SPEEDS = floatArrayOf(1f, 1.5f, 2f, 2.5f, 3f, 5f, 10f)
->>>>>>> zipcopy/main
     }
 }

@@ -7,10 +7,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
-<<<<<<< HEAD
-=======
 import android.speech.tts.UtteranceProgressListener
->>>>>>> zipcopy/main
 import java.util.Locale
 
 object VoiceCommandFeedback {
@@ -18,11 +15,8 @@ object VoiceCommandFeedback {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var pendingText: String? = null
-<<<<<<< HEAD
-=======
     private var pendingUtteranceId: String? = null
     private val speechDucks = mutableMapOf<String, DuckToken>()
->>>>>>> zipcopy/main
 
     fun photoTaken(context: Context) {
         speak(context, "照片已保存")
@@ -44,15 +38,6 @@ object VoiceCommandFeedback {
         speak(context, "当前没有录像")
     }
 
-<<<<<<< HEAD
-    private fun speak(context: Context, text: String) {
-        playTone()
-        ensureTts(context.applicationContext)
-        if (ttsReady) {
-            speakNow(text)
-        } else {
-            pendingText = text
-=======
     fun radarAlertStarted(context: Context) {
         speak(context, "测速雷达已开启")
     }
@@ -75,7 +60,6 @@ object VoiceCommandFeedback {
         } else {
             pendingText = text
             pendingUtteranceId = utteranceId
->>>>>>> zipcopy/main
         }
     }
 
@@ -86,15 +70,6 @@ object VoiceCommandFeedback {
             if (ttsReady) {
                 val activeTts = tts ?: return@TextToSpeech
                 activeTts.language = Locale.CHINA
-<<<<<<< HEAD
-                activeTts.setSpeechRate(1.15f)
-                pendingText?.let { text ->
-                    pendingText = null
-                    speakNow(text)
-                }
-            } else {
-                pendingText = null
-=======
                 activeTts.setAudioAttributes(AppPlaybackDuck.speechAttributes())
                 activeTts.setSpeechRate(1.15f)
                 activeTts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -119,26 +94,10 @@ object VoiceCommandFeedback {
                 pendingText = null
                 pendingUtteranceId?.let { finishSpeech(it) }
                 pendingUtteranceId = null
->>>>>>> zipcopy/main
             }
         }
     }
 
-<<<<<<< HEAD
-    private fun speakNow(text: String) {
-        val utteranceId = "voice-command-${System.currentTimeMillis()}"
-        val params = Bundle().apply {
-            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-        }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-    }
-
-    private fun playTone() {
-        val tone = runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) }.getOrNull() ?: return
-        tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
-        mainHandler.postDelayed({ tone.release() }, 300L)
-    }
-=======
     private fun speakNow(text: String, utteranceId: String) {
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
@@ -166,5 +125,4 @@ object VoiceCommandFeedback {
         mainHandler.postDelayed({ tone.release() }, 300L)
     }
 
->>>>>>> zipcopy/main
 }
