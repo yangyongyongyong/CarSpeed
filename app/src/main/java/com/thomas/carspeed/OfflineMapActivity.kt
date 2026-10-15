@@ -3,6 +3,11 @@ package com.thomas.carspeed
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+<<<<<<< HEAD
+=======
+import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
+>>>>>>> zipcopy/main
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -11,6 +16,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+<<<<<<< HEAD
+=======
+import com.google.android.material.button.MaterialButton
+>>>>>>> zipcopy/main
 import com.amap.api.maps.AMapException
 import com.amap.api.maps.offlinemap.OfflineMapManager
 import com.amap.api.maps.offlinemap.OfflineMapProvince
@@ -77,7 +86,11 @@ class OfflineMapActivity : AppCompatActivity(), OfflineMapManager.OfflineMapDown
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             setTitleTextColor(ContextCompat.getColor(this@OfflineMapActivity, R.color.text_primary))
+<<<<<<< HEAD
             setNavigationIcon(android.R.drawable.ic_menu_revert)
+=======
+            setNavigationIcon(R.drawable.ic_nav_back)
+>>>>>>> zipcopy/main
             setNavigationOnClickListener { finish() }
         }
         val summary = TextView(this).apply {
@@ -116,7 +129,19 @@ class OfflineMapActivity : AppCompatActivity(), OfflineMapManager.OfflineMapDown
     private fun packageRow(province: OfflineMapProvince): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+<<<<<<< HEAD
             setPadding(0, dp(14), 0, dp(14))
+=======
+            background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat()
+                setColor(ContextCompat.getColor(this@OfflineMapActivity, R.color.surface_primary))
+            }
+            setPadding(dp(16), dp(14), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+>>>>>>> zipcopy/main
         }
         val title = TextView(this).apply {
             text = province.provinceName
@@ -132,23 +157,46 @@ class OfflineMapActivity : AppCompatActivity(), OfflineMapManager.OfflineMapDown
         val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             this.progress = province.getcompleteCode().coerceIn(0, 100)
+<<<<<<< HEAD
+=======
+            progressTintList = ColorStateList.valueOf(ContextCompat.getColor(this@OfflineMapActivity, R.color.brand_blue))
+            progressBackgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@OfflineMapActivity, R.color.divider_soft))
+>>>>>>> zipcopy/main
         }
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
+<<<<<<< HEAD
         val primary = Button(this).apply {
+=======
+        val primary = MaterialButton(this).apply {
+>>>>>>> zipcopy/main
             text = primaryText(province.state)
             visibility = if (province.state == OfflineMapStatus.SUCCESS) View.GONE else View.VISIBLE
             setOnClickListener { downloadOrUpdate(province) }
         }
+<<<<<<< HEAD
         val delete = Button(this).apply {
             text = "删除"
+=======
+        val delete = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "删除"
+            setTextColor(ContextCompat.getColor(this@OfflineMapActivity, R.color.text_danger))
+            strokeColor = ColorStateList.valueOf(ContextCompat.getColor(this@OfflineMapActivity, R.color.divider_soft))
+>>>>>>> zipcopy/main
             isEnabled = province.state == OfflineMapStatus.SUCCESS || province.getcompleteCode() > 0
             setOnClickListener { offlineManager?.remove(province.provinceName) }
         }
         actions.addView(primary)
+<<<<<<< HEAD
         actions.addView(delete)
+=======
+        actions.addView(delete, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { marginStart = dp(8) })
+>>>>>>> zipcopy/main
         row.addView(title)
         row.addView(detail)
         row.addView(progress)

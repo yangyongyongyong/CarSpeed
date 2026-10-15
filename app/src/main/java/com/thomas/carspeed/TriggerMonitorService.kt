@@ -97,10 +97,14 @@ class TriggerMonitorService : Service(), LocationListener {
         val currentSpeedKmh = speedKmh ?: return
         val settings = TriggerSettings.load(this)
         if (TriggerRules.shouldStartRecordingAfterBluetoothConnectedAndSpeed(settings, bluetoothAddress, currentSpeedKmh)) {
+<<<<<<< HEAD
             DashcamService.startRecording(this)
             if (OverlayController.canStart(this) && !OverlayController.isRunning(this)) {
                 OverlayController.start(this)
             }
+=======
+            BackgroundRecordingStart.start(this)
+>>>>>>> zipcopy/main
             stopSelf()
         }
     }
@@ -199,6 +203,10 @@ class TriggerMonitorService : Service(), LocationListener {
             .setContentText(text)
             .setContentIntent(openIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
+<<<<<<< HEAD
+=======
+            .addAction(android.R.drawable.ic_lock_power_off, getString(R.string.notif_action_exit_background), AppBackgroundExit.pendingIntent(this))
+>>>>>>> zipcopy/main
             .setOngoing(true)
             .build()
     }

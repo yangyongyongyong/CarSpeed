@@ -5,12 +5,21 @@ import android.app.Application
 import android.os.Bundle
 import android.view.WindowManager
 import com.amap.api.maps.MapsInitializer
+<<<<<<< HEAD
+=======
+import com.amap.api.services.core.ServiceSettings
+>>>>>>> zipcopy/main
 
 class CarSpeedApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         MapsInitializer.updatePrivacyShow(this, true, true)
         MapsInitializer.updatePrivacyAgree(this, true)
+<<<<<<< HEAD
+=======
+        ServiceSettings.updatePrivacyShow(this, true, true)
+        ServiceSettings.updatePrivacyAgree(this, true)
+>>>>>>> zipcopy/main
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
                 keepScreenOn(activity)

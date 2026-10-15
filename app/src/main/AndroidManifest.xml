@@ -50,7 +50,16 @@
             android:exported="false" />
 
         <activity
+            android:name=".PhotoPreviewActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".VideoReplayActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ShareExportActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
 
@@ -81,9 +90,31 @@
             android:exported="false" />
 
         <activity
+            android:name=".RadarAlertSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".RadarQueryActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".TrackRecordingSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".CameraFullscreenActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".DashcamWakeActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.CarSpeed.Wake" />
 
         <activity
             android:name=".MainActivity"
@@ -102,7 +133,31 @@
             android:foregroundServiceType="camera|location|microphone" />
 
         <service
+            android:name=".AmapWatchService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/amap_watch_service" />
+        </service>
+
+        <service
             android:name=".TriggerMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <service
+            android:name=".RadarAlertService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <service
+            android:name=".TrackRecordingService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
@@ -148,6 +203,10 @@
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".AppBackgroundExitReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".PowerTriggerReceiver"

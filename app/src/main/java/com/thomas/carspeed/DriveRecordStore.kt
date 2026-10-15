@@ -17,7 +17,8 @@ data class DriveRecord(
     val maxSpeedAccuracyMeters: Float? = null,
     val averageAccuracyMeters: Float? = null,
     val goodFixRatio: Float = 0f,
-    val routePoints: List<DriveRoutePoint> = emptyList()
+    val routePoints: List<DriveRoutePoint> = emptyList(),
+    val source: String = "legacy"
 )
 
 data class DriveRoutePoint(
@@ -33,6 +34,10 @@ object DriveRecordStore {
     private const val PREF_NAME = "overlay_prefs"
     private const val KEY_RECORDS = "drive_records"
     private const val MAX_RECORDS = 100
+    const val SOURCE_LEGACY = "legacy"
+    const val SOURCE_OVERLAY = "overlay"
+    const val SOURCE_VIDEO = "video"
+    const val SOURCE_GPS_TRACK = "gps_track"
 
     fun addRecord(context: Context, record: DriveRecord) {
         val list = loadRecords(context).toMutableList()
@@ -63,7 +68,8 @@ object DriveRecordStore {
                 maxSpeedAccuracyMeters = o.optNullableFloat("maxSpeedAccuracyMeters"),
                 averageAccuracyMeters = o.optNullableFloat("averageAccuracyMeters"),
                 goodFixRatio = o.optDouble("goodFixRatio", 0.0).toFloat().coerceIn(0f, 1f),
-                routePoints = parseRoutePoints(o.optJSONArray("routePoints"))
+                routePoints = parseRoutePoints(o.optJSONArray("routePoints")),
+                source = o.optString("source", SOURCE_LEGACY).ifBlank { SOURCE_LEGACY }
             )
         }
         return result
@@ -94,6 +100,7 @@ object DriveRecordStore {
                     .putNullable("averageAccuracyMeters", r.averageAccuracyMeters)
                     .put("goodFixRatio", r.goodFixRatio)
                     .put("routePoints", routePointsToJson(r.routePoints))
+                    .put("source", r.source)
             )
         }
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)

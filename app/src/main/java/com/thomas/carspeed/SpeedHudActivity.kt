@@ -89,8 +89,13 @@ class SpeedHudActivity : AppCompatActivity() {
         tvYAxisLabel.text = getString(R.string.y_axis_label_fmt, yMax)
 
         val unit = SpeedDisplay.normalizeUnit(prefs.getString(MainActivity.PREF_SPEED_UNIT, SpeedDisplay.UNIT_KMH))
+<<<<<<< HEAD
         val unitAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, listOf("km/h", "mph"))
         unitAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+=======
+        val unitAdapter = ArrayAdapter(this, R.layout.spinner_item, listOf("km/h", "mph"))
+        unitAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
+>>>>>>> zipcopy/main
         spSpeedUnit.adapter = unitAdapter
         spSpeedUnit.setSelection(SpeedDisplay.unitIndex(unit))
 

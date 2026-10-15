@@ -7,6 +7,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+<<<<<<< HEAD
+=======
+import android.speech.tts.UtteranceProgressListener
+>>>>>>> zipcopy/main
 import java.util.Locale
 
 object VoiceCommandFeedback {
@@ -14,6 +18,11 @@ object VoiceCommandFeedback {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var pendingText: String? = null
+<<<<<<< HEAD
+=======
+    private var pendingUtteranceId: String? = null
+    private val speechDucks = mutableMapOf<String, DuckToken>()
+>>>>>>> zipcopy/main
 
     fun photoTaken(context: Context) {
         speak(context, "照片已保存")
@@ -35,6 +44,7 @@ object VoiceCommandFeedback {
         speak(context, "当前没有录像")
     }
 
+<<<<<<< HEAD
     private fun speak(context: Context, text: String) {
         playTone()
         ensureTts(context.applicationContext)
@@ -42,6 +52,30 @@ object VoiceCommandFeedback {
             speakNow(text)
         } else {
             pendingText = text
+=======
+    fun radarAlertStarted(context: Context) {
+        speak(context, "测速雷达已开启")
+    }
+
+    fun radarAlertStopped(context: Context) {
+        speak(context, "测速雷达已关闭")
+    }
+
+    fun radarAlertNeedsLocation(context: Context) {
+        speak(context, "需要精确定位权限才能开启测速雷达")
+    }
+
+    private fun speak(context: Context, text: String) {
+        val utteranceId = "voice-command-${System.currentTimeMillis()}"
+        holdForSpeech(context, utteranceId)
+        playTone()
+        ensureTts(context.applicationContext)
+        if (ttsReady) {
+            speakNow(text, utteranceId)
+        } else {
+            pendingText = text
+            pendingUtteranceId = utteranceId
+>>>>>>> zipcopy/main
         }
     }
 
@@ -52,6 +86,7 @@ object VoiceCommandFeedback {
             if (ttsReady) {
                 val activeTts = tts ?: return@TextToSpeech
                 activeTts.language = Locale.CHINA
+<<<<<<< HEAD
                 activeTts.setSpeechRate(1.15f)
                 pendingText?.let { text ->
                     pendingText = null
@@ -59,10 +94,37 @@ object VoiceCommandFeedback {
                 }
             } else {
                 pendingText = null
+=======
+                activeTts.setAudioAttributes(AppPlaybackDuck.speechAttributes())
+                activeTts.setSpeechRate(1.15f)
+                activeTts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+
+                    override fun onDone(utteranceId: String?) {
+                        mainHandler.post { finishSpeech(utteranceId) }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        mainHandler.post { finishSpeech(utteranceId) }
+                    }
+                })
+                pendingText?.let { text ->
+                    val utteranceId = pendingUtteranceId ?: "voice-command-late"
+                    pendingText = null
+                    pendingUtteranceId = null
+                    speakNow(text, utteranceId)
+                }
+            } else {
+                pendingText = null
+                pendingUtteranceId?.let { finishSpeech(it) }
+                pendingUtteranceId = null
+>>>>>>> zipcopy/main
             }
         }
     }
 
+<<<<<<< HEAD
     private fun speakNow(text: String) {
         val utteranceId = "voice-command-${System.currentTimeMillis()}"
         val params = Bundle().apply {
@@ -76,4 +138,33 @@ object VoiceCommandFeedback {
         tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
         mainHandler.postDelayed({ tone.release() }, 300L)
     }
+=======
+    private fun speakNow(text: String, utteranceId: String) {
+        val params = Bundle().apply {
+            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            putString(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC.toString())
+            putString(TextToSpeech.Engine.KEY_PARAM_VOLUME, "1.0")
+        }
+        AppSpeechGuard.markSpeechStarted()
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+    }
+
+    private fun holdForSpeech(context: Context, utteranceId: String) {
+        speechDucks.remove(utteranceId)?.release()
+        speechDucks[utteranceId] = AppPlaybackDuck.acquire(context)
+        mainHandler.postDelayed({ finishSpeech(utteranceId) }, 8_000L)
+    }
+
+    private fun finishSpeech(utteranceId: String?) {
+        if (utteranceId == null) return
+        speechDucks.remove(utteranceId)?.release()
+    }
+
+    private fun playTone() {
+        val tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }.getOrNull() ?: return
+        tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+        mainHandler.postDelayed({ tone.release() }, 300L)
+    }
+
+>>>>>>> zipcopy/main
 }

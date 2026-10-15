@@ -11,6 +11,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnHud: Button
     private lateinit var btnHistory: Button
     private lateinit var btnStatus: Button
+    private lateinit var btnRadar: Button
+    private lateinit var btnTrack: Button
     private var lastAutoStartAtMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,6 +23,8 @@ class MainActivity : AppCompatActivity() {
         btnHud = findViewById(R.id.btnHud)
         btnHistory = findViewById(R.id.btnHistory)
         btnStatus = findViewById(R.id.btnStatus)
+        btnRadar = findViewById(R.id.btnRadar)
+        btnTrack = findViewById(R.id.btnTrack)
 
         btnCamera.setOnClickListener {
             startActivity(Intent(this, CameraRecordActivity::class.java))
@@ -37,10 +41,20 @@ class MainActivity : AppCompatActivity() {
         btnStatus.setOnClickListener {
             startActivity(Intent(this, StatusActivity::class.java))
         }
+
+        btnRadar.setOnClickListener {
+            startActivity(Intent(this, RadarAlertSettingsActivity::class.java))
+        }
+
+        btnTrack.setOnClickListener {
+            startActivity(Intent(this, TrackRecordingSettingsActivity::class.java))
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        RadarAlertService.sync(this)
+        TrackRecordingController.sync(this, stopUnavailable = true)
         maybeAutoStartRecording()
     }
 

@@ -29,20 +29,46 @@ object PhotoWatermark {
         val density = context.resources.displayMetrics.density
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
+<<<<<<< HEAD
             textSize = 18f * density
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             setShadowLayer(3f * density, 1f * density, 1f * density, Color.BLACK)
         }
         val lineHeight = 24f * density
         val padding = 14f * density
+=======
+            textSize = 12f * density
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setShadowLayer(2f * density, 0.6f * density, 0.6f * density, Color.BLACK)
+        }
+        val lineHeight = (textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent) + 2f * density
+        val padding = 8f * density
+>>>>>>> zipcopy/main
         val width = lines.maxOf { textPaint.measureText(it) } + padding * 2
         val height = lineHeight * lines.size + padding * 2
         val left = padding
         val top = canvas.height - height - padding
+<<<<<<< HEAD
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(150, 0, 0, 0) }
         canvas.drawRoundRect(RectF(left, top, left + width, top + height), 12f * density, 12f * density, bgPaint)
         lines.forEachIndexed { index, text ->
             canvas.drawText(text, left + padding, top + padding + lineHeight * (index + 1) - 6f * density, textPaint)
+=======
+        val background = RectF(left, top, left + width, top + height)
+        val corner = 18f * density
+        // 与预览字幕 overlay_chip_dark_bg 一致：约 10% 的底，不是黑底。
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(0x1A, 0x13, 0x23, 0x3A) }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(0x33, 0x5D, 0x87, 0xC4)
+            style = Paint.Style.STROKE
+            strokeWidth = density
+        }
+        canvas.drawRoundRect(background, corner, corner, bgPaint)
+        canvas.drawRoundRect(background, corner, corner, strokePaint)
+        val ascent = textPaint.fontMetrics.ascent
+        lines.forEachIndexed { index, text ->
+            canvas.drawText(text, left + padding, top + padding - ascent + lineHeight * index, textPaint)
+>>>>>>> zipcopy/main
         }
     }
 }

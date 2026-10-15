@@ -10,7 +10,8 @@
     <color name="surface_secondary">#EAF0F8</color>
     <color name="text_primary">#152033</color>
     <color name="text_secondary">#5C6C84</color>
-    <color name="divider_soft">#D7E0EB</color>
+    <color name="divider_soft">#E4E9F0</color>
+    <color name="text_danger">#B42318</color>
     <color name="status_idle_bg">#E9EEF5</color>
     <color name="status_idle_text">#46566E</color>
     <color name="status_running_bg">#DDF8F2</color>

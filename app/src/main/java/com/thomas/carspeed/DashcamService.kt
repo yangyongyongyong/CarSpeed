@@ -4,7 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
+<<<<<<< HEAD
 import android.content.ContentValues
+=======
+>>>>>>> zipcopy/main
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,6 +18,10 @@ import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.location.Address
 import android.location.Geocoder
+<<<<<<< HEAD
+=======
+import android.location.GnssStatus
+>>>>>>> zipcopy/main
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -24,8 +31,13 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+<<<<<<< HEAD
 import android.provider.MediaStore
 import android.util.Range
+=======
+import android.util.Range
+import android.util.Size
+>>>>>>> zipcopy/main
 import android.view.OrientationEventListener
 import android.view.Surface
 import android.widget.Toast
@@ -37,12 +49,19 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+<<<<<<< HEAD
+=======
+import androidx.camera.core.ImageAnalysis
+>>>>>>> zipcopy/main
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
+<<<<<<< HEAD
 import androidx.camera.video.MediaStoreOutputOptions
+=======
+>>>>>>> zipcopy/main
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
@@ -62,12 +81,18 @@ import java.util.concurrent.Executors
 class DashcamService : LifecycleService(), LocationListener {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+<<<<<<< HEAD
+=======
+    private val plateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var roadLayerStarted = false
+>>>>>>> zipcopy/main
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var previewUseCase: Preview? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var imageCapture: ImageCapture? = null
+<<<<<<< HEAD
     private var activeRecording: Recording? = null
     private var activeVideoFile: File? = null
     private var activeSubtitleFile: File? = null
@@ -78,16 +103,55 @@ class DashcamService : LifecycleService(), LocationListener {
     private var activeTripStartWallMs = 0L
     private var activeVideoStartWallMs = 0L
     private var activeSegmentDurationMs = DashcamSettings.DEFAULT_SEGMENT_MINUTES * 60_000L
+=======
+    private var imageAnalysis: ImageAnalysis? = null
+    private var activeRecording: Recording? = null
+    private var seamlessRecorder: SeamlessDashcamRecorder? = null
+    private var activePlateSession: PlateRecognitionSession? = null
+    private var activeVideoFile: File? = null
+    private var activeSubtitleFile: File? = null
+    private val tripSubtitleFiles = mutableListOf<Pair<File, Long>>()
+    private var activeVideoMode: VideoMode? = null
+    private var activeHdrEnabled = false
+    private var activeHdrRequested = false
+    private var activePlateRecognitionRequested = false
+    private var activePlateRecognitionBound = false
+    private var activeSegmentDurationMs = DashcamSettings.DEFAULT_SEGMENT_MINUTES * 60_000L
+    private var lastPlateFocusElapsedMs = 0L
+    private var activeTripFolderName: String? = null
+    private var activeTripStartWallMs = 0L
+    private var activeVideoStartWallMs = 0L
+>>>>>>> zipcopy/main
     private var subtitleIndex = 0
     private var recordingStartElapsedMs = 0L
     private var tripRecordingStartElapsedMs = 0L
     private var requestedStop = false
+<<<<<<< HEAD
     private var rollingRestart = false
     private var lastLocation: Location? = null
     private var lastAddressLocation: Location? = null
     private var lastAddressText: String? = null
     private var lastGeocodeAtMs = 0L
     private var lastSpeedKmh = 0f
+=======
+    private var recordingCueOpen = false
+    private var exitAfterStop = false
+    private var rollingRestart = false
+    private var rollingRestartNeedsRebind = false
+    private var lastLocation: Location? = null
+    private var lastAddressLocation: Location? = null
+    private var gnssStatusCallback: GnssStatus.Callback? = null
+    private var gpsUsedSatelliteCount: Int? = null
+    private var lastAddressText: String? = null
+    private var lastGeocodeAtMs = 0L
+    private var lastSpeedKmh = 0f
+    private var stationaryWaitState = SpeedRules.WaitState(
+        tripStarted = false,
+        tripStartTimeMs = 0L,
+        waitAtZeroAccumMs = 0L,
+        waitAtZeroStartMs = 0L
+    )
+>>>>>>> zipcopy/main
     private var lastFocusDistanceDiopters: Float? = null
     private var lastAutofocusState: String? = null
     private var lastVoicePhotoAtMs = 0L
@@ -112,15 +176,25 @@ class DashcamService : LifecycleService(), LocationListener {
     private val subtitleTicker = object : Runnable {
         override fun run() {
             appendSubtitleTick()
+<<<<<<< HEAD
             if (activeRecording != null) {
+=======
+            if (isRecordingActive()) {
+>>>>>>> zipcopy/main
                 mainHandler.postDelayed(this, 1_000L)
             }
         }
     }
 
     private val segmentRollover = Runnable {
+<<<<<<< HEAD
         if (activeRecording != null && !requestedStop) {
             rollingRestart = true
+=======
+        if (activeRecording != null && !requestedStop && !rollingRestart) {
+            rollingRestart = true
+            rollingRestartNeedsRebind = false
+>>>>>>> zipcopy/main
             activeRecording?.stop()
         }
     }
@@ -133,17 +207,38 @@ class DashcamService : LifecycleService(), LocationListener {
         startOrientationListener()
         startForegroundCompat()
         registerLocationUpdates()
+<<<<<<< HEAD
+=======
+        roadLayerStarted = true
+        RoadLayerEngine.start(this)
+        cameraExecutor.execute {
+            runCatching { VideoStorage.consolidateIntoAlbum(this) }
+        }
+>>>>>>> zipcopy/main
     }
 
     override fun onDestroy() {
         stoppingSelf = true
         stopVoiceRecognition()
+<<<<<<< HEAD
         RadarAlertController.stop()
         stopOrientationListener()
         stopRecordingInternal()
         unregisterLocationUpdates()
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
+=======
+        stopOrientationListener()
+        stopRecordingInternal()
+        unregisterLocationUpdates()
+        if (roadLayerStarted) {
+            roadLayerStarted = false
+            RoadLayerEngine.stop()
+        }
+        cameraProvider?.unbindAll()
+        cameraExecutor.shutdown()
+        plateExecutor.shutdown()
+>>>>>>> zipcopy/main
         instance = null
         setRecordingState(this, false)
         super.onDestroy()
@@ -151,6 +246,7 @@ class DashcamService : LifecycleService(), LocationListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+<<<<<<< HEAD
         startForegroundCompat(includeCameraType = activeRecording != null)
         when (intent?.action) {
             ACTION_START_RECORDING -> startRecordingInternal()
@@ -163,14 +259,49 @@ class DashcamService : LifecycleService(), LocationListener {
             ACTION_REFRESH_SETTINGS -> refreshSettings()
         }
         return START_STICKY
+=======
+        startForegroundCompat(includeCameraType = isRecordingActive())
+        when (intent?.action) {
+            ACTION_START_RECORDING -> startRecordingInternal()
+            ACTION_STOP_RECORDING -> {
+                val hadRecording = isRecordingActive()
+                stopRecordingInternal()
+                if (!hadRecording && !shouldKeepAliveForVoice()) stopSelf()
+            }
+            ACTION_EXIT -> {
+                exitAfterStop = true
+                stopVoiceRecognition()
+                stopRecordingInternal()
+                if (!isRecordingActive()) stopSelf()
+            }
+            ACTION_TAKE_PHOTO -> takePhotoInternal()
+            ACTION_REFRESH_SETTINGS -> refreshSettings()
+        }
+        return if (exitAfterStop) START_NOT_STICKY else START_STICKY
+>>>>>>> zipcopy/main
     }
 
     override fun onLocationChanged(location: Location) {
         lastLocation = location
+<<<<<<< HEAD
         if (location.hasSpeed()) {
             lastSpeedKmh = SpeedRules.toKmhClamped(location.speed)
             RadarAlertController.updateSpeed(lastSpeedKmh)
             updateParkingStop(lastSpeedKmh)
+=======
+        val now = SystemClock.elapsedRealtime()
+        RoadLayerEngine.onGpsFix(
+            now,
+            location.accuracy.takeIf { location.hasAccuracy() },
+            location.bearing.takeIf { location.hasBearing() }
+        )
+        RoadLayerEngine.consumeSubtitleCorrection()?.let { rewriteRecordedRoadLayer(it) }
+        if (location.hasSpeed()) {
+            lastSpeedKmh = SpeedRules.toKmhClamped(location.speed)
+            updateParkingStop(lastSpeedKmh)
+            updateStationaryWait(lastSpeedKmh)
+            RoadLayerEngine.onSpeed(now, lastSpeedKmh)
+>>>>>>> zipcopy/main
         }
         updateTelemetrySnapshot()
         appendTrackPoint(location)
@@ -178,7 +309,11 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun startRecordingInternal() {
+<<<<<<< HEAD
         if (activeRecording != null) return
+=======
+        if (isRecordingActive()) return
+>>>>>>> zipcopy/main
         requestedStop = false
         rollingRestart = false
         parkingStationarySinceElapsedMs = null
@@ -187,6 +322,10 @@ class DashcamService : LifecycleService(), LocationListener {
         activeTripFolderName = VideoStorage.tripFolderNameFor(tripStartMs)
         tripRecordingStartElapsedMs = SystemClock.elapsedRealtime()
         activeTripTrackPoints.clear()
+<<<<<<< HEAD
+=======
+        resetStationaryWait()
+>>>>>>> zipcopy/main
         if (!DashcamNotificationGuard.canShowRecordingNotification(this)) {
             Toast.makeText(this, R.string.recording_notification_required, Toast.LENGTH_LONG).show()
             setRecordingState(this, false)
@@ -200,6 +339,7 @@ class DashcamService : LifecycleService(), LocationListener {
         }
         startForegroundCompat(includeCameraType = true)
 
+<<<<<<< HEAD
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener(
             {
@@ -214,6 +354,178 @@ class DashcamService : LifecycleService(), LocationListener {
             },
             ContextCompat.getMainExecutor(this)
         )
+=======
+        startSeamlessVideoCapture()
+    }
+
+    private fun isRecordingActive(): Boolean = activeRecording != null || seamlessRecorder != null
+
+    private fun startSeamlessVideoCapture() {
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        val segmentDurationMs = DashcamSettings.segmentDurationMs(this)
+        activeVideoMode = mode
+        activeSegmentDurationMs = segmentDurationMs
+        activeHdrRequested = DashcamHdrSettings.shouldEnableNow(this)
+        activeHdrEnabled = false
+        hdrActiveSnapshot = false
+        activePlateRecognitionRequested = DashcamSettings.load(this).plateRecognitionEnabled
+        activePlateRecognitionBound = false
+        PlateRecognitionMonitor.onConfigured(
+            enabled = activePlateRecognitionRequested,
+            analyzerBound = false,
+            error = if (activePlateRecognitionRequested) "无缝录像模式暂未绑定车牌分析流。" else null
+        )
+
+        val estimatedSegmentBytes = VideoStorage.estimateSegmentBytes(mode, segmentDurationMs)
+        val limitGb = getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .getInt(DashcamSettings.PREF_LOOP_STORAGE_GB, DashcamSettings.DEFAULT_LOOP_STORAGE_GB)
+        if (!VideoStorage.cleanupLoopStorage(this, limitGb, estimatedSegmentBytes)) {
+            Toast.makeText(this, R.string.storage_too_low_for_recording, Toast.LENGTH_LONG).show()
+            stopSelf()
+            return
+        }
+
+        val recordAudio = shouldRecordAudioInRecording()
+        val shareVoice = VoiceCapture.mode(
+            voiceEnabled = DashcamSettings.load(this).voicePhotoEnabled,
+            audioPermission = hasAudioPermission(),
+            recording = true
+        ) == VoiceCaptureMode.RECORDING_PCM
+        // 录像只能占一个麦克风。开着语音时改把这一路 PCM 送给识别，不再把口令听停。
+        if (shareVoice) {
+            VoicePhotoRecognizer.beginExternalCapture(this, VOICE_OWNER, ::dispatchVoiceCommand)
+        } else if (recordAudio) {
+            stopVoiceRecognition()
+        }
+        val recorder = SeamlessDashcamRecorder(
+            context = this,
+            mode = mode,
+            segmentDurationMs = segmentDurationMs,
+            tripFolderName = activeTripFolderName,
+            targetRotation = targetRotation,
+            initialPreviewSurface = recordingPreviewSurface?.takeIf { it.isValid },
+            enableAudio = recordAudio,
+            enableHdr = activeHdrRequested,
+            callback = object : SeamlessDashcamRecorder.Callback {
+                override fun onStarted() {
+                    mainHandler.post { onSeamlessRecordingStarted() }
+                }
+
+                override fun onSegmentStarted(file: File, startWallMs: Long, startElapsedMs: Long) {
+                    mainHandler.post { onSeamlessSegmentStarted(file, startWallMs, startElapsedMs) }
+                }
+
+                override fun onSegmentFinalized(file: File) {
+                    mainHandler.post { onSeamlessSegmentFinalized(file) }
+                }
+
+                override fun onStopped() {
+                    mainHandler.post { onSeamlessRecordingStopped() }
+                }
+
+                override fun onError(error: Throwable) {
+                    mainHandler.post { onSeamlessRecordingError(error) }
+                }
+
+                override fun onCaptureResult(result: CaptureResult) {
+                    mainHandler.post { updateFocusTelemetry(result) }
+                }
+
+                override fun onHdrStateChanged(enabled: Boolean) {
+                    mainHandler.post {
+                        activeHdrEnabled = enabled
+                        hdrActiveSnapshot = enabled
+                    }
+                }
+            }
+        )
+        if (shareVoice) recorder.recordingPcmListener = recordingPcmListener
+        seamlessRecorder = recorder
+        recorder.start()
+    }
+
+    private fun shouldRecordAudioInRecording(): Boolean {
+        val settings = DashcamSettings.load(this)
+        return settings.recordAudio && hasAudioPermission()
+    }
+
+    private fun onSeamlessRecordingStarted() {
+        playRecordingStartCue()
+        setRecordingState(this, true)
+        startForegroundCompat(includeCameraType = true)
+        refreshSettings()
+    }
+
+    private fun onSeamlessSegmentStarted(file: File, startWallMs: Long, startElapsedMs: Long) {
+        activeVideoFile = file
+        activeSubtitleFile = VideoStorage.subtitleFileFor(file)
+        rememberSubtitleFile(activeSubtitleFile, startElapsedMs)
+        activeVideoStartWallMs = startWallMs
+        recordingStartElapsedMs = startElapsedMs
+        subtitleIndex = 0
+        resetActiveTrack()
+        lastPlateFocusElapsedMs = 0L
+        val plateEnabled = DashcamSettings.load(this).plateRecognitionEnabled
+        activePlateSession = if (plateEnabled) {
+            PlateRecognitionSession(
+                startWallMs = startWallMs,
+                startElapsedMs = startElapsedMs,
+                analyzerBound = false,
+                initialError = "无缝录像模式暂未绑定车牌分析流。"
+            )
+        } else {
+            null
+        }
+        PlateRecognitionMonitor.onActive(plateEnabled, false)
+        mainHandler.removeCallbacks(subtitleTicker)
+        mainHandler.post(subtitleTicker)
+        lastLocation?.let { appendTrackPoint(it, force = true) }
+    }
+
+    private fun onSeamlessSegmentFinalized(file: File) {
+        val plateSession = activePlateSession
+        scanFile(file, "video/mp4")
+        activeSubtitleFile?.takeIf { it.exists() }?.let { scanFile(it, "application/x-subrip") }
+        writeActiveTrack(file)
+        plateSession?.finish(this, file)
+        val limitGb = getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .getInt(DashcamSettings.PREF_LOOP_STORAGE_GB, DashcamSettings.DEFAULT_LOOP_STORAGE_GB)
+        VideoStorage.cleanupLoopStorage(this, limitGb)
+        activePlateSession = null
+        activeSubtitleFile = null
+        activeVideoFile = null
+        activeVideoStartWallMs = 0L
+        resetActiveTrack()
+        mainHandler.removeCallbacks(subtitleTicker)
+    }
+
+    private fun onSeamlessRecordingStopped() {
+        playRecordingStopCue()
+        seamlessRecorder = null
+        if (!rollingRestart) {
+            activeHdrEnabled = false
+            hdrActiveSnapshot = false
+        }
+        parkingStationarySinceElapsedMs = null
+        mainHandler.removeCallbacks(subtitleTicker)
+        mainHandler.removeCallbacks(segmentRollover)
+        releaseCameraUseCases()
+        writeTripDriveRecord()
+        clearActiveTrip()
+        setRecordingState(this, false)
+        if (exitAfterStop) {
+            stopVoiceRecognition()
+            stopSelf()
+            return
+        }
+        refreshSettings()
+        startForegroundCompat(includeCameraType = false)
+        if (!stoppingSelf && !shouldKeepAliveForVoice()) stopSelf()
+    }
+
+    private fun onSeamlessRecordingError(error: Throwable) {
+        Toast.makeText(this, getString(R.string.camera_open_failed, error.message ?: error.javaClass.simpleName), Toast.LENGTH_SHORT).show()
+>>>>>>> zipcopy/main
     }
 
     @AndroidXOptIn(ExperimentalCamera2Interop::class)
@@ -221,6 +533,10 @@ class DashcamService : LifecycleService(), LocationListener {
         val requestedMode = CameraCapabilities.selectedVideoMode(this)
         val candidates = CameraCapabilities.fallbackCandidates(this, requestedMode)
         val hdrRequested = DashcamHdrSettings.shouldEnableNow(this)
+<<<<<<< HEAD
+=======
+        val plateRecognitionRequested = DashcamSettings.load(this).plateRecognitionEnabled
+>>>>>>> zipcopy/main
         val dynamicRanges = if (hdrRequested) {
             listOf(DynamicRange.HDR_UNSPECIFIED_10_BIT, DynamicRange.SDR)
         } else {
@@ -230,22 +546,157 @@ class DashcamService : LifecycleService(), LocationListener {
         for (dynamicRange in dynamicRanges) {
             for (mode in candidates) {
                 try {
+<<<<<<< HEAD
                     bindCameraUseCases(mode, dynamicRange)
                     activeVideoMode = mode
                     activeHdrRequested = hdrRequested
                     activeHdrEnabled = dynamicRange != DynamicRange.SDR
                     hdrActiveSnapshot = activeHdrEnabled
+=======
+                    bindCameraUseCases(
+                        mode,
+                        dynamicRange,
+                        enablePlateRecognition = plateRecognitionRequested,
+                        enableImageCapture = true,
+                        enablePreview = previewSurfaceProvider != null
+                    )
+                    activateBoundCamera(mode, dynamicRange, hdrRequested, plateRecognitionRequested)
+>>>>>>> zipcopy/main
                     return
                 } catch (error: RuntimeException) {
                     lastError = error
                 }
             }
         }
+<<<<<<< HEAD
         throw lastError ?: IllegalStateException("No camera video mode available")
     }
 
     @AndroidXOptIn(ExperimentalCamera2Interop::class)
     private fun bindCameraUseCases(selectedMode: VideoMode, dynamicRange: DynamicRange) {
+=======
+        if (plateRecognitionRequested) {
+            for (dynamicRange in dynamicRanges) {
+                for (mode in candidates) {
+                    try {
+                        bindCameraUseCases(
+                            mode,
+                            dynamicRange,
+                            enablePlateRecognition = true,
+                            enableImageCapture = false,
+                            enablePreview = previewSurfaceProvider != null
+                        )
+                        activateBoundCamera(mode, dynamicRange, hdrRequested, plateRecognitionBound = true)
+                        return
+                    } catch (error: RuntimeException) {
+                        lastError = error
+                    }
+                }
+            }
+            for (dynamicRange in dynamicRanges) {
+                for (mode in candidates) {
+                    try {
+                        bindCameraUseCases(
+                            mode,
+                            dynamicRange,
+                            enablePlateRecognition = false,
+                            enableImageCapture = true,
+                            enablePreview = previewSurfaceProvider != null
+                        )
+                        activateBoundCamera(
+                            mode,
+                            dynamicRange,
+                            hdrRequested,
+                            plateRecognitionBound = false,
+                            plateError = "当前设备/规格无法同时绑定车牌分析流，已跳过车牌分析。"
+                        )
+                        return
+                    } catch (error: RuntimeException) {
+                        lastError = error
+                    }
+                }
+            }
+        }
+        if (previewSurfaceProvider != null) {
+            for (dynamicRange in dynamicRanges) {
+                for (mode in candidates) {
+                    try {
+                        bindCameraUseCases(
+                            mode,
+                            dynamicRange,
+                            enablePlateRecognition = false,
+                            enableImageCapture = false,
+                            enablePreview = true
+                        )
+                        activateBoundCamera(
+                            mode,
+                            dynamicRange,
+                            hdrRequested,
+                            plateRecognitionBound = false,
+                            plateError = if (plateRecognitionRequested) "当前设备/规格无法同时绑定车牌分析流，已保留录像预览。" else null
+                        )
+                        return
+                    } catch (error: RuntimeException) {
+                        lastError = error
+                    }
+                }
+            }
+            for (dynamicRange in dynamicRanges) {
+                for (mode in candidates) {
+                    try {
+                        bindCameraUseCases(
+                            mode,
+                            dynamicRange,
+                            enablePlateRecognition = plateRecognitionRequested,
+                            enableImageCapture = true,
+                            enablePreview = false
+                        )
+                        activateBoundCamera(
+                            mode,
+                            dynamicRange,
+                            hdrRequested,
+                            plateRecognitionBound = plateRecognitionRequested,
+                            plateError = if (plateRecognitionRequested) null else PlateRecognitionMonitor.currentState().lastError
+                        )
+                        return
+                    } catch (error: RuntimeException) {
+                        lastError = error
+                    }
+                }
+            }
+        }
+        throw lastError ?: IllegalStateException("No camera video mode available")
+    }
+
+    private fun activateBoundCamera(
+        mode: VideoMode,
+        dynamicRange: DynamicRange,
+        hdrRequested: Boolean,
+        plateRecognitionBound: Boolean,
+        plateError: String? = null
+    ) {
+        activeVideoMode = mode
+        activeHdrRequested = hdrRequested
+        activeHdrEnabled = dynamicRange != DynamicRange.SDR
+        activePlateRecognitionRequested = DashcamSettings.load(this).plateRecognitionEnabled
+        activePlateRecognitionBound = plateRecognitionBound
+        hdrActiveSnapshot = activeHdrEnabled
+        PlateRecognitionMonitor.onConfigured(
+            enabled = DashcamSettings.load(this).plateRecognitionEnabled,
+            analyzerBound = plateRecognitionBound,
+            error = plateError
+        )
+    }
+
+    @AndroidXOptIn(ExperimentalCamera2Interop::class)
+    private fun bindCameraUseCases(
+        selectedMode: VideoMode,
+        dynamicRange: DynamicRange,
+        enablePlateRecognition: Boolean,
+        enableImageCapture: Boolean,
+        enablePreview: Boolean
+    ) {
+>>>>>>> zipcopy/main
         val provider = cameraProvider ?: return
         val qualitySelector = QualitySelector.fromOrderedList(
             listOf(
@@ -268,6 +719,7 @@ class DashcamService : LifecycleService(), LocationListener {
         )
         Camera2Interop.Extender(videoBuilder).setSessionCaptureCallback(focusCaptureCallback)
         videoCapture = videoBuilder.build()
+<<<<<<< HEAD
         imageCapture = ImageCapture.Builder()
             .setTargetRotation(targetRotation)
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -277,6 +729,53 @@ class DashcamService : LifecycleService(), LocationListener {
         previewUseCase = null
         useCases += videoCapture ?: return
         useCases += imageCapture ?: return
+=======
+        imageCapture = if (enableImageCapture) {
+            ImageCapture.Builder()
+                .setTargetRotation(targetRotation)
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+        } else {
+            null
+        }
+        imageAnalysis = null
+        if (enablePlateRecognition) {
+            imageAnalysis = ImageAnalysis.Builder()
+                .setTargetRotation(targetRotation)
+                .setTargetResolution(Size(1280, 720))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(plateExecutor) { image ->
+                        val session = activePlateSession
+                        if (session == null) {
+                            image.close()
+                            return@setAnalyzer
+                        }
+                        val frame = session.analyze(image)
+                        if (frame != null && frame.plates.isNotEmpty()) {
+                            mainHandler.post { maybeFocusOnPlate(frame) }
+                        }
+                    }
+                }
+        }
+
+        val useCases = mutableListOf<UseCase>()
+        previewUseCase = if (enablePreview) {
+            Preview.Builder()
+                .setTargetRotation(targetRotation)
+                .build()
+                .also { preview ->
+                    preview.setSurfaceProvider(previewSurfaceProvider)
+                }
+        } else {
+            null
+        }
+        previewUseCase?.let { useCases += it }
+        useCases += videoCapture ?: return
+        imageCapture?.let { useCases += it }
+        imageAnalysis?.let { useCases += it }
+>>>>>>> zipcopy/main
 
         provider.unbindAll()
         camera = provider.bindToLifecycle(
@@ -289,9 +788,17 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun updatePreviewSurfaceProvider(provider: Preview.SurfaceProvider?) {
+<<<<<<< HEAD
         if (provider != null) {
             previewUseCase?.setSurfaceProvider(provider)
         }
+=======
+        previewUseCase?.setSurfaceProvider(provider)
+    }
+
+    private fun updateRecordingPreviewSurface(surface: Surface?) {
+        seamlessRecorder?.setPreviewSurface(surface)
+>>>>>>> zipcopy/main
     }
 
     private fun startOrientationListener() {
@@ -317,6 +824,10 @@ class DashcamService : LifecycleService(), LocationListener {
         previewUseCase?.targetRotation = targetRotation
         videoCapture?.targetRotation = targetRotation
         imageCapture?.targetRotation = targetRotation
+<<<<<<< HEAD
+=======
+        imageAnalysis?.targetRotation = targetRotation
+>>>>>>> zipcopy/main
     }
 
     private fun startVideoCapture() {
@@ -336,6 +847,7 @@ class DashcamService : LifecycleService(), LocationListener {
         val startTimeMs = System.currentTimeMillis()
         val outputFile = VideoStorage.outputFile(this, startTimeMs, activeTripFolderName)
         activeVideoFile = outputFile
+<<<<<<< HEAD
         activeSubtitleFile = VideoStorage.subtitleFileFor(outputFile)
         activeVideoStartWallMs = startTimeMs
         subtitleIndex = 0
@@ -343,6 +855,30 @@ class DashcamService : LifecycleService(), LocationListener {
         resetActiveTrack()
 
         activeRecording = preparePendingRecording(capture, outputFile, activeTripFolderName)
+=======
+        val startElapsedMs = SystemClock.elapsedRealtime()
+        activeSubtitleFile = VideoStorage.subtitleFileFor(outputFile)
+        rememberSubtitleFile(activeSubtitleFile, startElapsedMs)
+        activeVideoStartWallMs = startTimeMs
+        subtitleIndex = 0
+        recordingStartElapsedMs = startElapsedMs
+        resetActiveTrack()
+        lastPlateFocusElapsedMs = 0L
+        val plateEnabled = DashcamSettings.load(this).plateRecognitionEnabled
+        activePlateSession = if (plateEnabled) {
+            PlateRecognitionSession(
+                startWallMs = startTimeMs,
+                startElapsedMs = recordingStartElapsedMs,
+                analyzerBound = activePlateRecognitionBound,
+                initialError = if (activePlateRecognitionBound) null else PlateRecognitionMonitor.currentState().lastError
+            )
+        } else {
+            null
+        }
+        PlateRecognitionMonitor.onActive(plateEnabled, activePlateRecognitionBound)
+
+        activeRecording = preparePendingRecording(capture, outputFile)
+>>>>>>> zipcopy/main
             .let { pending -> enableAudioIfAllowed(pending) }
             .start(ContextCompat.getMainExecutor(this)) { event ->
                 when (event) {
@@ -354,6 +890,7 @@ class DashcamService : LifecycleService(), LocationListener {
 
     private fun preparePendingRecording(
         capture: VideoCapture<Recorder>,
+<<<<<<< HEAD
         outputFile: File,
         tripFolderName: String?
     ): PendingRecording {
@@ -370,15 +907,26 @@ class DashcamService : LifecycleService(), LocationListener {
         } else {
             capture.output.prepareRecording(this, FileOutputOptions.Builder(outputFile).build())
         }
+=======
+        outputFile: File
+    ): PendingRecording {
+        val outputOptions = FileOutputOptions.Builder(outputFile).build()
+        return capture.output.prepareRecording(this, outputOptions)
+>>>>>>> zipcopy/main
     }
 
     @SuppressLint("MissingPermission")
     private fun enableAudioIfAllowed(pending: PendingRecording): PendingRecording {
+<<<<<<< HEAD
         val settings = DashcamSettings.load(this)
         if (!settings.recordAudio || settings.voicePhotoEnabled) return pending
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             return pending
         }
+=======
+        if (!shouldRecordAudioInRecording()) return pending
+        stopVoiceRecognition()
+>>>>>>> zipcopy/main
         return try {
             pending.withAudioEnabled()
         } catch (_: SecurityException) {
@@ -387,6 +935,10 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun onRecordingStarted() {
+<<<<<<< HEAD
+=======
+        playRecordingStartCue()
+>>>>>>> zipcopy/main
         setRecordingState(this, true)
         startForegroundCompat(includeCameraType = true)
         mainHandler.removeCallbacks(subtitleTicker)
@@ -394,13 +946,22 @@ class DashcamService : LifecycleService(), LocationListener {
         mainHandler.removeCallbacks(segmentRollover)
         mainHandler.postDelayed(segmentRollover, activeSegmentDurationMs)
         lastLocation?.let { appendTrackPoint(it, force = true) }
+<<<<<<< HEAD
         RadarAlertController.start(this)
+=======
+>>>>>>> zipcopy/main
         refreshSettings()
     }
 
     private fun onRecordingFinalized(event: VideoRecordEvent.Finalize) {
         val file = activeVideoFile
+<<<<<<< HEAD
         activeRecording = null
+=======
+        val plateSession = activePlateSession
+        activeRecording = null
+        activePlateSession = null
+>>>>>>> zipcopy/main
         activeVideoFile = null
         if (!rollingRestart) {
             activeHdrEnabled = false
@@ -413,26 +974,56 @@ class DashcamService : LifecycleService(), LocationListener {
         if (!event.hasError() && file != null) {
             scanFile(file, "video/mp4")
             activeSubtitleFile?.takeIf { it.exists() }?.let { scanFile(it, "application/x-subrip") }
+<<<<<<< HEAD
             writeActiveTrack(file)?.let { scanFile(it, "application/json") }
             val limitGb = getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
                 .getInt(DashcamSettings.PREF_LOOP_STORAGE_GB, DashcamSettings.DEFAULT_LOOP_STORAGE_GB)
             VideoStorage.cleanupLoopStorage(this, limitGb)
+=======
+            writeActiveTrack(file)
+            plateSession?.finish(this, file)
+            val limitGb = getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+                .getInt(DashcamSettings.PREF_LOOP_STORAGE_GB, DashcamSettings.DEFAULT_LOOP_STORAGE_GB)
+            VideoStorage.cleanupLoopStorage(this, limitGb)
+        } else {
+            plateSession?.discard()
+>>>>>>> zipcopy/main
         }
         activeSubtitleFile = null
         activeVideoStartWallMs = 0L
         resetActiveTrack()
 
         if (rollingRestart && !requestedStop && !stoppingSelf) {
+<<<<<<< HEAD
             rollingRestart = false
             bindCameraUseCases()
+=======
+            val needsRebind = rollingRestartNeedsRebind
+            rollingRestart = false
+            rollingRestartNeedsRebind = false
+            if (needsRebind) bindCameraUseCases()
+>>>>>>> zipcopy/main
             startVideoCapture()
             return
         }
 
+<<<<<<< HEAD
         writeTripDriveRecord()
         clearActiveTrip()
         setRecordingState(this, false)
         RadarAlertController.stop()
+=======
+        playRecordingStopCue()
+        releaseCameraUseCases()
+        writeTripDriveRecord()
+        clearActiveTrip()
+        setRecordingState(this, false)
+        if (exitAfterStop) {
+            stopVoiceRecognition()
+            stopSelf()
+            return
+        }
+>>>>>>> zipcopy/main
         refreshSettings()
         startForegroundCompat(includeCameraType = false)
         if (!stoppingSelf && !shouldKeepAliveForVoice()) stopSelf()
@@ -441,6 +1032,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun stopRecordingInternal() {
         requestedStop = true
         rollingRestart = false
+<<<<<<< HEAD
         parkingStationarySinceElapsedMs = null
         mainHandler.removeCallbacks(segmentRollover)
         activeRecording?.stop()
@@ -449,24 +1041,99 @@ class DashcamService : LifecycleService(), LocationListener {
             setRecordingState(this, false)
             if (!shouldKeepAliveForVoice()) stopVoiceRecognition()
             RadarAlertController.stop()
+=======
+        rollingRestartNeedsRebind = false
+        parkingStationarySinceElapsedMs = null
+        mainHandler.removeCallbacks(segmentRollover)
+        seamlessRecorder?.stop()
+        if (seamlessRecorder != null) {
+            mainHandler.removeCallbacks(subtitleTicker)
+            return
+        }
+        activeRecording?.stop()
+        mainHandler.removeCallbacks(subtitleTicker)
+        if (activeRecording == null) {
+            releaseCameraUseCases()
+            setRecordingState(this, false)
+            if (!shouldKeepAliveForVoice()) stopVoiceRecognition()
+            activePlateSession?.discard()
+            activePlateSession = null
+>>>>>>> zipcopy/main
             resetActiveTrack()
             clearActiveTrip()
             startForegroundCompat(includeCameraType = false)
         }
     }
 
+<<<<<<< HEAD
     private fun takePhotoInternal() {
         val capture = imageCapture ?: return
         val outputFile = VideoStorage.photoOutputFile(this)
         val tempFile = VideoStorage.tempPhotoFile(this)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+=======
+    private fun playRecordingStartCue() {
+        if (recordingCueOpen) return
+        recordingCueOpen = true
+        PhotoShutterSound.playRecordingStart(this)
+    }
+
+    private fun playRecordingStopCue() {
+        if (!recordingCueOpen) return
+        recordingCueOpen = false
+        PhotoShutterSound.playRecordingStop(this)
+    }
+
+    private fun releaseCameraUseCases() {
+        runCatching { cameraProvider?.unbindAll() }
+        camera = null
+        previewUseCase = null
+        videoCapture = null
+        imageCapture = null
+        imageAnalysis = null
+        activePlateRecognitionBound = false
+        PlateRecognitionMonitor.onActive(false, false)
+    }
+
+    private fun takePhotoInternal() {
+        val recorder = seamlessRecorder
+        if (recorder != null) {
+            PhotoShutterSound.play(this)
+            captureSeamlessPhoto(recorder)
+            return
+        }
+        val capture = imageCapture ?: run {
+            val plateBlockingPhoto = activePlateRecognitionBound &&
+                DashcamSettings.load(this).plateRecognitionEnabled
+            val message = if (plateBlockingPhoto) {
+                R.string.photo_unavailable_while_plate_recognition
+            } else {
+                R.string.photo_failed
+            }
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val outputFile = VideoStorage.photoOutputFile(this, tripFolderName = activeTripFolderName)
+        val tempFile = VideoStorage.tempPhotoFile(this)
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+        PhotoShutterSound.play(this)
+>>>>>>> zipcopy/main
         capture.takePicture(
             outputOptions,
             cameraExecutor,
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     PhotoWatermark.apply(this@DashcamService, tempFile, activeVideoMode ?: CameraCapabilities.selectedVideoMode(this@DashcamService))
+<<<<<<< HEAD
                     val published = VideoStorage.publishPhotoToGallery(this@DashcamService, tempFile, outputFile.name)
+=======
+                    val published = VideoStorage.publishPhotoToGallery(
+                        this@DashcamService,
+                        tempFile,
+                        outputFile.name,
+                        activeTripFolderName
+                    )
+>>>>>>> zipcopy/main
                     tempFile.delete()
                     scanFile(published, "image/jpeg")
                     mainHandler.post {
@@ -483,6 +1150,46 @@ class DashcamService : LifecycleService(), LocationListener {
         )
     }
 
+<<<<<<< HEAD
+=======
+    private fun captureSeamlessPhoto(recorder: SeamlessDashcamRecorder) {
+        val outputFile = VideoStorage.photoOutputFile(this, tripFolderName = activeTripFolderName)
+        val tempFile = VideoStorage.tempPhotoFile(this)
+        val mode = activeVideoMode ?: CameraCapabilities.selectedVideoMode(this)
+        recorder.captureStill(tempFile) { result ->
+            cameraExecutor.execute {
+                result.fold(
+                    onSuccess = {
+                        PhotoWatermark.apply(this, tempFile, mode)
+                        val published = VideoStorage.publishPhotoToGallery(
+                            this,
+                            tempFile,
+                            outputFile.name,
+                            activeTripFolderName
+                        )
+                        tempFile.delete()
+                        scanFile(published, "image/jpeg")
+                        mainHandler.post {
+                            Toast.makeText(this, R.string.photo_saved, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onFailure = { error ->
+                        tempFile.delete()
+                        val message = if (error is StillCaptureUnavailable) {
+                            R.string.photo_unavailable_during_recording
+                        } else {
+                            R.string.photo_failed
+                        }
+                        mainHandler.post {
+                            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+>>>>>>> zipcopy/main
     private fun appendSubtitleTick() {
         val file = activeSubtitleFile ?: return
         val lines = buildWatermarkLines(forceTime = false)
@@ -502,7 +1209,11 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun appendTrackPoint(location: Location, force: Boolean = false) {
+<<<<<<< HEAD
         if (activeRecording == null || recordingStartElapsedMs <= 0L) return
+=======
+        if (!isRecordingActive() || recordingStartElapsedMs <= 0L) return
+>>>>>>> zipcopy/main
         if (activeTrackPoints.size >= MAX_TRACK_POINTS_PER_SEGMENT) return
         val elapsedMs = (SystemClock.elapsedRealtime() - recordingStartElapsedMs).coerceAtLeast(0L)
         if (!force &&
@@ -533,6 +1244,7 @@ class DashcamService : LifecycleService(), LocationListener {
             val track = VideoTrack(
                 videoFileName = videoFile.name,
                 startTimeMs = activeVideoStartWallMs,
+<<<<<<< HEAD
                 points = activeTrackPoints.toList()
             )
             VideoTrackStorage.writeTrack(
@@ -540,6 +1252,20 @@ class DashcamService : LifecycleService(), LocationListener {
                 track = track
             )
         } catch (_: RuntimeException) {
+=======
+                points = activeTrackPoints.toList(),
+                radars = RouteRadarMarks.toTrackRadars(
+                    RadarAlertController.sightingsBetween(activeVideoStartWallMs, System.currentTimeMillis()),
+                    activeVideoStartWallMs
+                )
+            )
+            VideoTrackStorage.writeTrack(
+                context = this,
+                videoFile = videoFile,
+                track = track
+            )
+        } catch (_: Exception) {
+>>>>>>> zipcopy/main
             null
         }
     }
@@ -568,6 +1294,10 @@ class DashcamService : LifecycleService(), LocationListener {
                 endTimeMs = endTimeMs,
                 durationMs = summary.durationMs,
                 maxSpeedKmh = summary.maxSpeedKmh,
+<<<<<<< HEAD
+=======
+                waitDurationMs = currentStationaryWaitMs(),
+>>>>>>> zipcopy/main
                 distanceMeters = summary.totalDistanceMeters,
                 averageSpeedKmh = summary.averageSpeedKmh,
                 maxSpeedLatitude = maxPoint?.latitude,
@@ -575,6 +1305,10 @@ class DashcamService : LifecycleService(), LocationListener {
                 maxSpeedAccuracyMeters = maxPoint?.accuracyMeters,
                 averageAccuracyMeters = summary.averageAccuracyMeters,
                 goodFixRatio = summary.goodFixRatio,
+<<<<<<< HEAD
+=======
+                source = DriveRecordStore.SOURCE_VIDEO,
+>>>>>>> zipcopy/main
                 routePoints = points.map { point ->
                     DriveRoutePoint(
                         timeMs = point.timeMs,
@@ -599,6 +1333,37 @@ class DashcamService : LifecycleService(), LocationListener {
         activeTripStartWallMs = 0L
         tripRecordingStartElapsedMs = 0L
         activeTripTrackPoints.clear()
+<<<<<<< HEAD
+=======
+        tripSubtitleFiles.clear()
+    }
+
+    private fun rememberSubtitleFile(file: File?, startElapsedMs: Long) {
+        if (file == null || startElapsedMs <= 0L) return
+        if (tripSubtitleFiles.none { it.first == file }) {
+            tripSubtitleFiles += file to startElapsedMs
+        }
+    }
+
+    private fun rewriteRecordedRoadLayer(correction: DivergenceCorrection) {
+        if (!DashcamSettings.load(this).showRoadLayer) return
+        val label = when (correction.layer) {
+            RoadLayer.ELEVATED -> RoadLayerLabels.ON_BRIDGE
+            RoadLayer.GROUND -> RoadLayerLabels.UNDER_BRIDGE
+            else -> return
+        }
+        tripSubtitleFiles.toList().forEach { (file, startElapsedMs) ->
+            if (!file.exists()) return@forEach
+            val fromElapsedMs = (correction.fromTimeMs - startElapsedMs).coerceAtLeast(0L)
+            try {
+                val original = file.readText(Charsets.UTF_8)
+                val updated = SrtRoadLayerRewrite.rewrite(original, fromElapsedMs, label)
+                if (updated != original) file.writeText(updated, Charsets.UTF_8)
+            } catch (_: Exception) {
+                // 字幕文件正在被系统占用时，下一秒的新字幕仍会使用修正后的层级。
+            }
+        }
+>>>>>>> zipcopy/main
     }
 
     private fun buildWatermarkLines(forceTime: Boolean): List<String> {
@@ -607,11 +1372,22 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     private fun refreshSettings() {
+<<<<<<< HEAD
+=======
+        if (exitAfterStop) {
+            if (!isRecordingActive()) {
+                stopVoiceRecognition()
+                stopSelf()
+            }
+            return
+        }
+>>>>>>> zipcopy/main
         applyFocusSetting()
         val settings = DashcamSettings.load(this)
         lastLocation?.let { maybeResolveAddress(it) }
         if (activeRecording != null && DashcamHdrSettings.shouldEnableNow(this) != activeHdrRequested && !rollingRestart) {
             rollingRestart = true
+<<<<<<< HEAD
             activeRecording?.stop()
             return
         }
@@ -627,12 +1403,54 @@ class DashcamService : LifecycleService(), LocationListener {
         }
         startForegroundCompat(includeCameraType = activeRecording != null)
         if (activeRecording == null && !shouldKeepAliveForVoice()) {
+=======
+            rollingRestartNeedsRebind = true
+            activeRecording?.stop()
+            return
+        }
+        if (activeRecording != null && settings.plateRecognitionEnabled != activePlateRecognitionRequested && !rollingRestart) {
+            rollingRestart = true
+            rollingRestartNeedsRebind = true
+            activeRecording?.stop()
+            return
+        }
+        when (VoiceCapture.mode(settings.voicePhotoEnabled, hasAudioPermission(), isRecordingActive())) {
+            VoiceCaptureMode.OFF -> {
+                seamlessRecorder?.recordingPcmListener = null
+                VoicePhotoRecognizer.endExternalCapture(VOICE_OWNER)
+                stopVoiceRecognition()
+            }
+            VoiceCaptureMode.RECORDING_PCM -> {
+                val recorder = seamlessRecorder
+                recorder?.recordingPcmListener = recordingPcmListener
+                recorder?.startListeningCaptureIfNeeded()
+                if (recorder?.isCapturingAudio() == true) {
+                    VoicePhotoRecognizer.beginExternalCapture(this, VOICE_OWNER, ::dispatchVoiceCommand)
+                } else {
+                    recorder?.recordingPcmListener = null
+                    VoicePhotoRecognizer.endExternalCapture(VOICE_OWNER)
+                    startVoiceRecognition()
+                }
+            }
+            VoiceCaptureMode.MICROPHONE -> {
+                seamlessRecorder?.recordingPcmListener = null
+                VoicePhotoRecognizer.endExternalCapture(VOICE_OWNER)
+                startVoiceRecognition()
+            }
+        }
+        startForegroundCompat(includeCameraType = isRecordingActive())
+        if (!isRecordingActive() && !shouldKeepAliveForVoice()) {
+>>>>>>> zipcopy/main
             stopSelf()
         }
     }
 
     private fun updateParkingStop(speedKmh: Float) {
+<<<<<<< HEAD
         if (activeRecording == null || requestedStop) {
+=======
+        if (!isRecordingActive() || requestedStop) {
+>>>>>>> zipcopy/main
             parkingStationarySinceElapsedMs = null
             return
         }
@@ -663,6 +1481,7 @@ class DashcamService : LifecycleService(), LocationListener {
         CameraFocus.apply(this, camera)
     }
 
+<<<<<<< HEAD
     private fun startVoiceRecognition() {
         VoicePhotoRecognizer.start(this, VOICE_OWNER) { command ->
             val now = SystemClock.elapsedRealtime()
@@ -695,10 +1514,88 @@ class DashcamService : LifecycleService(), LocationListener {
                         }
                     }
                 }
+=======
+    private fun maybeFocusOnPlate(frame: PlateOverlayFrame) {
+        if (!isRecordingActive() || requestedStop) return
+        if (!DashcamSettings.load(this).plateRecognitionEnabled) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPlateFocusElapsedMs < PLATE_FOCUS_INTERVAL_MS) return
+        if (CameraFocus.focusOnPlate(this, camera, frame)) {
+            lastPlateFocusElapsedMs = now
+            PlateRecognitionMonitor.onSmartFocusTriggered(System.currentTimeMillis())
+        }
+    }
+
+    private val recordingPcmListener = SeamlessDashcamRecorder.RecordingPcmListener { data, length, sampleRate ->
+        VoicePhotoRecognizer.feedExternalPcm(data, length, sampleRate)
+    }
+
+    private fun startVoiceRecognition() {
+        VoicePhotoRecognizer.start(this, VOICE_OWNER, ::dispatchVoiceCommand)
+    }
+
+    private fun dispatchVoiceCommand(command: VoiceCommand) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastVoicePhotoAtMs <= 3_000L) return
+        lastVoicePhotoAtMs = now
+        mainHandler.post {
+            when (command) {
+                VoiceCommand.TAKE_PHOTO -> {
+                    VoiceCommandFeedback.photoTaken(this)
+                    if (isRecordingActive()) {
+                        takePhotoInternal()
+                    } else {
+                        CameraRecordActivity.takePhoto(this)
+                    }
+                }
+                VoiceCommand.START_RECORDING -> {
+                    if (isRecordingActive()) {
+                        VoiceCommandFeedback.alreadyRecording(this)
+                    } else {
+                        VoiceCommandFeedback.recordingStarted(this)
+                        startRecordingInternal()
+                    }
+                }
+                VoiceCommand.STOP_RECORDING -> {
+                    if (isRecordingActive()) {
+                        VoiceCommandFeedback.recordingStopped(this)
+                        stopRecordingInternal()
+                    } else {
+                        VoiceCommandFeedback.notRecording(this)
+                    }
+                }
+                VoiceCommand.RADAR_ALERT_ON -> enableRadarAlertFromVoice()
+                VoiceCommand.RADAR_ALERT_OFF -> disableRadarAlertFromVoice()
+>>>>>>> zipcopy/main
             }
         }
     }
 
+<<<<<<< HEAD
+=======
+    private fun enableRadarAlertFromVoice() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            VoiceCommandFeedback.radarAlertNeedsLocation(this)
+            return
+        }
+        getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(RadarAlertSettingsStore.PREF_RADAR_ALERT_ENABLED, true)
+            .commit()
+        RadarAlertService.sync(this)
+        VoiceCommandFeedback.radarAlertStarted(this)
+    }
+
+    private fun disableRadarAlertFromVoice() {
+        getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(RadarAlertSettingsStore.PREF_RADAR_ALERT_ENABLED, false)
+            .commit()
+        RadarAlertService.stop(this)
+        VoiceCommandFeedback.radarAlertStopped(this)
+    }
+
+>>>>>>> zipcopy/main
     private fun stopVoiceRecognition() {
         VoicePhotoRecognizer.stop(VOICE_OWNER)
     }
@@ -725,12 +1622,40 @@ class DashcamService : LifecycleService(), LocationListener {
         }
     }
 
+<<<<<<< HEAD
+=======
+    private fun updateStationaryWait(speedKmh: Float) {
+        stationaryWaitState = SpeedRules.updateTripAndWait(
+            stationaryWaitState,
+            speedKmh,
+            System.currentTimeMillis()
+        )
+    }
+
+    private fun currentStationaryWaitMs(): Long {
+        return SpeedRules.currentWaitDurationMs(stationaryWaitState, System.currentTimeMillis())
+    }
+
+    private fun resetStationaryWait() {
+        stationaryWaitState = SpeedRules.WaitState(
+            tripStarted = false,
+            tripStartTimeMs = 0L,
+            waitAtZeroAccumMs = 0L,
+            waitAtZeroStartMs = 0L
+        )
+    }
+
+>>>>>>> zipcopy/main
     private fun updateTelemetrySnapshot() {
         val location = lastLocation
         telemetrySnapshot = DashcamTelemetry(
             speedKmh = lastSpeedKmh,
             latitude = location?.latitude,
             longitude = location?.longitude,
+<<<<<<< HEAD
+=======
+            satelliteCount = gpsUsedSatelliteCount,
+>>>>>>> zipcopy/main
             address = lastAddressText,
             focusDistanceDiopters = lastFocusDistanceDiopters,
             autofocusState = lastAutofocusState
@@ -750,7 +1675,11 @@ class DashcamService : LifecycleService(), LocationListener {
                 .getFromLocation(location.latitude, location.longitude, 1)
                 ?.firstOrNull()
                 ?: return null
+<<<<<<< HEAD
             formatChinaAddress(address)
+=======
+            formatPlace(address)
+>>>>>>> zipcopy/main
         } catch (_: IOException) {
             null
         } catch (_: RuntimeException) {
@@ -758,6 +1687,7 @@ class DashcamService : LifecycleService(), LocationListener {
         }
     }
 
+<<<<<<< HEAD
     private fun formatChinaAddress(address: Address): String {
         val country = when (address.countryCode?.uppercase(Locale.US)) {
             "CN" -> "中国大陆"
@@ -772,6 +1702,20 @@ class DashcamService : LifecycleService(), LocationListener {
             address.featureName
         ).filter { it.isNotBlank() }
         return parts.distinct().joinToString(" ")
+=======
+    private fun formatPlace(address: Address): String? {
+        val line = if (address.maxAddressLineIndex >= 0) address.getAddressLine(0) else null
+        return PlaceSubtitle.format(
+            adminArea = address.adminArea,
+            subAdminArea = address.subAdminArea,
+            locality = address.locality,
+            subLocality = address.subLocality,
+            thoroughfare = address.thoroughfare,
+            featureName = address.featureName,
+            premises = address.premises,
+            addressLine = line
+        )
+>>>>>>> zipcopy/main
     }
 
     private fun registerLocationUpdates() {
@@ -782,9 +1726,40 @@ class DashcamService : LifecycleService(), LocationListener {
         } catch (_: RuntimeException) {
             // 定位不可用时只是不显示 GPS 水印，不影响录像。
         }
+<<<<<<< HEAD
     }
 
     private fun unregisterLocationUpdates() {
+=======
+        registerGnssStatusUpdates(manager)
+    }
+
+    private fun registerGnssStatusUpdates(manager: LocationManager) {
+        if (gnssStatusCallback != null) return
+        val callback = object : GnssStatus.Callback() {
+            override fun onSatelliteStatusChanged(status: GnssStatus) {
+                gpsUsedSatelliteCount = GnssSatelliteCount.usedInFix(status.satelliteCount, status::usedInFix)
+                updateTelemetrySnapshot()
+            }
+
+            override fun onStopped() {
+                gpsUsedSatelliteCount = null
+                updateTelemetrySnapshot()
+            }
+        }
+        try {
+            val registered = manager.registerGnssStatusCallback(callback, Handler(Looper.getMainLooper()))
+            if (registered) gnssStatusCallback = callback
+        } catch (_: SecurityException) {
+            gpsUsedSatelliteCount = null
+        } catch (_: RuntimeException) {
+            gpsUsedSatelliteCount = null
+        }
+    }
+
+    private fun unregisterLocationUpdates() {
+        unregisterGnssStatusUpdates()
+>>>>>>> zipcopy/main
         val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         try {
             manager.removeUpdates(this)
@@ -793,8 +1768,29 @@ class DashcamService : LifecycleService(), LocationListener {
         }
     }
 
+<<<<<<< HEAD
     private fun scanFile(file: File, mimeType: String) {
         MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf(mimeType), null)
+=======
+    private fun unregisterGnssStatusUpdates() {
+        val callback = gnssStatusCallback ?: return
+        gnssStatusCallback = null
+        val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        try {
+            manager.unregisterGnssStatusCallback(callback)
+        } catch (_: RuntimeException) {
+            // ignore teardown exception
+        }
+        gpsUsedSatelliteCount = null
+    }
+
+    private fun scanFile(file: File, mimeType: String) {
+        MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf(mimeType)) { _, uri ->
+            if (mimeType == "video/mp4") {
+                runCatching { VideoStorage.publishIntoGalleryAlbum(this, file, uri) }
+            }
+        }
+>>>>>>> zipcopy/main
     }
 
     private fun hasCameraPermission(): Boolean {
@@ -856,7 +1852,11 @@ class DashcamService : LifecycleService(), LocationListener {
             Intent(this, DashcamService::class.java).apply { action = ACTION_TAKE_PHOTO },
             flags
         )
+<<<<<<< HEAD
         val recording = activeRecording != null || isRecording(this)
+=======
+        val recording = isRecordingActive() || isRecording(this)
+>>>>>>> zipcopy/main
         val notificationTime = if (recording && activeVideoStartWallMs > 0L) activeVideoStartWallMs else System.currentTimeMillis()
         return NotificationCompat.Builder(this, DashcamNotificationGuard.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
@@ -869,6 +1869,10 @@ class DashcamService : LifecycleService(), LocationListener {
             .setChronometerCountDown(false)
             .addAction(android.R.drawable.ic_menu_camera, getString(R.string.dashcam_action_photo), photoIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_action_stop), stopIntent)
+<<<<<<< HEAD
+=======
+            .addAction(android.R.drawable.ic_lock_power_off, getString(R.string.notif_action_exit_background), AppBackgroundExit.pendingIntent(this))
+>>>>>>> zipcopy/main
             .setOngoing(recording)
             .build()
     }
@@ -887,6 +1891,10 @@ class DashcamService : LifecycleService(), LocationListener {
         const val ACTION_STOP_RECORDING = "com.thomas.carspeed.action.DASHCAM_STOP_RECORDING"
         const val ACTION_TAKE_PHOTO = "com.thomas.carspeed.action.DASHCAM_TAKE_PHOTO"
         const val ACTION_REFRESH_SETTINGS = "com.thomas.carspeed.action.DASHCAM_REFRESH_SETTINGS"
+<<<<<<< HEAD
+=======
+        const val ACTION_EXIT = "com.thomas.carspeed.action.DASHCAM_EXIT"
+>>>>>>> zipcopy/main
 
         private const val NOTIFICATION_ID = 2001
         private const val KEY_RECORDING = "dashcam_recording"
@@ -895,6 +1903,10 @@ class DashcamService : LifecycleService(), LocationListener {
         private const val ADDRESS_REFRESH_DISTANCE_METERS = 200f
         private const val TRACK_POINT_INTERVAL_MS = 1_000L
         private const val MAX_TRACK_POINTS_PER_SEGMENT = 30_000
+<<<<<<< HEAD
+=======
+        private const val PLATE_FOCUS_INTERVAL_MS = 5_000L
+>>>>>>> zipcopy/main
         private const val VOICE_OWNER = "service"
 
         @Volatile
@@ -905,9 +1917,29 @@ class DashcamService : LifecycleService(), LocationListener {
         private var previewSurfaceProvider: Preview.SurfaceProvider? = null
 
         @Volatile
+<<<<<<< HEAD
         private var telemetrySnapshot = DashcamTelemetry()
 
         fun currentTelemetry(): DashcamTelemetry = telemetrySnapshot
+=======
+        private var recordingPreviewSurface: Surface? = null
+
+        @Volatile
+        private var telemetrySnapshot = DashcamTelemetry()
+
+        fun currentTelemetry(): DashcamTelemetry {
+            val waitMs = instance?.currentStationaryWaitMs() ?: 0L
+            return telemetrySnapshot.copy(stationaryWaitMs = waitMs)
+        }
+
+        fun radarLimitSummary(nowMs: Long = System.currentTimeMillis()): String? {
+            val service = instance ?: return null
+            val startMs = service.activeTripStartWallMs
+            if (startMs <= 0L) return null
+            val limits = RadarAlertController.sightingsBetween(startMs, nowMs).map { it.speedLimit }
+            return RouteRadarMarks.limitSummary(limits)
+        }
+>>>>>>> zipcopy/main
 
         fun updatePreviewFocusTelemetry(focusDistanceDiopters: Float?, autofocusState: Int?) {
             telemetrySnapshot = telemetrySnapshot.copy(
@@ -939,7 +1971,18 @@ class DashcamService : LifecycleService(), LocationListener {
             instance?.updatePreviewSurfaceProvider(provider)
         }
 
+<<<<<<< HEAD
         fun startRecording(context: Context) {
+=======
+        fun setRecordingPreviewSurface(surface: Surface?) {
+            recordingPreviewSurface = surface
+            instance?.updateRecordingPreviewSurface(surface)
+        }
+
+        fun startRecording(context: Context) {
+            CameraRecordActivity.prepareForServiceRecording()
+            CameraFullscreenActivity.prepareForServiceRecording()
+>>>>>>> zipcopy/main
             val intent = Intent(context, DashcamService::class.java).apply { action = ACTION_START_RECORDING }
             ContextCompat.startForegroundService(context, intent)
         }
@@ -953,6 +1996,22 @@ class DashcamService : LifecycleService(), LocationListener {
             }
         }
 
+<<<<<<< HEAD
+=======
+        fun exit(context: Context) {
+            if (instance == null) {
+                context.stopService(Intent(context, DashcamService::class.java))
+                return
+            }
+            val intent = Intent(context, DashcamService::class.java).apply { action = ACTION_EXIT }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: RuntimeException) {
+                context.startService(intent)
+            }
+        }
+
+>>>>>>> zipcopy/main
         fun takePhoto(context: Context) {
             val intent = Intent(context, DashcamService::class.java).apply { action = ACTION_TAKE_PHOTO }
             context.startService(intent)
@@ -964,7 +2023,11 @@ class DashcamService : LifecycleService(), LocationListener {
         }
 
         fun isRecording(context: Context): Boolean {
+<<<<<<< HEAD
             val active = instance?.activeRecording != null
+=======
+            val active = instance?.isRecordingActive() == true
+>>>>>>> zipcopy/main
             val prefs = context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
             if (!active && instance == null && prefs.getBoolean(KEY_RECORDING, false)) {
                 setRecordingState(context, false)

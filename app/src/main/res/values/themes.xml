@@ -1,20 +1,64 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.CarSpeed" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.CarSpeed" parent="Theme.Material3.Light.NoActionBar">
         <item name="colorPrimary">@color/brand_blue</item>
         <item name="colorSecondary">@color/brand_teal</item>
         <item name="colorSurface">@color/surface_primary</item>
         <item name="android:colorBackground">@color/brand_sand</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@color/brand_navy</item>
+        <item name="android:navigationBarColor">@color/brand_sand</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
+        <item name="materialButtonStyle">@style/Widget.CarSpeed.Button</item>
         <item name="materialCardViewFilledStyle">@style/Widget.CarSpeed.Card</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.CarSpeed.Dialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.CarSpeed.Dialog</item>
+        <item name="android:seekBarStyle">@style/Widget.CarSpeed.SeekBar</item>
+        <item name="seekBarStyle">@style/Widget.CarSpeed.SeekBar</item>
+        <item name="android:spinnerStyle">@style/Widget.CarSpeed.Spinner</item>
+        <item name="spinnerStyle">@style/Widget.CarSpeed.Spinner</item>
+        <item name="android:progressBarStyleHorizontal">@style/Widget.CarSpeed.ProgressBar</item>
+        <item name="colorControlActivated">@color/brand_blue</item>
     </style>
 
     <style name="Widget.CarSpeed.Card" parent="Widget.Material3.CardView.Elevated">
         <item name="cardBackgroundColor">@color/surface_primary</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">0dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Button" parent="Widget.Material3.Button">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
         <item name="strokeColor">@color/divider_soft</item>
-        <item name="strokeWidth">1dp</item>
-        <item name="cardCornerRadius">28dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Button.Text.Danger" parent="Widget.CarSpeed.Button.Text">
+        <item name="android:textColor">@color/text_danger</item>
     </style>
 
     <style name="TextAppearance.CarSpeed.Title" parent="TextAppearance.Material3.HeadlineMedium">
@@ -28,6 +72,60 @@
 
     <style name="TextAppearance.CarSpeed.SectionTitle" parent="TextAppearance.Material3.TitleMedium">
         <item name="android:textColor">@color/text_primary</item>
-        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.CarSpeed.SeekBar" parent="Widget.AppCompat.SeekBar">
+        <item name="android:progressTint">@color/brand_blue</item>
+        <item name="android:thumbTint">@color/brand_blue</item>
+        <item name="android:progressBackgroundTint">@color/divider_soft</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.Spinner" parent="Widget.AppCompat.Spinner">
+        <item name="android:background">@drawable/bg_spinner</item>
+        <item name="android:popupBackground">@color/surface_primary</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.ProgressBar" parent="Widget.AppCompat.ProgressBar.Horizontal">
+        <item name="android:progressTint">@color/brand_blue</item>
+        <item name="android:progressBackgroundTint">@color/divider_soft</item>
+        <item name="android:minHeight">4dp</item>
+    </style>
+
+    <style name="Widget.CarSpeed.TextInput" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+        <item name="boxStrokeColor">@color/text_input_stroke</item>
+        <item name="hintTextColor">@color/brand_blue</item>
+    </style>
+
+    <style name="ThemeOverlay.CarSpeed.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/surface_primary</item>
+        <item name="colorSurfaceContainer">@color/surface_primary</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_primary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorPrimary">@color/brand_blue</item>
+        <item name="android:colorBackground">@color/surface_primary</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+    </style>
+
+    <style name="ThemeOverlay.CarSpeed.CalendarDialog" parent="ThemeOverlay.CarSpeed.Dialog" />
+
+    <style name="Theme.CarSpeed.Wake" parent="Theme.CarSpeed">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

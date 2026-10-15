@@ -7,7 +7,15 @@ data class RadarAlertSettings(
     val enabled: Boolean,
     val thresholdsSeconds: List<Int>,
     val leadSeconds: Int,
+<<<<<<< HEAD
     val speechRatePercent: Int
+=======
+    val speechRatePercent: Int,
+    val unknownRoadLayerElevated: Boolean = true,
+    val roadDivergenceCorrectionEnabled: Boolean = true,
+    val pitchRoadLayerEnabled: Boolean = true,
+    val satelliteTunnelEnabled: Boolean = true
+>>>>>>> zipcopy/main
 ) {
     val speechRate: Float
         get() = speechRatePercent.coerceIn(
@@ -21,7 +29,20 @@ object RadarAlertSettingsStore {
     const val PREF_RADAR_ALERT_THRESHOLDS = "radar_alert_thresholds_seconds"
     const val PREF_RADAR_ALERT_LEAD_SECONDS = "radar_alert_lead_seconds"
     const val PREF_RADAR_ALERT_SPEECH_RATE_PERCENT = "radar_alert_speech_rate_percent"
+<<<<<<< HEAD
 
+=======
+    const val PREF_RADAR_UNKNOWN_ROAD_LAYER_ELEVATED = "radar_unknown_road_layer_elevated"
+    const val PREF_RADAR_ROAD_DIVERGENCE_CORRECTION = "radar_road_divergence_correction"
+    const val PREF_RADAR_PITCH_ROAD_LAYER = "radar_pitch_road_layer"
+    const val PREF_RADAR_SATELLITE_TUNNEL = "radar_satellite_tunnel"
+
+    const val DEFAULT_ENABLED = false
+    const val DEFAULT_UNKNOWN_ROAD_LAYER_ELEVATED = true
+    const val DEFAULT_ROAD_DIVERGENCE_CORRECTION = true
+    const val DEFAULT_PITCH_ROAD_LAYER = true
+    const val DEFAULT_SATELLITE_TUNNEL = true
+>>>>>>> zipcopy/main
     const val DEFAULT_THRESHOLDS_TEXT = "20,10,5"
     const val DEFAULT_LEAD_SECONDS = 2
     const val DEFAULT_SPEECH_RATE_PERCENT = 150
@@ -35,14 +56,38 @@ object RadarAlertSettingsStore {
     fun load(context: Context): RadarAlertSettings {
         val prefs = context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
         return RadarAlertSettings(
+<<<<<<< HEAD
             enabled = prefs.getBoolean(PREF_RADAR_ALERT_ENABLED, true),
+=======
+            enabled = prefs.getBoolean(PREF_RADAR_ALERT_ENABLED, DEFAULT_ENABLED),
+>>>>>>> zipcopy/main
             thresholdsSeconds = parseThresholds(
                 prefs.getString(PREF_RADAR_ALERT_THRESHOLDS, DEFAULT_THRESHOLDS_TEXT).orEmpty()
             ),
             leadSeconds = prefs.getInt(PREF_RADAR_ALERT_LEAD_SECONDS, DEFAULT_LEAD_SECONDS)
                 .coerceIn(MIN_LEAD_SECONDS, MAX_LEAD_SECONDS),
             speechRatePercent = prefs.getInt(PREF_RADAR_ALERT_SPEECH_RATE_PERCENT, DEFAULT_SPEECH_RATE_PERCENT)
+<<<<<<< HEAD
                 .coerceIn(MIN_SPEECH_RATE_PERCENT, MAX_SPEECH_RATE_PERCENT)
+=======
+                .coerceIn(MIN_SPEECH_RATE_PERCENT, MAX_SPEECH_RATE_PERCENT),
+            unknownRoadLayerElevated = prefs.getBoolean(
+                PREF_RADAR_UNKNOWN_ROAD_LAYER_ELEVATED,
+                DEFAULT_UNKNOWN_ROAD_LAYER_ELEVATED
+            ),
+            roadDivergenceCorrectionEnabled = prefs.getBoolean(
+                PREF_RADAR_ROAD_DIVERGENCE_CORRECTION,
+                DEFAULT_ROAD_DIVERGENCE_CORRECTION
+            ),
+            pitchRoadLayerEnabled = prefs.getBoolean(
+                PREF_RADAR_PITCH_ROAD_LAYER,
+                DEFAULT_PITCH_ROAD_LAYER
+            ),
+            satelliteTunnelEnabled = prefs.getBoolean(
+                PREF_RADAR_SATELLITE_TUNNEL,
+                DEFAULT_SATELLITE_TUNNEL
+            )
+>>>>>>> zipcopy/main
         )
     }
 

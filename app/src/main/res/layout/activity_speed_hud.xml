@@ -15,7 +15,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:backgroundTint="@android:color/transparent"
+<<<<<<< HEAD
         app:navigationIcon="@android:drawable/ic_menu_revert"
+=======
+        app:navigationIcon="@drawable/ic_nav_back"
+>>>>>>> zipcopy/main
         app:title="@string/speed_hud_title"
         app:titleTextColor="@color/text_primary" />
 
@@ -73,7 +77,11 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnToggle"
+<<<<<<< HEAD
                         style="@style/Widget.Material3.Button"
+=======
+                        style="@style/Widget.CarSpeed.Button"
+>>>>>>> zipcopy/main
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="18dp"
@@ -81,7 +89,11 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnStatus"
+<<<<<<< HEAD
                         style="@style/Widget.Material3.Button.TonalButton"
+=======
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+>>>>>>> zipcopy/main
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
@@ -155,8 +167,12 @@
                         android:id="@+id/spSpeedUnit"
                         android:layout_width="match_parent"
                         android:layout_height="52dp"
+<<<<<<< HEAD
                         android:layout_marginTop="6dp"
                         android:backgroundTint="@color/surface_secondary" />
+=======
+                        android:layout_marginTop="6dp" />
+>>>>>>> zipcopy/main
 
                     <TextView
                         android:id="@+id/tvWarningLabel"

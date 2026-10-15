@@ -3,6 +3,12 @@ package com.thomas.carspeed
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+<<<<<<< HEAD
+=======
+import android.graphics.Matrix
+import android.graphics.RectF
+import android.graphics.SurfaceTexture
+>>>>>>> zipcopy/main
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
@@ -15,6 +21,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.OrientationEventListener
 import android.view.Surface
+<<<<<<< HEAD
+=======
+import android.view.TextureView
+import android.view.View
+>>>>>>> zipcopy/main
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.SeekBar
@@ -37,10 +48,21 @@ import com.google.android.material.appbar.MaterialToolbar
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+<<<<<<< HEAD
 
 class CameraRecordActivity : AppCompatActivity() {
     private lateinit var toolbar: MaterialToolbar
     private lateinit var previewView: PreviewView
+=======
+import kotlin.math.roundToInt
+
+class CameraRecordActivity : AppCompatActivity() {
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var previewCard: com.google.android.material.card.MaterialCardView
+    private lateinit var previewView: PreviewView
+    private lateinit var recordingTextureView: AspectRatioTextureView
+    private lateinit var plateOverlayView: PlateOverlayView
+>>>>>>> zipcopy/main
     private lateinit var tvPreviewOverlay: TextView
     private lateinit var tvPreviewTimer: TextView
     private lateinit var tvStatus: TextView
@@ -55,6 +77,12 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var btnHistory: Button
     private lateinit var btnStatus: Button
     private lateinit var btnHud: Button
+<<<<<<< HEAD
+=======
+    private lateinit var btnRadar: Button
+    private lateinit var btnTrack: Button
+    private lateinit var btnRadarQuery: Button
+>>>>>>> zipcopy/main
 
     private var idlePreviewProvider: ProcessCameraProvider? = null
     private var idleCamera: Camera? = null
@@ -70,7 +98,13 @@ class CameraRecordActivity : AppCompatActivity() {
     private var pendingPhotoRequest = false
     private var targetRotation = Surface.ROTATION_0
     private var orientationListener: OrientationEventListener? = null
+<<<<<<< HEAD
     private var updatingFocusControls = false
+=======
+    private var recordingPreviewSurface: Surface? = null
+    private var updatingFocusControls = false
+    private var resumed = false
+>>>>>>> zipcopy/main
     private val uiHandler = Handler(Looper.getMainLooper())
     private val photoExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -140,7 +174,14 @@ class CameraRecordActivity : AppCompatActivity() {
             (intent?.action == Intent.ACTION_MAIN && DashcamSettings.load(this).autoStartRecording)
 
         toolbar = findViewById(R.id.toolbar)
+<<<<<<< HEAD
         previewView = findViewById(R.id.previewView)
+=======
+        previewCard = findViewById(R.id.previewCard)
+        previewView = findViewById(R.id.previewView)
+        recordingTextureView = findViewById(R.id.recordingTextureView)
+        plateOverlayView = findViewById(R.id.plateOverlayView)
+>>>>>>> zipcopy/main
         tvPreviewOverlay = findViewById(R.id.tvPreviewOverlay)
         tvPreviewTimer = findViewById(R.id.tvPreviewTimer)
         tvStatus = findViewById(R.id.tvCameraStatus)
@@ -155,6 +196,12 @@ class CameraRecordActivity : AppCompatActivity() {
         btnHistory = findViewById(R.id.btnOpenHistory)
         btnStatus = findViewById(R.id.btnOpenStatus)
         btnHud = findViewById(R.id.btnOpenHud)
+<<<<<<< HEAD
+=======
+        btnRadar = findViewById(R.id.btnOpenRadar)
+        btnTrack = findViewById(R.id.btnOpenTrack)
+        btnRadarQuery = findViewById(R.id.btnOpenRadarQuery)
+>>>>>>> zipcopy/main
 
         toolbar.setNavigationOnClickListener { finish() }
         previewView.setOnClickListener { startActivity(Intent(this, CameraFullscreenActivity::class.java)) }
@@ -165,7 +212,15 @@ class CameraRecordActivity : AppCompatActivity() {
         btnHistory.setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         btnStatus.setOnClickListener { startActivity(Intent(this, StatusActivity::class.java)) }
         btnHud.setOnClickListener { startActivity(Intent(this, SpeedHudActivity::class.java)) }
+<<<<<<< HEAD
         setupFocusControls()
+=======
+        btnRadar.setOnClickListener { startActivity(Intent(this, RadarAlertSettingsActivity::class.java)) }
+        btnTrack.setOnClickListener { startActivity(Intent(this, TrackRecordingSettingsActivity::class.java)) }
+        btnRadarQuery.setOnClickListener { startActivity(Intent(this, RadarQueryActivity::class.java)) }
+        setupFocusControls()
+        setupRecordingPreviewSurface()
+>>>>>>> zipcopy/main
 
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         ensureCameraPermission()
@@ -186,6 +241,10 @@ class CameraRecordActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+<<<<<<< HEAD
+=======
+        resumed = true
+>>>>>>> zipcopy/main
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         if (DashcamService.isRecording(this)) {
             stopIdlePreview()
@@ -194,6 +253,11 @@ class CameraRecordActivity : AppCompatActivity() {
         }
         syncUi()
         syncFocusControlsFromPrefs()
+<<<<<<< HEAD
+=======
+        RadarAlertService.sync(this)
+        TrackRecordingController.sync(this, stopUnavailable = true)
+>>>>>>> zipcopy/main
         maybeAutoStartFromIntent()
         AutoTriggerController.sync(this)
         startOrientationListener()
@@ -204,6 +268,10 @@ class CameraRecordActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+<<<<<<< HEAD
+=======
+        resumed = false
+>>>>>>> zipcopy/main
         uiHandler.removeCallbacks(uiTicker)
         stopOrientationListener()
         if (!DashcamService.isRecording(this)) {
@@ -234,6 +302,10 @@ class CameraRecordActivity : AppCompatActivity() {
         } else {
             stopIdlePreview()
         }
+<<<<<<< HEAD
+=======
+        clearRecordingPreviewSurface()
+>>>>>>> zipcopy/main
         DashcamService.setPreviewSurfaceProvider(null)
         if (instance === this) instance = null
     }
@@ -280,12 +352,34 @@ class CameraRecordActivity : AppCompatActivity() {
     private fun startRecordingFromUi() {
         if (!ensureRecordingNotificationVisible()) return
         recordingStartRequestedAtMs = SystemClock.elapsedRealtime()
+<<<<<<< HEAD
         stopIdlePreview()
         DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         DashcamService.startRecording(this)
         syncUi()
     }
 
+=======
+        prepareRecordingPreviewForServiceStart()
+        val requestAt = recordingStartRequestedAtMs
+        recordingTextureView.postDelayed({
+            if (recordingStartRequestedAtMs != requestAt) return@postDelayed
+            updateRecordingPreviewSurfaceIfReady()
+            DashcamService.startRecording(this)
+            syncUi()
+        }, RECORDING_PREVIEW_PREPARE_MS)
+        syncUi()
+    }
+
+    private fun prepareRecordingPreviewForServiceStart() {
+        stopIdlePreview()
+        recordingTextureView.visibility = View.VISIBLE
+        previewView.visibility = View.GONE
+        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
+        updateRecordingPreviewSurfaceIfReady()
+    }
+
+>>>>>>> zipcopy/main
     private fun ensureRecordingNotificationVisible(): Boolean {
         if (DashcamNotificationGuard.canShowRecordingNotification(this)) return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -423,6 +517,7 @@ class CameraRecordActivity : AppCompatActivity() {
     }
 
     private fun focusDistanceLabel(percent: Int): String {
+<<<<<<< HEAD
         return when (percent.coerceIn(0, 100)) {
             0 -> getString(R.string.focus_far_label)
             100 -> getString(R.string.focus_near_label)
@@ -442,6 +537,18 @@ class CameraRecordActivity : AppCompatActivity() {
         }.also { listener ->
             if (listener.canDetectOrientation()) listener.enable()
         }
+=======
+        return CameraFocus.distanceLabel(
+            percent,
+            CameraFocus.maxFocusDistanceDiopters(this),
+            getString(R.string.focus_far_label)
+        )
+    }
+
+    private fun startOrientationListener() {
+        targetRotation = CameraRotation.displayRotation(this)
+        applyTargetRotation()
+>>>>>>> zipcopy/main
     }
 
     private fun stopOrientationListener() {
@@ -470,7 +577,13 @@ class CameraRecordActivity : AppCompatActivity() {
             }
         )
         tvSavedPath.text = getString(R.string.video_background_hint)
+<<<<<<< HEAD
         updatePreviewOverlay()
+=======
+        syncRecordingPreviewSurface(activeRecordingUiState)
+        updatePreviewOverlay()
+        plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
+>>>>>>> zipcopy/main
         if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
             scheduleIdlePreviewRestart()
             refreshVoiceRecognition()
@@ -478,6 +591,122 @@ class CameraRecordActivity : AppCompatActivity() {
         lastRecordingUiState = activeRecordingUiState
     }
 
+<<<<<<< HEAD
+=======
+    private fun setupRecordingPreviewSurface() {
+        recordingTextureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                updateRecordingPreviewSurfaceIfReady()
+            }
+
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                updateRecordingPreviewTransform()
+            }
+
+            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                clearRecordingPreviewSurface()
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+        }
+    }
+
+    private fun syncRecordingPreviewSurface(recording: Boolean) {
+        recordingTextureView.visibility = if (recording) View.VISIBLE else View.GONE
+        previewView.visibility = if (recording) View.GONE else View.VISIBLE
+        updatePreviewCardLayout(recording)
+        if (recording) {
+            updateRecordingPreviewSurfaceIfReady()
+        } else {
+            clearRecordingPreviewSurface()
+        }
+    }
+
+    private fun updateRecordingPreviewSurfaceIfReady() {
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        if (!recordingTextureView.isAvailable) return
+        if (recordingPreviewSurface != null) {
+            updateRecordingPreviewTransform()
+            return
+        }
+        val texture = recordingTextureView.surfaceTexture ?: return
+        val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        texture.setDefaultBufferSize(previewSize.width, previewSize.height)
+        updateRecordingPreviewTransform()
+        recordingPreviewSurface?.release()
+        recordingPreviewSurface = Surface(texture).also { surface ->
+            DashcamService.setRecordingPreviewSurface(surface)
+        }
+    }
+
+    private fun clearRecordingPreviewSurface() {
+        DashcamService.setRecordingPreviewSurface(null)
+        recordingPreviewSurface?.release()
+        recordingPreviewSurface = null
+    }
+
+    private fun updateRecordingPreviewTransform() {
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        recordingTextureView.setAspectRatio(previewSize.height, previewSize.width)
+        val viewWidth = recordingTextureView.width.toFloat()
+        val viewHeight = recordingTextureView.height.toFloat()
+        if (viewWidth <= 0f || viewHeight <= 0f) return
+        val rotationDegrees = rotationDegreesForTexture()
+        val rotatesByRightAngle = rotationDegrees % 180f != 0f
+        val bufferWidth = previewSize.width.toFloat()
+        val bufferHeight = previewSize.height.toFloat()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        val matrix = Matrix()
+        if (rotatesByRightAngle) {
+            val viewRect = RectF(0f, 0f, viewWidth, viewHeight)
+            val bufferRect = RectF(0f, 0f, bufferHeight, bufferWidth)
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+            val scale = maxOf(viewHeight / bufferHeight, viewWidth / bufferWidth)
+            matrix.postScale(scale, scale, centerX, centerY)
+        }
+        matrix.postRotate(rotationDegrees, centerX, centerY)
+        recordingTextureView.setTransform(matrix)
+        val values = FloatArray(9)
+        matrix.getValues(values)
+        android.util.Log.i(
+            "CarSpeedPreview",
+            "transform target=$targetRotation display=${CameraRotation.displayRotation(this)} " +
+                "view=${viewWidth.toInt()}x${viewHeight.toInt()} video=${mode.width}x${mode.height} " +
+                "preview=${previewSize.width}x${previewSize.height} rotation=$rotationDegrees " +
+                "matrix=${values.joinToString()}"
+        )
+    }
+
+    private fun updatePreviewCardLayout(recording: Boolean) {
+        val params = previewCard.layoutParams as? android.widget.LinearLayout.LayoutParams ?: return
+        if (!recording) {
+            if (params.height != 0 || params.weight != 1f) {
+                params.height = 0
+                params.weight = 1f
+                previewCard.layoutParams = params
+            }
+            return
+        }
+        val mode = CameraCapabilities.selectedVideoMode(this)
+        val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
+        val cardWidth = previewCard.width.takeIf { it > 0 } ?: return
+        val targetHeight = (cardWidth.toFloat() * previewSize.width / previewSize.height).roundToInt()
+        if (params.height != targetHeight || params.weight != 0f) {
+            params.height = targetHeight
+            params.weight = 0f
+            previewCard.layoutParams = params
+        }
+    }
+
+    private fun rotationDegreesForTexture(): Float {
+        return CameraRotation.previewRotationDegrees(targetRotation)
+    }
+
+>>>>>>> zipcopy/main
     private fun isRecordingStartPending(): Boolean {
         val requestedAt = recordingStartRequestedAtMs
         if (requestedAt <= 0L) return false
@@ -529,6 +758,10 @@ class CameraRecordActivity : AppCompatActivity() {
         val tempFile = VideoStorage.tempPhotoFile(this)
         val mode = CameraCapabilities.selectedVideoMode(this)
         val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+<<<<<<< HEAD
+=======
+        PhotoShutterSound.play(this)
+>>>>>>> zipcopy/main
         capture.takePicture(
             outputOptions,
             photoExecutor,
@@ -576,6 +809,10 @@ class CameraRecordActivity : AppCompatActivity() {
         const val EXTRA_AUTO_START_RECORDING = "auto_start_recording"
         const val EXTRA_TAKE_PHOTO = "take_photo"
         private const val PREVIEW_REBIND_DELAY_MS = 700L
+<<<<<<< HEAD
+=======
+        private const val RECORDING_PREVIEW_PREPARE_MS = 150L
+>>>>>>> zipcopy/main
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
         @Volatile
         private var instance: CameraRecordActivity? = null
@@ -583,6 +820,17 @@ class CameraRecordActivity : AppCompatActivity() {
         @Volatile
         private var pendingExternalPhotoRequest = false
 
+<<<<<<< HEAD
+=======
+        fun prepareForServiceRecording() {
+            val activity = instance ?: return
+            if (!activity.resumed) return
+            activity.runOnUiThread {
+                activity.prepareRecordingPreviewForServiceStart()
+            }
+        }
+
+>>>>>>> zipcopy/main
         fun takePhoto(context: android.content.Context) {
             if (DashcamService.isRecording(context)) {
                 DashcamService.takePhoto(context)

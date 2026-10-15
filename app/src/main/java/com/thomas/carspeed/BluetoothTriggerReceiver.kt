@@ -28,7 +28,14 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
         }
 
         val settings = TriggerSettings.load(context)
+<<<<<<< HEAD
         if (!TriggerRules.shouldArmForBluetooth(settings, address)) return
+=======
+        val trackSettings = TrackRecordingSettingsStore.load(context)
+        val recordingBluetoothMatched = TriggerRules.shouldArmForBluetooth(settings, address)
+        val trackBluetoothMatched = TrackRecordingRules.shouldArmForBluetooth(trackSettings, address)
+        if (!recordingBluetoothMatched && !trackBluetoothMatched) return
+>>>>>>> zipcopy/main
         val normalizedAddress = TriggerSettings.normalizeAddress(address)
         val savedName = normalizedAddress?.let { settings.bluetoothNamesByAddress[it] }
         val displayName = name ?: savedName
@@ -36,6 +43,7 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
         when (action) {
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
                 TriggerConnectionState.markConnected(context, address)
+<<<<<<< HEAD
                 if (DashcamService.isRecording(context)) {
                     TriggerMonitorService.cancelDisconnectedStop(context, null)
                 } else if (TriggerRules.shouldStartRecordingOnBluetoothConnected(settings, address)) {
@@ -46,10 +54,23 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
                 } else if (TriggerRules.shouldArmStartRecordingAfterBluetoothConnectedAndSpeed(settings, address)) {
                     TriggerMonitorService.arm(context, address, displayName)
                 }
+=======
+                if (recordingBluetoothMatched) {
+                    if (DashcamService.isRecording(context)) {
+                        TriggerMonitorService.cancelDisconnectedStop(context, null)
+                    } else if (TriggerRules.shouldStartRecordingOnBluetoothConnected(settings, address)) {
+                        BackgroundRecordingStart.start(context)
+                    } else if (TriggerRules.shouldArmStartRecordingAfterBluetoothConnectedAndSpeed(settings, address)) {
+                        TriggerMonitorService.arm(context, address, displayName)
+                    }
+                }
+                if (trackBluetoothMatched) TrackRecordingController.onBluetoothConnected(context, address, displayName)
+>>>>>>> zipcopy/main
             }
             BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                 TriggerConnectionState.markDisconnected(context, address)
                 val connectedSelected = TriggerConnectionState.connectedSelectedAddresses(context, settings)
+<<<<<<< HEAD
                 if (DashcamService.isRecording(context)) {
                     if (TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, connectedSelected)) {
                         Toast.makeText(context, R.string.trigger_bluetooth_disconnected_stop, Toast.LENGTH_SHORT).show()
@@ -62,6 +83,23 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
                 } else {
                     TriggerMonitorService.disarm(context, address)
                 }
+=======
+                if (recordingBluetoothMatched) {
+                    if (DashcamService.isRecording(context)) {
+                        if (TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, connectedSelected)) {
+                            Toast.makeText(context, R.string.trigger_bluetooth_disconnected_stop, Toast.LENGTH_SHORT).show()
+                            DashcamService.stopRecording(context)
+                        } else if (TriggerRules.shouldMonitorStopAfterBluetoothDisconnectedAndStationary(settings, connectedSelected)) {
+                            TriggerMonitorService.monitorDisconnectedStop(context, address, displayName)
+                        } else {
+                            TriggerMonitorService.cancelDisconnectedStop(context, null)
+                        }
+                    } else {
+                        TriggerMonitorService.disarm(context, address)
+                    }
+                }
+                if (trackBluetoothMatched) TrackRecordingController.onBluetoothDisconnected(context)
+>>>>>>> zipcopy/main
             }
         }
     }
