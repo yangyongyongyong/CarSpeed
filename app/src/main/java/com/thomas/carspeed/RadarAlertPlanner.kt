@@ -40,11 +40,18 @@ internal object RadarAlertPlanner {
     const val PASS_UNLOCK_MISSING_MS = 8_000L
     const val LOST_UNLOCK_MS = 30_000L
     const val FAR_UNKNOWN_LIMIT_ALERT_MARKER = -3_000
+    const val SPEED_CAMERA_TYPE = 4
+    const val INTERVAL_CAMERA_TYPE = 11
+    const val SPEEDING_VIOLATION_TYPE = 102
+    const val MIN_SPEED_FOR_ETA_KMH = 5f
+    const val NAVI_SPEED_FRESH_MS = 3_000L
     private const val MIN_PASS_ZONE_METERS = 30
+    private const val PASS_AT_CAMERA_MAX_METERS = 60
+    private const val PASS_APPROACH_SECONDS = 2
     private const val PASS_DISTANCE_INCREASE_METERS = 40
-    private const val PASS_ZONE_EXTRA_SECONDS = 1
     private const val FAR_UNKNOWN_LIMIT_DISTANCE_METERS = 3_000
 
+    @Suppress("UNUSED_PARAMETER")
     fun selectActiveCamera(
         cameras: List<RadarCameraSnapshot>,
         currentLock: RadarCameraLock?,
@@ -59,7 +66,7 @@ internal object RadarAlertPlanner {
             val lockedCamera = validCameras.firstOrNull { it.key == currentLock.key }
             if (lockedCamera != null) {
                 val closestDistance = minOf(currentLock.closestDistanceMeters, lockedCamera.distanceMeters)
-                val enteredPassZone = currentLock.enteredPassZone || isInPassZone(lockedCamera.distanceMeters, speedKmh, settings)
+                val enteredPassZone = currentLock.enteredPassZone || isInPassZone(lockedCamera.distanceMeters, speedKmh)
                 val passedByDistanceIncrease = enteredPassZone &&
                     lockedCamera.distanceMeters >= closestDistance + PASS_DISTANCE_INCREASE_METERS
                 if (!passedByDistanceIncrease) {
@@ -96,10 +103,47 @@ internal object RadarAlertPlanner {
                 lastDistanceMeters = nearest.distanceMeters,
                 closestDistanceMeters = nearest.distanceMeters,
                 lastSeenAtMs = nowMs,
-                enteredPassZone = isInPassZone(nearest.distanceMeters, speedKmh, settings)
+                enteredPassZone = isInPassZone(nearest.distanceMeters, speedKmh)
             ),
             passedCameraKey = passedCameraKey
         )
+    }
+
+    /**
+     * 测速只用官方类型：4 测速摄像头、11 连续拍照（区间测速）、102 超速违章。
+     * 0 是未知道路设施，不能当成雷达。
+     */
+    fun isSpeedCamera(broadcastType: Int): Boolean {
+        return broadcastType == SPEED_CAMERA_TYPE ||
+            broadcastType == INTERVAL_CAMERA_TYPE ||
+            broadcastType == SPEEDING_VIOLATION_TYPE
+    }
+
+    /**
+     * 剩余距离来自高德绑路。到达时间优先用同一次巡航定位的车速，
+     * 这套速度超过 3 秒没更新时，才退回系统 GPS 速度。
+     */
+    fun etaSpeedKmh(
+        naviSpeedKmh: Float,
+        naviSpeedAtMs: Long,
+        vehicleSpeedKmh: Float,
+        nowMs: Long
+    ): Float {
+        val ageMs = nowMs - naviSpeedAtMs
+        val naviUsable = naviSpeedKmh >= MIN_SPEED_FOR_ETA_KMH &&
+            naviSpeedAtMs > 0L &&
+            ageMs in 0..NAVI_SPEED_FRESH_MS
+        return if (naviUsable) naviSpeedKmh else vehicleSpeedKmh
+    }
+
+    /**
+     * 播报里的米数和秒数是同一件事：说「10 秒」就说这段时间按当前车速能开过的距离。
+     * 不用当次回调里可能已经跳变的原始米数，避免「10 秒，80 米」。
+     */
+    fun spokenDistanceMeters(thresholdSeconds: Int, speedKmh: Float): Int {
+        if (thresholdSeconds <= 0 || speedKmh <= 0f) return 0
+        val speedMps = speedKmh / 3.6f
+        return (thresholdSeconds * speedMps).roundToInt().coerceAtLeast(0)
     }
 
     fun etaSeconds(distanceMeters: Int, speedKmh: Float): Int? {
@@ -201,13 +245,18 @@ internal object RadarAlertPlanner {
         return lastWarningAtMs <= 0L || nowMs - lastWarningAtMs >= DATA_WARNING_REPEAT_MS
     }
 
-    private fun isInPassZone(distanceMeters: Int, speedKmh: Float, settings: RadarAlertSettings): Boolean {
-        val minThresholdSeconds = settings.thresholdsSeconds.minOrNull() ?: 0
+    /**
+     * 经过区贴着电子眼，大约 2 秒车程，限制在 30 到 60 米。
+     * 按最后一次语音阈值去估，高速上会在两百米外就响提示音。
+     */
+    fun passZoneMeters(speedKmh: Float): Int {
         val speedMps = speedKmh.coerceAtLeast(0f) / 3.6f
-        val dynamicPassDistance = (speedMps * (minThresholdSeconds + settings.leadSeconds + PASS_ZONE_EXTRA_SECONDS))
-            .roundToInt()
-        val passDistance = maxOf(MIN_PASS_ZONE_METERS, dynamicPassDistance)
-        return distanceMeters <= passDistance
+        val bySpeed = (speedMps * PASS_APPROACH_SECONDS).roundToInt()
+        return bySpeed.coerceIn(MIN_PASS_ZONE_METERS, PASS_AT_CAMERA_MAX_METERS)
+    }
+
+    private fun isInPassZone(distanceMeters: Int, speedKmh: Float): Boolean {
+        return distanceMeters <= passZoneMeters(speedKmh)
     }
 
     const val DATA_STALE_WARNING_MS = 60_000L

@@ -118,6 +118,84 @@ class RadarAlertPlannerTest {
     }
 
     @Test
+    fun speed_camera_types_follow_amap_facility_codes() {
+        assertTrue(RadarAlertPlanner.isSpeedCamera(RadarAlertPlanner.SPEED_CAMERA_TYPE))
+        assertTrue(RadarAlertPlanner.isSpeedCamera(RadarAlertPlanner.INTERVAL_CAMERA_TYPE))
+        assertTrue(RadarAlertPlanner.isSpeedCamera(RadarAlertPlanner.SPEEDING_VIOLATION_TYPE))
+        assertTrue(!RadarAlertPlanner.isSpeedCamera(0))
+        assertTrue(!RadarAlertPlanner.isSpeedCamera(5))
+        assertTrue(!RadarAlertPlanner.isSpeedCamera(28))
+    }
+
+    @Test
+    fun eta_prefers_fresh_navi_speed_from_the_same_fix_as_distance() {
+        assertEquals(
+            96f,
+            RadarAlertPlanner.etaSpeedKmh(
+                naviSpeedKmh = 96f,
+                naviSpeedAtMs = 1_000L,
+                vehicleSpeedKmh = 70f,
+                nowMs = 2_000L
+            )
+        )
+        assertEquals(
+            70f,
+            RadarAlertPlanner.etaSpeedKmh(
+                naviSpeedKmh = 96f,
+                naviSpeedAtMs = 1_000L,
+                vehicleSpeedKmh = 70f,
+                nowMs = 1_000L + RadarAlertPlanner.NAVI_SPEED_FRESH_MS + 1
+            )
+        )
+        assertEquals(
+            70f,
+            RadarAlertPlanner.etaSpeedKmh(
+                naviSpeedKmh = 0f,
+                naviSpeedAtMs = 2_000L,
+                vehicleSpeedKmh = 70f,
+                nowMs = 2_000L
+            )
+        )
+    }
+
+    @Test
+    fun spoken_distance_matches_the_seconds_in_the_same_sentence() {
+        assertEquals(200, RadarAlertPlanner.spokenDistanceMeters(thresholdSeconds = 10, speedKmh = 72f))
+        assertEquals(556, RadarAlertPlanner.spokenDistanceMeters(thresholdSeconds = 20, speedKmh = 100f))
+        assertEquals(0, RadarAlertPlanner.spokenDistanceMeters(thresholdSeconds = 10, speedKmh = 0f))
+    }
+
+    @Test
+    fun pass_zone_stays_next_to_the_camera() {
+        assertEquals(30, RadarAlertPlanner.passZoneMeters(20f))
+        assertEquals(56, RadarAlertPlanner.passZoneMeters(100f))
+        assertEquals(60, RadarAlertPlanner.passZoneMeters(160f))
+    }
+
+    @Test
+    fun distance_increase_far_from_the_camera_does_not_count_as_passed() {
+        val lock = RadarCameraLock(
+            key = "first",
+            lastDistanceMeters = 150,
+            closestDistanceMeters = 150,
+            lastSeenAtMs = 1_000L,
+            enteredPassZone = false
+        )
+
+        val selection = RadarAlertPlanner.selectActiveCamera(
+            cameras = listOf(camera("first", distanceMeters = 210)),
+            currentLock = lock,
+            nowMs = 2_000L,
+            speedKmh = 100f,
+            settings = settings
+        )
+
+        assertEquals("first", selection.camera?.key)
+        assertEquals(false, selection.lock?.enteredPassZone)
+        assertNull(selection.passedCameraKey)
+    }
+
+    @Test
     fun sudden_distance_drop_does_not_skip_from_20_seconds_to_5_seconds() {
         val first = RadarAlertPlanner.reconcileEta(anchor = null, rawEtaSeconds = 20, nowMs = 0L)
         assertEquals(20, first.etaSeconds)

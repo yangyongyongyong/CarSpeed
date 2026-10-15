@@ -12,7 +12,9 @@ import android.speech.tts.UtteranceProgressListener
 import com.amap.api.navi.AMapNavi
 import com.amap.api.navi.AimlessModeListener
 import com.amap.api.navi.ParallelRoadListener
+import com.amap.api.navi.SimpleNaviListener
 import com.amap.api.navi.enums.AimLessMode
+import com.amap.api.navi.model.AMapNaviLocation
 import com.amap.api.navi.model.AMapNaviTrafficFacilityInfo
 import com.amap.api.navi.model.AimLessModeCongestionInfo
 import com.amap.api.navi.model.AimLessModeStat
@@ -44,14 +46,12 @@ data class RadarAlertState(
 )
 
 object RadarAlertController {
-    private const val MIN_SPEED_FOR_ETA_KMH = 5f
     private const val SPEAK_MIN_GAP_MS = 2_500L
-    private const val UNKNOWN_CAMERA_TYPE = 0
-    private const val SPEED_CAMERA_TYPE = 4
-    private const val SPEEDING_VIOLATION_TYPE = 102
 
     @Volatile private var state = RadarAlertState()
     @Volatile private var latestSpeedKmh = 0f
+    @Volatile private var naviSpeedKmh = 0f
+    @Volatile private var naviSpeedAtMs = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
     private var appContext: Context? = null
     private var navi: AMapNavi? = null
@@ -88,6 +88,15 @@ object RadarAlertController {
         onParallelRoad(status?.getmElevatedRoadStatusFlag() ?: RoadLayerAlertGate.ELEVATED_NONE)
     }
 
+    private val naviListener = object : SimpleNaviListener() {
+        override fun onLocationChange(location: AMapNaviLocation?) {
+            val speed = location?.speed ?: return
+            if (speed <= 0f) return
+            naviSpeedKmh = speed
+            naviSpeedAtMs = System.currentTimeMillis()
+        }
+    }
+
     fun start(context: Context) {
         val settings = RadarAlertSettingsStore.load(context)
         appContext = context.applicationContext
@@ -103,6 +112,9 @@ object RadarAlertController {
             ensureTts(context.applicationContext, settings)
             activeNavi = AMapNavi.getInstance(context.applicationContext)
             activeNavi?.setUseInnerVoice(false, true)
+            naviSpeedKmh = 0f
+            naviSpeedAtMs = 0L
+            activeNavi?.addAMapNaviListener(naviListener)
             activeNavi?.addAimlessModeListener(aimlessListener)
             activeNavi?.addParallelRoadListener(parallelRoadListener)
             activeNavi?.startGPS(1_000L)
@@ -126,6 +138,7 @@ object RadarAlertController {
         } catch (error: Exception) {
             runCatching { activeNavi?.stopAimlessMode() }
             runCatching { activeNavi?.stopGPS() }
+            runCatching { activeNavi?.removeAMapNaviListener(naviListener) }
             runCatching { activeNavi?.removeAimlessModeListener(aimlessListener) }
             runCatching { activeNavi?.removeParallelRoadListener(parallelRoadListener) }
             navi = null
@@ -152,6 +165,7 @@ object RadarAlertController {
     fun stop() {
         runCatching { navi?.stopAimlessMode() }
         runCatching { navi?.stopGPS() }
+        runCatching { navi?.removeAMapNaviListener(naviListener) }
         runCatching { navi?.removeAimlessModeListener(aimlessListener) }
         runCatching { navi?.removeParallelRoadListener(parallelRoadListener) }
         runCatching { tts?.stop() }
@@ -161,6 +175,8 @@ object RadarAlertController {
         ttsReady = false
         pendingText = null
         activeCameraLock = null
+        naviSpeedKmh = 0f
+        naviSpeedAtMs = 0L
         dataHealth = RadarDataHealthState(serviceStartedAtMs = 0L, lastDataAtMs = 0L)
         firedThresholdsByCamera.clear()
         etaAnchorByCamera.clear()
@@ -360,9 +376,14 @@ object RadarAlertController {
         } else {
             null
         }
-        val speedKmh = latestSpeedKmh.takeIf { it >= MIN_SPEED_FOR_ETA_KMH } ?: return
+        val speedKmh = RadarAlertPlanner.etaSpeedKmh(
+            naviSpeedKmh = naviSpeedKmh,
+            naviSpeedAtMs = naviSpeedAtMs,
+            vehicleSpeedKmh = latestSpeedKmh,
+            nowMs = now
+        ).takeIf { it >= RadarAlertPlanner.MIN_SPEED_FOR_ETA_KMH } ?: return
         val cameras = cameraInfo
-            .filter { it.getDistance() > 0 && isSpeedCamera(it.getBroadcastType()) }
+            .filter { it.getDistance() > 0 && RadarAlertPlanner.isSpeedCamera(it.getBroadcastType()) }
             .mapNotNull { info ->
                 val key = cameraKey(info)
                 if (key in passedCameraKeys) return@mapNotNull null
@@ -436,7 +457,7 @@ object RadarAlertController {
         firedThresholdsByCamera.getOrPut(nearest.key) { mutableSetOf() } +=
             RadarAlertPlanner.thresholdsToMark(dueThresholds, threshold)
         val speedLimit = nearest.speedLimit
-        val text = withRoadLayer(layerPrefix, buildAlertText(threshold, distance, speedLimit))
+        val text = withRoadLayer(layerPrefix, buildAlertText(threshold, speedKmh, speedLimit))
         val spoke = speak(text)
         state = state.copy(
             enabled = settings.enabled,
@@ -455,10 +476,6 @@ object RadarAlertController {
         )
     }
 
-    private fun isSpeedCamera(type: Int): Boolean {
-        return type == SPEED_CAMERA_TYPE || type == SPEEDING_VIOLATION_TYPE || type == UNKNOWN_CAMERA_TYPE
-    }
-
     private fun cameraKey(info: AMapNaviTrafficFacilityInfo): String {
         val longitude = (info.getCoorX() * 100_000).roundToInt()
         val latitude = (info.getCoorY() * 100_000).roundToInt()
@@ -469,9 +486,11 @@ object RadarAlertController {
         return if (prefix.isNullOrEmpty()) text else "$prefix，$text"
     }
 
-    private fun buildAlertText(thresholdSeconds: Int, distanceMeters: Int, speedLimit: Int?): String {
+    private fun buildAlertText(thresholdSeconds: Int, speedKmh: Float, speedLimit: Int?): String {
         val limit = speedLimit?.let { "限速${it}" }.orEmpty()
-        val distance = RadarAlertPlanner.distanceText(distanceMeters)
+        val distance = RadarAlertPlanner.distanceText(
+            RadarAlertPlanner.spokenDistanceMeters(thresholdSeconds, speedKmh)
+        )
         return "测速雷达，${thresholdSeconds}秒，${distance}，$limit".trimEnd('，')
     }
 
