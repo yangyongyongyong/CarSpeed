@@ -7,6 +7,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
@@ -100,15 +101,18 @@ class SeamlessDashcamRecorder(
     private var currentSegmentHasSamples = false
     private var splitPending = false
     private var lastKeyFrameRequestElapsedMs = 0L
-    private var orientationHintDegrees = 0
+    @Volatile private var orientationHintDegrees = 0
     private var hdrSceneModeEnabled = false
     private var startNotified = false
     private var stillReader: ImageReader? = null
     private var includeStillSurface = true
     private var stillCandidates: List<CaptureSize> = emptyList()
     private var stillCandidateIndex = 0
-    private val pendingStillFiles = ArrayDeque<File>()
-    private val pendingStillCallbacks = ArrayDeque<(Result<File>) -> Unit>()
+    private val pendingStills = ArrayDeque<PendingStill>()
+    private val recentStills = RecentStillShots()
+    private val stillBakeExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var nextStillId = 0L
+    private var memoryStillFailures = 0
 
     fun start() {
         try {
@@ -140,6 +144,9 @@ class SeamlessDashcamRecorder(
         runCatching { videoEncoder?.signalEndOfInputStream() }
     }
 
+    /** 开口时间之后最近的一张已留存照片。还没有时返回空，调用方当场再拍。 */
+    fun lookbackJpeg(targetElapsedMs: Long): ByteArray? = recentStills.atOrAfter(targetElapsedMs)
+
     fun captureStill(file: File, onDone: (Result<File>) -> Unit) {
         val handler = cameraHandler
         if (handler == null) {
@@ -155,29 +162,11 @@ class SeamlessDashcamRecorder(
                 onDone(Result.failure(StillCaptureUnavailable()))
                 return@post
             }
-            pendingStillFiles.addLast(file)
-            pendingStillCallbacks.addLast(onDone)
+            val id = enqueueStill(file, onDone, SystemClock.elapsedRealtime())
             try {
-                val encoderSurface = encoderInputSurface
-                val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT).apply {
-                    addTarget(reader.surface)
-                    encoderSurface?.let { addTarget(it) }
-                    captureSessionPreviewSurface?.takeIf { it.isValid }?.let { addTarget(it) }
-                    applyHdrOptions()
-                    applyFocusOptions(characteristics)
-                    set(
-                        CaptureRequest.JPEG_ORIENTATION,
-                        StillCapturePlan.jpegOrientationDegrees(
-                            characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90,
-                            targetRotation
-                        )
-                    )
-                    set(CaptureRequest.JPEG_QUALITY, JPEG_QUALITY)
-                }.build()
-                session.capture(request, null, handler)
+                session.capture(buildSnapshotRequest(camera, reader, characteristics, id), stillResultCallback, handler)
             } catch (error: Exception) {
-                pendingStillFiles.removeLast()
-                pendingStillCallbacks.removeLast()
+                removePendingStill(id)
                 onDone(Result.failure(error))
             }
         }
@@ -454,6 +443,9 @@ class SeamlessDashcamRecorder(
                             startNotified = true
                             callback.onStarted()
                         }
+                        val handler = cameraHandler
+                        handler?.removeCallbacks(memoryStillTick)
+                        handler?.postDelayed(memoryStillTick, MEMORY_STILL_INTERVAL_MS)
                     } catch (error: Exception) {
                         notifyError(error)
                         stop()
@@ -712,6 +704,9 @@ class SeamlessDashcamRecorder(
         runCatching { videoEncoder?.stop() }
         runCatching { videoEncoder?.release() }
         videoEncoder = null
+        cameraHandler?.removeCallbacks(memoryStillTick)
+        recentStills.clear()
+        stillBakeExecutor.shutdown()
         cameraThread?.quitSafely()
         cameraThread = null
         cameraHandler = null
@@ -753,27 +748,33 @@ class SeamlessDashcamRecorder(
 
     private fun onStillImage(reader: ImageReader) {
         val image = reader.acquireNextImage() ?: return
-        val file = pendingStillFiles.pollFirst()
-        val callback = pendingStillCallbacks.pollFirst()
+        val pending = pendingStills.pollFirst()
         var delivered = false
         try {
-            if (file == null || callback == null) return
             val buffer = image.planes.firstOrNull()?.buffer
+            if (pending == null) return
             if (buffer == null) {
                 delivered = true
-                callback(Result.failure(IllegalStateException("照片数据为空")))
+                pending.callback?.invoke(Result.failure(IllegalStateException("照片数据为空")))
                 return
             }
             buffer.rewind()
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
+            val file = pending.file
+            val callback = pending.callback
+            if (file == null || callback == null) {
+                rememberLookbackJpeg(bytes, pending.elapsedMs)
+                delivered = true
+                return
+            }
             file.parentFile?.mkdirs()
             FileOutputStream(file).use { it.write(bytes) }
             bakeExifOrientation(file)
             delivered = true
             callback(Result.success(file))
         } catch (error: Exception) {
-            if (!delivered && callback != null) callback(Result.failure(error))
+            if (!delivered) pending?.callback?.invoke(Result.failure(error))
         } finally {
             image.close()
         }
@@ -798,11 +799,119 @@ class SeamlessDashcamRecorder(
     }
 
     private fun failPendingStills(error: Throwable) {
-        val callbacks = pendingStillCallbacks.toList()
-        pendingStillCallbacks.clear()
-        pendingStillFiles.clear()
+        val callbacks = pendingStills.mapNotNull { it.callback }
+        pendingStills.clear()
         callbacks.forEach { callback -> callback(Result.failure(error)) }
     }
+
+    private val memoryStillTick: Runnable = Runnable {
+        if (stopRequested || stopped.get()) return@Runnable
+        captureMemoryStill()
+        cameraHandler?.postDelayed(memoryStillTick, MEMORY_STILL_INTERVAL_MS)
+    }
+
+    private val stillResultCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureFailed(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            failure: CaptureFailure
+        ) {
+            val id = request.tag as? Long ?: return
+            val pending = removePendingStill(id) ?: return
+            if (pending.file == null) {
+                memoryStillFailures++
+            } else {
+                pending.callback?.invoke(Result.failure(StillCaptureUnavailable()))
+            }
+        }
+    }
+
+    private fun captureMemoryStill() {
+        if (memoryStillFailures >= MAX_MEMORY_STILL_FAILURES) return
+        val session = captureSession ?: return
+        val camera = cameraDevice ?: return
+        val reader = stillReader ?: return
+        val characteristics = cameraCharacteristics ?: return
+        if (stopRequested || !includeStillSurface || pendingStills.isNotEmpty()) return
+        val id = enqueueStill(file = null, callback = null, elapsedMs = SystemClock.elapsedRealtime())
+        try {
+            session.capture(buildSnapshotRequest(camera, reader, characteristics, id), stillResultCallback, cameraHandler)
+        } catch (_: Exception) {
+            removePendingStill(id)
+            memoryStillFailures++
+        }
+    }
+
+    private fun enqueueStill(
+        file: File?,
+        callback: ((Result<File>) -> Unit)?,
+        elapsedMs: Long
+    ): Long {
+        val id = nextStillId++
+        pendingStills.addLast(PendingStill(id, file, callback, elapsedMs))
+        return id
+    }
+
+    private fun removePendingStill(id: Long): PendingStill? {
+        val pending = pendingStills.firstOrNull { it.id == id } ?: return null
+        pendingStills.remove(pending)
+        return pending
+    }
+
+    private fun buildSnapshotRequest(
+        camera: CameraDevice,
+        reader: ImageReader,
+        characteristics: CameraCharacteristics,
+        tag: Long
+    ): CaptureRequest {
+        val encoderSurface = encoderInputSurface
+        return camera.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT).apply {
+            addTarget(reader.surface)
+            encoderSurface?.let { addTarget(it) }
+            captureSessionPreviewSurface?.takeIf { it.isValid }?.let { addTarget(it) }
+            applyHdrOptions()
+            applyFocusOptions(characteristics)
+            set(
+                CaptureRequest.JPEG_ORIENTATION,
+                StillCapturePlan.jpegOrientationDegrees(
+                    characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90,
+                    targetRotation
+                )
+            )
+            set(CaptureRequest.JPEG_QUALITY, JPEG_QUALITY)
+            setTag(tag)
+        }.build()
+    }
+
+    private fun rememberLookbackJpeg(bytes: ByteArray, elapsedMs: Long) {
+        if (bytes.isEmpty()) return
+        try {
+            stillBakeExecutor.execute {
+                val baked = runCatching { bakeJpegBytes(bytes) }.getOrNull() ?: bytes
+                recentStills.add(baked, elapsedMs)
+            }
+        } catch (_: Exception) {
+            recentStills.add(bytes, elapsedMs)
+        }
+    }
+
+    private fun bakeJpegBytes(bytes: ByteArray): ByteArray {
+        val file = File.createTempFile("lookback-", ".jpg", appContext.cacheDir)
+        try {
+            FileOutputStream(file).use { it.write(bytes) }
+            bakeExifOrientation(file)
+            return file.readBytes()
+        } finally {
+            file.delete()
+        }
+    }
+
+    private class PendingStill(
+        val id: Long,
+        val file: File?,
+        val callback: ((Result<File>) -> Unit)?,
+        val elapsedMs: Long
+    )
 
     private fun backCameraId(manager: CameraManager): String? {
         return manager.cameraIdList.firstOrNull { id ->
@@ -836,5 +945,7 @@ class SeamlessDashcamRecorder(
         private const val MAX_VIDEO_BITRATE = 80_000_000
         private const val JPEG_IMAGE_FORMAT = 256
         private const val JPEG_QUALITY: Byte = 92
+        private const val MEMORY_STILL_INTERVAL_MS = 500L
+        private const val MAX_MEMORY_STILL_FAILURES = 3
     }
 }

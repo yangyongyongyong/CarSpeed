@@ -20,6 +20,14 @@ class CameraFocusDistanceLabelTest {
     }
 
     @Test
+    fun step_moves_one_percent_and_stops_at_the_ends() {
+        assertEquals(11, CameraFocus.stepPercent(10, 1))
+        assertEquals(9, CameraFocus.stepPercent(10, -1))
+        assertEquals(100, CameraFocus.stepPercent(100, 1))
+        assertEquals(0, CameraFocus.stepPercent(0, -1))
+    }
+
+    @Test
     fun unknown_lens_does_not_repeat_the_percent() {
         assertEquals("—", CameraFocus.distanceLabel(40, null, "远处/∞"))
         assertEquals("—", CameraFocus.distanceLabel(40, 0f, "远处/∞"))

@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/exportPreviewRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/exportVideoCard"
+        style="@style/Widget.CarSpeed.Card"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.72"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        app:cardCornerRadius="0dp">
+
+        <FrameLayout
+            android:id="@+id/exportVideoFrame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/black"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <FrameLayout
+                android:id="@+id/exportVideoStage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center"
+                android:clipChildren="false"
+                android:clipToPadding="false">
+
+                <TextureView
+                    android:id="@+id/exportVideoTexture"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <TextView
+                    android:id="@+id/exportSubtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginBottom="64dp"
+                    android:background="@drawable/overlay_chip_dark_bg"
+                    android:lineSpacingExtra="3dp"
+                    android:padding="10dp"
+                    android:textColor="@android:color/white"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:id="@+id/exportReplayControls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:background="#99000000"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/exportPlayPause"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="暂停"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/exportReplaySpeed"
+                    android:layout_width="48dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="1x"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/exportReplaySeek"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/exportReplayTime"
+                    android:layout_width="82dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/exportReplayLayout"
+                    android:layout_width="46dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="@string/video_replay_layout_float"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/exportReplayFullscreen"
+                    android:layout_width="46dp"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:text="全屏"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/exportReplayRotate"
+                android:layout_width="52dp"
+                android:layout_height="32dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="10dp"
+                android:background="#99000000"
+                android:gravity="center"
+                android:text="@string/video_replay_rotate"
+                android:textColor="@android:color/white"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <FrameLayout
+        android:id="@+id/exportVideoMapDivider"
+        android:layout_width="match_parent"
+        android:layout_height="18dp"
+        android:background="@drawable/video_map_divider_bg"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:layout_width="64dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center"
+            android:background="@drawable/video_map_divider_handle_bg" />
+    </FrameLayout>
+
+    <com.thomas.carspeed.FloatMapCard
+        android:id="@+id/exportMapCard"
+        style="@style/Widget.CarSpeed.Card"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.28"
+        app:cardCornerRadius="0dp">
+
+        <FrameLayout
+            android:id="@+id/exportMapFrame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <com.thomas.carspeed.MapRouteView
+                android:id="@+id/exportMapRoute"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <LinearLayout
+                android:id="@+id/exportMapBottomOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:background="#55000000"
+                android:orientation="vertical"
+                android:paddingStart="6dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="4dp">
+
+                <LinearLayout
+                    android:id="@+id/exportMapActionControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exportMapViewportAll"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="28dp"
+                        android:layout_weight="1"
+                        android:includeFontPadding="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingTop="0dp"
+                        android:paddingBottom="0dp"
+                        android:text="@string/video_replay_map_whole"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp"
+                        app:backgroundTint="#66000000"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#99FFFFFF"
+                        app:strokeWidth="1dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exportMapViewportCurrent"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:includeFontPadding="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingTop="0dp"
+                        android:paddingBottom="0dp"
+                        android:text="@string/video_replay_map_current"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp"
+                        app:backgroundTint="#66000000"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#99FFFFFF"
+                        app:strokeWidth="1dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exportMapType"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:includeFontPadding="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingTop="0dp"
+                        android:paddingBottom="0dp"
+                        android:text="@string/video_replay_map_road"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp"
+                        app:backgroundTint="#66000000"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#99FFFFFF"
+                        app:strokeWidth="1dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exportMapOffline"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:includeFontPadding="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingTop="0dp"
+                        android:paddingBottom="0dp"
+                        android:text="@string/video_replay_map_offline"
+                        android:textColor="@android:color/white"
+                        android:textSize="10sp"
+                        app:backgroundTint="#66000000"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#99FFFFFF"
+                        app:strokeWidth="1dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/exportMapScaleControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="10dp"
+                        android:includeFontPadding="false"
+                        android:text="@string/video_replay_map_scale_label"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/exportMapScale"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center_vertical"
+                        android:includeFontPadding="false"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exportMapScaleOut"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="44dp"
+                        android:layout_height="28dp"
+                        android:includeFontPadding="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingStart="0dp"
+                        android:paddingTop="0dp"
+                        android:paddingEnd="0dp"
+                        android:paddingBottom="0dp"
+                        android:text="@string/video_replay_map_scale_out"
+                        android:textColor="@android:color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#66000000"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#99FFFFFF"
+                        app:strokeWidth="1dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exportMapScaleIn"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="44dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="8dp"
+                        android:includeFontPadding="false"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:paddingStart="0dp"
+                        android:paddingTop="0dp"
+                        android:paddingEnd="0dp"
+                        android:paddingBottom="0dp"
+                        android:text="@string/video_replay_map_scale_in"
+                        android:textColor="@android:color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#66000000"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#99FFFFFF"
+                        app:strokeWidth="1dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/exportTrackAlpha"
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="28dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:includeFontPadding="false"
+                        android:text="@string/video_replay_track_alpha"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp" />
+
+                    <SeekBar
+                        android:id="@+id/exportTrackAlphaSeek"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:max="100"
+                        android:progress="100" />
+
+                    <TextView
+                        android:id="@+id/exportTrackAlphaValue"
+                        android:layout_width="40dp"
+                        android:layout_height="wrap_content"
+                        android:gravity="end"
+                        android:includeFontPadding="false"
+                        android:text="100%"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/exportReplayTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:textColor="@android:color/white"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/exportReplayStats"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:textColor="@android:color/white"
+                    android:textSize="10sp" />
+
+                <TextView
+                    android:id="@+id/exportReplayPosition"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="monospace"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:textColor="@android:color/white"
+                    android:textSize="10sp" />
+            </LinearLayout>
+        </FrameLayout>
+    </com.thomas.carspeed.FloatMapCard>
+</FrameLayout>

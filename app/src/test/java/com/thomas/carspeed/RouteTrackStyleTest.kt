@@ -26,4 +26,22 @@ class RouteTrackStyleTest {
     fun segment_speed_is_the_average_of_its_endpoints() {
         assertEquals(181f, RouteTrackStyle.segmentSpeedKmh(162f, 200f))
     }
+
+    @Test
+    fun same_width_segments_join_into_one_run() {
+        val runs = RouteTrackStyle.groupRuns(listOf(1f, 1f, 1.5f, 1f))
+        assertEquals(3, runs.size)
+        assertEquals(RouteRun(1f, 0, 2), runs[0])
+        assertEquals(RouteRun(1.5f, 2, 3), runs[1])
+        assertEquals(RouteRun(1f, 3, 4), runs[2])
+    }
+
+    @Test
+    fun track_alpha_replaces_the_existing_opacity() {
+        val green = 0xFF4FD697.toInt()
+        assertEquals(0xFF4FD697.toInt(), RouteTrackStyle.withAlpha(green, 100))
+        assertEquals(0x004FD697, RouteTrackStyle.withAlpha(green, 0))
+        assertEquals(0x804FD697.toInt(), RouteTrackStyle.withAlpha(green, 50))
+        assertEquals(0xFF4FD697.toInt(), RouteTrackStyle.withAlpha(green, 140))
+    }
 }

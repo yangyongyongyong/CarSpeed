@@ -28,13 +28,15 @@ object DashcamOverlayText {
     fun lines(
         context: Context,
         mode: VideoMode = CameraCapabilities.selectedVideoMode(context),
-        forceTime: Boolean = false
+        forceTime: Boolean = false,
+        timeMs: Long? = null
     ): List<String> {
         val settings = DashcamSettings.load(context)
         val telemetry = DashcamService.currentTelemetry()
         val result = mutableListOf<String>()
         if (forceTime || settings.showTime) {
-            result += SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+            result += SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                .format(Date(timeMs ?: System.currentTimeMillis()))
         }
         if (settings.showSpeed) {
             result += String.format(Locale.US, "%.1f km/h", telemetry.speedKmh)

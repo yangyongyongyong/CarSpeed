@@ -3,6 +3,7 @@ package com.thomas.carspeed
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -137,11 +138,12 @@ object VoicePhotoRecognizer {
     private val pcmWorkerStarted = AtomicBoolean(false)
     private var activeOwner: String? = null
     private var activeContext: Context? = null
-    private var activeOnCommand: ((VoiceCommand) -> Unit)? = null
+    private var activeOnCommand: ((VoiceCommand, Long?) -> Unit)? = null
     private var starting = false
     private var lastAcceptedCommand: VoiceCommand? = null
     private var lastAcceptedCommandAtMs = 0L
     private val commandGate = IsolatedCommandGate()
+    private val streamClock = VoiceStreamClock()
     private var pauseToken = 0
     private var pauseRunnable: Runnable? = null
     private var armedText: String? = null
@@ -149,7 +151,7 @@ object VoicePhotoRecognizer {
 
     fun currentState(): VoicePhotoRecognizerState = state
 
-    fun start(context: Context, owner: String, onCommand: (VoiceCommand) -> Unit) {
+    fun start(context: Context, owner: String, onCommand: (VoiceCommand, Long?) -> Unit) {
         if (activeOwner != null && activeOwner != owner) {
             val previousOwner = activeOwner
             releaseSpeechService()
@@ -223,7 +225,7 @@ object VoicePhotoRecognizer {
         }
     }
 
-    fun beginExternalCapture(context: Context, owner: String, onCommand: (VoiceCommand) -> Unit) {
+    fun beginExternalCapture(context: Context, owner: String, onCommand: (VoiceCommand, Long?) -> Unit) {
         activeContext = context.applicationContext
         activeOwner = owner
         activeOnCommand = onCommand
@@ -257,7 +259,7 @@ object VoicePhotoRecognizer {
         ensurePcmWorker()
         val copy = ByteArray(length)
         System.arraycopy(data, 0, copy, 0, length)
-        val chunk = PcmChunk(copy, sampleRate)
+        val chunk = PcmChunk(copy, sampleRate, SystemClock.elapsedRealtime())
         if (!pcmQueue.offer(chunk)) {
             pcmQueue.poll()
             pcmQueue.offer(chunk)
@@ -267,6 +269,7 @@ object VoicePhotoRecognizer {
     fun stop(owner: String) {
         if (activeOwner != owner) return
         externalMic = false
+        streamClock.reset()
         resetCommandGate()
         mainHandler.removeCallbacksAndMessages(null)
         releaseSpeechService()
@@ -319,8 +322,10 @@ object VoicePhotoRecognizer {
         if (timed.isNotEmpty()) {
             sawWordTimes = true
             val endMs = timed.maxOf { it.endMs }
+            streamClock.alignIfNeeded(endMs, SystemClock.elapsedRealtime())
             val confirmedThroughMs = if (endpoint) endMs + IsolatedCommandGate.PAUSE_MS else endMs
-            deliver(owner, commandGate.onWords(timed, confirmedThroughMs))
+            val command = commandGate.onWords(timed, confirmedThroughMs)
+            deliver(owner, command, command?.let { commandGate.firedStartMs() })
             // 同一个词的结束时间会来回微调；只有词语本身变了才重新计算后面的 1 秒。
             val spoken = "${timed.first().startMs / 300}:${timed.joinToString("") { it.word }}"
             if (!endpoint && spoken != armedText) {
@@ -331,18 +336,19 @@ object VoicePhotoRecognizer {
         }
         if (sawWordTimes) return
         val nowMs = System.currentTimeMillis()
-        deliver(owner, commandGate.onText(text, nowMs, endpoint))
+        deliver(owner, commandGate.onText(text, nowMs, endpoint), null)
         if (!endpoint && text.isNotBlank() && text != armedText) {
             armedText = text
             schedulePause(owner, streamEndMs = null)
         }
     }
 
-    private fun deliver(owner: String, command: VoiceCommand?) {
+    private fun deliver(owner: String, command: VoiceCommand?, streamStartMs: Long?) {
         if (command == null || activeOwner != owner || !shouldAcceptCommand(command)) return
         state = state.copy(lastCommand = command.name)
         VoicePhotoMonitor.markTriggered(owner)
-        activeOnCommand?.invoke(command)
+        val spokenAtElapsedMs = streamStartMs?.let { streamClock.elapsedFor(it) }
+        activeOnCommand?.invoke(command, spokenAtElapsedMs)
     }
 
     private fun schedulePause(owner: String, streamEndMs: Long?) {
@@ -355,7 +361,8 @@ object VoicePhotoRecognizer {
             } else {
                 commandGate.onClock(System.currentTimeMillis())
             }
-            deliver(owner, command)
+            val streamStartMs = if (streamEndMs != null) command?.let { commandGate.firedStartMs() } else null
+            deliver(owner, command, streamStartMs)
         }
         pauseRunnable = runnable
         mainHandler.postDelayed(runnable, IsolatedCommandGate.PAUSE_MS)
@@ -393,6 +400,7 @@ object VoicePhotoRecognizer {
     }
 
     private fun newRecognizer(loadedModel: Model): Recognizer {
+        streamClock.reset()
         return Recognizer(loadedModel, SAMPLE_RATE, VoiceCommandParser.commandGrammar()).also { created ->
             created.setWords(true)
             created.setPartialWords(true)
@@ -451,8 +459,10 @@ object VoicePhotoRecognizer {
                 if (samples.isEmpty()) return
                 val endpoint = readyRecognizer.acceptWaveForm(samples, samples.size)
                 val json = if (endpoint) readyRecognizer.result else readyRecognizer.partialResult
-                endpoint to json
+                Triple(endpoint, json, samples.size)
             }
+            val durationMs = payload.third * 1_000L / SAMPLE_RATE.toInt()
+            streamClock.noteChunk(durationMs, chunk.capturedAtElapsedMs)
             mainHandler.post {
                 if (activeOwner != owner || !externalMic) return@post
                 handleText(owner, payload.second, endpoint = payload.first)
@@ -464,7 +474,11 @@ object VoicePhotoRecognizer {
         }
     }
 
-    private class PcmChunk(val data: ByteArray, val sampleRate: Int)
+    private class PcmChunk(
+        val data: ByteArray,
+        val sampleRate: Int,
+        val capturedAtElapsedMs: Long
+    )
 
     private fun restart(owner: String) {
         if (activeOwner != owner) return

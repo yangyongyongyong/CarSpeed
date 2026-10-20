@@ -134,6 +134,14 @@
             android:layout_marginTop="10dp"
             android:text="@string/track_settings_title" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTripStats"
+            style="@style/Widget.CarSpeed.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/trip_stats_title" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

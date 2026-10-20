@@ -64,11 +64,11 @@ class RouteRadarMarksTest {
     @Test
     fun limit_summary_groups_counts_by_speed_and_leaves_unknown_last() {
         assertEquals(
-            "测速 100×4 · 120×3",
+            "测速 100kph×4 · 120kph×3",
             RouteRadarMarks.limitSummary(listOf(120, 100, 120, 100, 100, 120, 100))
         )
         assertEquals(
-            "测速 80×1 · 无限速×2",
+            "测速 80kph×1 · 无限速×2",
             RouteRadarMarks.limitSummary(listOf(null, 80, 0))
         )
         assertEquals(null, RouteRadarMarks.limitSummary(emptyList()))

@@ -46,6 +46,7 @@ object DriveRecordStore {
             list.subList(MAX_RECORDS, list.size).clear()
         }
         saveRecords(context, list)
+        TripStatsStore.record(context, record)
     }
 
     fun loadRecords(context: Context): List<DriveRecord> {

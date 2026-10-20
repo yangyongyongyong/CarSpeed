@@ -7,7 +7,9 @@ internal data class RadarCameraSnapshot(
     val key: String,
     val distanceMeters: Int,
     val cameraType: Int,
-    val speedLimit: Int?
+    val speedLimit: Int?,
+    val latitude: Double = Double.NaN,
+    val longitude: Double = Double.NaN
 )
 
 internal data class RadarCameraLock(

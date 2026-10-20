@@ -46,6 +46,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".TripStatsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".PhotoGalleryActivity"
             android:exported="false" />
 

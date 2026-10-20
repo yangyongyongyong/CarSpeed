@@ -24,6 +24,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.util.Range
 import android.util.Size
 import android.view.OrientationEventListener
@@ -162,6 +163,7 @@ class DashcamService : LifecycleService(), LocationListener {
     }
 
     override fun onDestroy() {
+        hideRecordingBubble()
         stoppingSelf = true
         stopVoiceRecognition()
         stopOrientationListener()
@@ -342,6 +344,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun onSeamlessRecordingStarted() {
         playRecordingStartCue()
         setRecordingState(this, true)
+        showRecordingBubble()
         startForegroundCompat(includeCameraType = true)
         refreshSettings()
     }
@@ -402,6 +405,7 @@ class DashcamService : LifecycleService(), LocationListener {
         releaseCameraUseCases()
         writeTripDriveRecord()
         clearActiveTrip()
+        hideRecordingBubble()
         setRecordingState(this, false)
         if (exitAfterStop) {
             stopVoiceRecognition()
@@ -749,6 +753,8 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun onRecordingStarted() {
         playRecordingStartCue()
         setRecordingState(this, true)
+        // 分段重新开录也会走到这里，已有悬浮窗只刷新时长，不重新计时。
+        showRecordingBubble()
         startForegroundCompat(includeCameraType = true)
         mainHandler.removeCallbacks(subtitleTicker)
         mainHandler.post(subtitleTicker)
@@ -800,6 +806,7 @@ class DashcamService : LifecycleService(), LocationListener {
         releaseCameraUseCases()
         writeTripDriveRecord()
         clearActiveTrip()
+        hideRecordingBubble()
         setRecordingState(this, false)
         if (exitAfterStop) {
             stopVoiceRecognition()
@@ -826,6 +833,7 @@ class DashcamService : LifecycleService(), LocationListener {
         mainHandler.removeCallbacks(subtitleTicker)
         if (activeRecording == null) {
             releaseCameraUseCases()
+            hideRecordingBubble()
             setRecordingState(this, false)
             if (!shouldKeepAliveForVoice()) stopVoiceRecognition()
             activePlateSession?.discard()
@@ -834,6 +842,19 @@ class DashcamService : LifecycleService(), LocationListener {
             clearActiveTrip()
             startForegroundCompat(includeCameraType = false)
         }
+    }
+
+    private fun showRecordingBubble() {
+        RecordingBubble.show(this, ::tripElapsedMs)
+    }
+
+    private fun hideRecordingBubble() {
+        RecordingBubble.hide(this)
+    }
+
+    private fun tripElapsedMs(): Long {
+        if (tripRecordingStartElapsedMs <= 0L) return 0L
+        return (SystemClock.elapsedRealtime() - tripRecordingStartElapsedMs).coerceAtLeast(0L)
     }
 
     private fun playRecordingStartCue() {
@@ -857,6 +878,38 @@ class DashcamService : LifecycleService(), LocationListener {
         imageAnalysis = null
         activePlateRecognitionBound = false
         PlateRecognitionMonitor.onActive(false, false)
+    }
+
+    private fun takeVoicePhoto(spokenAtElapsedMs: Long?) {
+        val recorder = seamlessRecorder
+        val spokenAt = spokenAtElapsedMs
+        val jpeg = if (recorder == null || spokenAt == null) {
+            null
+        } else {
+            runCatching { recorder.lookbackJpeg(spokenAt) }.getOrNull()
+        }
+        if (recorder == null || spokenAt == null || jpeg == null) {
+            if (spokenAt != null) Log.i(VOICE_PHOTO_LOG, "回看没有对应帧，改为当场拍照")
+            takePhotoInternal()
+            return
+        }
+        val ageMs = (SystemClock.elapsedRealtime() - spokenAt).coerceAtLeast(0L)
+        val spokenAtWallMs = System.currentTimeMillis() - ageMs
+        Log.i(VOICE_PHOTO_LOG, "抓拍回看 ${ageMs}ms")
+        PhotoShutterSound.play(this)
+        val outputFile = VideoStorage.photoOutputFile(this, tripFolderName = activeTripFolderName)
+        val tempFile = VideoStorage.tempPhotoFile(this)
+        val mode = activeVideoMode ?: CameraCapabilities.selectedVideoMode(this)
+        cameraExecutor.execute {
+            try {
+                tempFile.parentFile?.mkdirs()
+                tempFile.writeBytes(jpeg)
+                publishSeamlessPhoto(tempFile, outputFile, mode, spokenAtWallMs)
+            } catch (_: Exception) {
+                tempFile.delete()
+                mainHandler.post { takePhotoInternal() }
+            }
+        }
     }
 
     private fun takePhotoInternal() {
@@ -916,20 +969,7 @@ class DashcamService : LifecycleService(), LocationListener {
         recorder.captureStill(tempFile) { result ->
             cameraExecutor.execute {
                 result.fold(
-                    onSuccess = {
-                        PhotoWatermark.apply(this, tempFile, mode)
-                        val published = VideoStorage.publishPhotoToGallery(
-                            this,
-                            tempFile,
-                            outputFile.name,
-                            activeTripFolderName
-                        )
-                        tempFile.delete()
-                        scanFile(published, "image/jpeg")
-                        mainHandler.post {
-                            Toast.makeText(this, R.string.photo_saved, Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onSuccess = { publishSeamlessPhoto(tempFile, outputFile, mode) },
                     onFailure = { error ->
                         tempFile.delete()
                         val message = if (error is StillCaptureUnavailable) {
@@ -943,6 +983,26 @@ class DashcamService : LifecycleService(), LocationListener {
                     }
                 )
             }
+        }
+    }
+
+    private fun publishSeamlessPhoto(
+        tempFile: File,
+        outputFile: File,
+        mode: VideoMode,
+        captionAtMs: Long? = null
+    ) {
+        PhotoWatermark.apply(this, tempFile, mode, captionAtMs)
+        val published = VideoStorage.publishPhotoToGallery(
+            this,
+            tempFile,
+            outputFile.name,
+            activeTripFolderName
+        )
+        tempFile.delete()
+        scanFile(published, "image/jpeg")
+        mainHandler.post {
+            Toast.makeText(this, R.string.photo_saved, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1208,7 +1268,7 @@ class DashcamService : LifecycleService(), LocationListener {
         VoicePhotoRecognizer.start(this, VOICE_OWNER, ::dispatchVoiceCommand)
     }
 
-    private fun dispatchVoiceCommand(command: VoiceCommand) {
+    private fun dispatchVoiceCommand(command: VoiceCommand, spokenAtElapsedMs: Long? = null) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastVoicePhotoAtMs <= 3_000L) return
         lastVoicePhotoAtMs = now
@@ -1217,7 +1277,8 @@ class DashcamService : LifecycleService(), LocationListener {
                 VoiceCommand.TAKE_PHOTO -> {
                     VoiceCommandFeedback.photoTaken(this)
                     if (isRecordingActive()) {
-                        takePhotoInternal()
+                        // 口令要等说完再静音约 1 秒才确认。用这句话的开头时间，取当时或之后最近的录像帧。
+                        takeVoicePhoto(spokenAtElapsedMs)
                     } else {
                         CameraRecordActivity.takePhoto(this)
                     }
@@ -1527,6 +1588,7 @@ class DashcamService : LifecycleService(), LocationListener {
         private const val MAX_TRACK_POINTS_PER_SEGMENT = 30_000
         private const val PLATE_FOCUS_INTERVAL_MS = 5_000L
         private const val VOICE_OWNER = "service"
+        private const val VOICE_PHOTO_LOG = "VoicePhoto"
 
         @Volatile
         var instance: DashcamService? = null

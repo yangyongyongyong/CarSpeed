@@ -57,6 +57,8 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var cbManualFocus: CheckBox
     private lateinit var tvFocusInlineLabel: TextView
     private lateinit var sbInlineFocus: SeekBar
+    private lateinit var btnFocusDown: Button
+    private lateinit var btnFocusUp: Button
     private lateinit var btnRecord: Button
     private lateinit var btnPhoto: Button
     private lateinit var btnPhotos: Button
@@ -165,6 +167,8 @@ class CameraRecordActivity : AppCompatActivity() {
         cbManualFocus = findViewById(R.id.cbManualFocus)
         tvFocusInlineLabel = findViewById(R.id.tvFocusInlineLabel)
         sbInlineFocus = findViewById(R.id.sbInlineFocus)
+        btnFocusDown = findViewById(R.id.btnFocusDown)
+        btnFocusUp = findViewById(R.id.btnFocusUp)
         btnRecord = findViewById(R.id.btnRecordVideo)
         btnPhoto = findViewById(R.id.btnTakePhoto)
         btnPhotos = findViewById(R.id.btnOpenPhotos)
@@ -419,6 +423,8 @@ class CameraRecordActivity : AppCompatActivity() {
             updateFocusUi()
             applyFocusToCurrentCamera()
         }
+        btnFocusDown.setOnClickListener { stepFocus(-1) }
+        btnFocusUp.setOnClickListener { stepFocus(1) }
         sbInlineFocus.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (updatingFocusControls) return
@@ -439,13 +445,26 @@ class CameraRecordActivity : AppCompatActivity() {
     private fun updateFocusUi() {
         val manual = cbManualFocus.isChecked
         val supportsManual = CameraFocus.supportsManualFocus(idleCamera) || idleCamera == null || DashcamService.isRecording(this)
+        val focusEnabled = manual && supportsManual
         cbManualFocus.isEnabled = supportsManual
-        sbInlineFocus.isEnabled = manual && supportsManual
+        sbInlineFocus.isEnabled = focusEnabled
+        btnFocusDown.isEnabled = focusEnabled && sbInlineFocus.progress > 0
+        btnFocusUp.isEnabled = focusEnabled && sbInlineFocus.progress < 100
         tvFocusInlineLabel.text = when {
             !supportsManual -> getString(R.string.focus_unsupported_label)
             manual -> getString(R.string.focus_label, sbInlineFocus.progress, focusDistanceLabel(sbInlineFocus.progress))
             else -> getString(R.string.focus_auto_label)
         }
+    }
+
+    private fun stepFocus(delta: Int) {
+        val next = CameraFocus.stepPercent(sbInlineFocus.progress, delta)
+        if (next == sbInlineFocus.progress) return
+        updatingFocusControls = true
+        sbInlineFocus.progress = next
+        updatingFocusControls = false
+        CameraFocus.save(this, cbManualFocus.isChecked, next, commit = true)
+        applyFocusToCurrentCamera()
     }
 
     private fun syncFocusControlsFromPrefs() {

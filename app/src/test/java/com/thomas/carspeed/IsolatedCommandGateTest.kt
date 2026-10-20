@@ -145,6 +145,17 @@ class IsolatedCommandGateTest {
     }
 
     @Test
+    fun photo_command_remembers_when_the_phrase_started() {
+        val gate = IsolatedCommandGate()
+        val words = listOf(TimedWord("你好", 1_000, 1_400)) +
+            phrase("我要拍照", startMs = 3_000, endMs = 3_800)
+
+        assertNull(gate.onWords(words, confirmedThroughMs = 3_800))
+        assertEquals(VoiceCommand.TAKE_PHOTO, gate.onSilenceAdvanced(4_800))
+        assertEquals(3_000L, gate.firedStartMs())
+    }
+
+    @Test
     fun word_timeline_wins_over_plain_text() {
         val gate = IsolatedCommandGate()
         val words = phrase("我要拍照", startMs = 1_000, endMs = 1_800)

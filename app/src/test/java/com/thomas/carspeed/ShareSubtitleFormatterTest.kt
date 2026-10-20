@@ -121,7 +121,7 @@ class ShareSubtitleFormatterTest {
 
     @Test
     fun radar_summary_is_not_treated_as_speed_or_address() {
-        val text = "86.4 km/h  |  测速 100×4 · 120×3  |  杭州市余杭区天目山路"
+        val text = "86.4 km/h  |  测速 100kph×4 · 120kph×3  |  杭州市余杭区天目山路"
         val onlyRadar = ShareSubtitleFormatter.filter(
             text,
             ShareSubtitleFields(
@@ -135,7 +135,7 @@ class ShareSubtitleFormatterTest {
                 showRadarSummary = true
             )
         )
-        assertEquals("测速 100×4 · 120×3", onlyRadar)
+        assertEquals("测速 100kph×4 · 120kph×3", onlyRadar)
 
         val withoutRadar = ShareSubtitleFormatter.filter(
             text,
@@ -151,5 +151,23 @@ class ShareSubtitleFormatterTest {
             )
         )
         assertEquals("86.4 km/h", withoutRadar)
+    }
+
+    @Test
+    fun overlay_keeps_playback_line_breaks_and_drops_unchecked_fields() {
+        val text = "2026-10-13 11:00:00  |  60.0 km/h\n桥上  |  杭州市"
+        val overlay = ShareSubtitleFormatter.overlayText(
+            text,
+            ShareSubtitleFields(
+                showTime = true,
+                showSpeed = false,
+                showGps = false,
+                showAddress = false,
+                showFocus = false,
+                showVideoMode = false,
+                showRoadLayer = true
+            )
+        )
+        assertEquals("2026-10-13 11:00:00\n桥上", overlay)
     }
 }

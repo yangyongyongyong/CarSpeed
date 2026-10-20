@@ -60,6 +60,7 @@ class MapRouteView @JvmOverloads constructor(
     private val mapTypeButton = Button(context)
     private val offlineButton = Button(context)
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var cancelMapGesture = false
     private var offlineManager: OfflineMapManager? = null
     private var points: List<VideoTrackPoint> = emptyList()
     private var convertedPoints: List<LatLng> = emptyList()
@@ -78,21 +79,24 @@ class MapRouteView @JvmOverloads constructor(
     private val photoMarkers = mutableListOf<Marker>()
     private var photoMarkerIcon: BitmapDescriptor? = null
     private var radarMarks: List<VideoTrackRadar> = emptyList()
-    private var radarLatLngs: List<LatLng> = emptyList()
     private val radarMarkers = mutableListOf<Marker>()
-    private val radarMarkerIcons = mutableMapOf<Int, RadarMarkerBitmap>()
+    private val radarMarkerIcons = mutableMapOf<RadarIconKey, RadarMarkerBitmap>()
     private var fitWholeRoute = false
+    private var wholeRouteAwaitingLayout = false
     private var currentMapType = AMap.MAP_TYPE_NORMAL
     private var userCameraLocked = false
     private var routeCameraInitialized = false
     private var viewportScaleIndex = DEFAULT_VIEWPORT_SCALE_INDEX
     private var contentRotationDegrees = 0
     private var overlayControlsVisible = false
+    private var trackAlphaPercent = 100
     private var activeAutoProvince: String? = null
     private var activeAutoProgress: Int? = null
     private val autoDownloadFailedNames = mutableSetOf<String>()
     private var downTouchX = 0f
     private var downTouchY = 0f
+    private var gestureMaxMove = 0f
+    private var gestureStartedInWholeRoute = false
     var onMapTap: (() -> Unit)? = null
     var onScaleChanged: (() -> Unit)? = null
     var onPhotoClick: ((String) -> Unit)? = null
@@ -141,7 +145,6 @@ class MapRouteView @JvmOverloads constructor(
 
     fun setRadarMarks(marks: List<VideoTrackRadar>) {
         radarMarks = marks
-        radarLatLngs = marks.map { LatLng(it.latitude, it.longitude) }
         renderRadarMarks()
         if (fitWholeRoute) updateCamera()
     }
@@ -151,15 +154,20 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     fun showWholeRoute() {
-        fitWholeRoute = true
+        setWholeRouteMode(true)
         userCameraLocked = false
         routeCameraInitialized = false
         updateCamera()
+        post { if (fitWholeRoute) updateCamera() }
         updateButtons()
     }
 
+    fun revealWholeRoute() {
+        if (fitWholeRoute && width > 0 && height > 0) updateCamera()
+    }
+
     fun showCurrentViewport() {
-        fitWholeRoute = false
+        setWholeRouteMode(false)
         userCameraLocked = false
         routeCameraInitialized = false
         updateCamera()
@@ -174,6 +182,34 @@ class MapRouteView @JvmOverloads constructor(
 
     fun openOfflineMap() {
         context.startActivity(Intent(context, OfflineMapActivity::class.java))
+    }
+
+    fun setSpeedCaptionVisible(visible: Boolean) {
+        statsView.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
+    private var consumeTouch: ((MotionEvent) -> Boolean)? = null
+
+    /**
+     * 返回 true 时地图不再跟着平移。拖动悬浮窗中途接管时，先给地图补一次取消，避免这次按住被当成点击。
+     * 必须拦在 dispatchTouchEvent：地图子视图会吃掉触摸，外层 OnTouchListener 收不到。
+     */
+    fun setConsumeTouchListener(listener: ((MotionEvent) -> Boolean)?) {
+        consumeTouch = listener
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) cancelMapGesture = false
+        val consume = consumeTouch?.invoke(ev) == true
+        if (!consume) return super.dispatchTouchEvent(ev)
+        if (!cancelMapGesture) {
+            val cancel = MotionEvent.obtain(ev)
+            cancel.action = MotionEvent.ACTION_CANCEL
+            super.dispatchTouchEvent(cancel)
+            cancel.recycle()
+            cancelMapGesture = true
+        }
+        return true
     }
 
     fun setOverlayControlsVisible(visible: Boolean) {
@@ -199,7 +235,7 @@ class MapRouteView @JvmOverloads constructor(
     fun zoomOutScale() {
         if (fitWholeRoute) return
         if (viewportScaleIndex >= VIEWPORT_SCALE_METERS.lastIndex) {
-            fitWholeRoute = true
+            setWholeRouteMode(true)
             userCameraLocked = false
             routeCameraInitialized = false
             updateCamera()
@@ -277,15 +313,25 @@ class MapRouteView @JvmOverloads constructor(
                 MotionEvent.ACTION_DOWN -> {
                     downTouchX = event.x
                     downTouchY = event.y
+                    gestureMaxMove = 0f
+                    gestureStartedInWholeRoute = fitWholeRoute
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> lockCameraForUserGesture()
                 MotionEvent.ACTION_MOVE -> {
                     val moved = max(abs(event.x - downTouchX), abs(event.y - downTouchY))
-                    if (moved > touchSlop) lockCameraForUserGesture()
+                    gestureMaxMove = max(gestureMaxMove, moved)
+                    if (gestureMaxMove > touchSlop) lockCameraForUserGesture()
                 }
             }
         }
-        aMap.setOnMapClickListener { onMapTap?.invoke() }
+        aMap.setOnMapClickListener {
+            // 点一下是去全屏，不是拖地图。手指稍微动一下也不要取消全程。
+            if (gestureStartedInWholeRoute && gestureMaxMove <= touchSlop * 2) {
+                setWholeRouteMode(true)
+                userCameraLocked = false
+            }
+            onMapTap?.invoke()
+        }
         aMap.setOnCameraChangeListener(object : AMap.OnCameraChangeListener {
             override fun onCameraChange(position: CameraPosition?) {
                 resizeCurrentMarkers()
@@ -366,13 +412,14 @@ class MapRouteView @JvmOverloads constructor(
         maxSpeedMarker = null
 
         if (convertedPoints.size < 2) return
-        for (i in 1 until convertedPoints.size) {
-            val speedKmh = RouteTrackStyle.segmentSpeedKmh(points[i - 1].speedKmh, points[i].speedKmh)
+        // 必须一段一条线。收成一条长线时，高德在分区和悬浮里都不画。
+        for (index in 1 until convertedPoints.size) {
+            val speedKmh = RouteTrackStyle.segmentSpeedKmh(points[index - 1].speedKmh, points[index].speedKmh)
             routeSegments += aMap.addPolyline(
                 PolylineOptions()
-                    .add(convertedPoints[i - 1], convertedPoints[i])
+                    .add(convertedPoints[index - 1], convertedPoints[index])
                     .width(routeWidthPx(RouteTrackStyle.widthScale(speedKmh)))
-                    .color(ROUTE_COLOR)
+                    .color(routeColor())
                     .zIndex(20f)
             )
         }
@@ -460,7 +507,7 @@ class MapRouteView @JvmOverloads constructor(
         radarMarkers.clear()
         if (radarMarks.isEmpty()) return
         radarMarks.forEach { mark ->
-            val bitmap = radarMarkerBitmap(mark.speedLimit)
+            val bitmap = radarMarkerBitmap(mark.speedLimit, fitWholeRoute)
             // 高德巡航给的是地图坐标，轨迹点才需要从 GPS 再转一次。
             val marker = aMap.addMarker(
                 MarkerOptions()
@@ -475,21 +522,22 @@ class MapRouteView @JvmOverloads constructor(
         }
     }
 
-    private fun radarMarkerBitmap(speedLimit: Int?): RadarMarkerBitmap {
+    private fun radarMarkerBitmap(speedLimit: Int?, overview: Boolean): RadarMarkerBitmap {
         val limit = speedLimit?.takeIf { it > 0 }
-        val key = limit ?: RADAR_ICON_NO_LIMIT
+        val key = RadarIconKey(limit ?: RADAR_ICON_NO_LIMIT, overview)
         radarMarkerIcons[key]?.let { return it }
-        val iconSize = dp(22).coerceAtLeast(1)
+        // 全程时图标按屏幕尺寸会盖住路线，改成大约一半。
+        val iconSize = dp(if (overview) 11 else 22).coerceAtLeast(1)
         val label = limit?.toString()
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = dp(11).toFloat()
+            textSize = dp(if (overview) 8 else 11).toFloat()
             textAlign = Paint.Align.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
         val textWidth = label?.let { textPaint.measureText(it) } ?: 0f
-        val pillPadX = dp(4)
-        val pillHeight = if (label == null) 0 else dp(14)
+        val pillPadX = dp(if (overview) 2 else 4)
+        val pillHeight = if (label == null) 0 else dp(if (overview) 10 else 14)
         val gap = if (label == null) 0 else dp(1)
         val width = max(iconSize, (textWidth + pillPadX * 2).roundToInt()).coerceAtLeast(1)
         val height = (iconSize + gap + pillHeight).coerceAtLeast(1)
@@ -523,10 +571,18 @@ class MapRouteView @JvmOverloads constructor(
         return marker
     }
 
+    private data class RadarIconKey(val limit: Int, val overview: Boolean)
+
     private data class RadarMarkerBitmap(
         val icon: BitmapDescriptor,
         val anchorY: Float
     )
+
+    private fun setWholeRouteMode(enabled: Boolean) {
+        if (fitWholeRoute == enabled) return
+        fitWholeRoute = enabled
+        renderRadarMarks()
+    }
 
     private fun renderPlaybackState() {
         if (points.isEmpty() || convertedPoints.isEmpty()) return
@@ -577,10 +633,25 @@ class MapRouteView @JvmOverloads constructor(
     private fun updateCamera() {
         if (convertedPoints.isEmpty() || width == 0 || height == 0) return
         if (fitWholeRoute && convertedPoints.size > 1) {
-            val builder = LatLngBounds.builder()
-            convertedPoints.forEach { builder.include(it) }
-            radarLatLngs.forEach { builder.include(it) }
-            runCatching { aMap.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), dp(18))) }
+            // 悬浮窗刚改大小时，地图控件还是旧尺寸。等它排完再框，否则路线会落到窗口外面。
+            if (!mapViewMatchesVisibleSize()) {
+                if (!wholeRouteAwaitingLayout) {
+                    wholeRouteAwaitingLayout = true
+                    mapView.post {
+                        wholeRouteAwaitingLayout = false
+                        if (!fitWholeRoute) return@post
+                        if (mapViewMatchesVisibleSize()) {
+                            updateCamera()
+                        } else if (mapView.width > 2 && mapView.height > 2) {
+                            moveWholeRouteCamera()
+                            routeCameraInitialized = true
+                            notifyScaleChanged()
+                        }
+                    }
+                }
+                return
+            }
+            moveWholeRouteCamera()
             routeCameraInitialized = true
         } else if (userCameraLocked) {
             return
@@ -607,6 +678,33 @@ class MapRouteView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         applyContentRotation()
+        if (fitWholeRoute && w > 0 && h > 0 && (w != oldw || h != oldh)) {
+            mapView.post { if (fitWholeRoute) updateCamera() }
+        }
+    }
+
+    private fun mapViewMatchesVisibleSize(): Boolean {
+        val quarter = VideoReplayRotation.isQuarterTurn(contentRotationDegrees)
+        val expectWidth = if (quarter) height else width
+        val expectHeight = if (quarter) width else height
+        return expectWidth > 2 && expectHeight > 2 && mapView.width == expectWidth && mapView.height == expectHeight
+    }
+
+    private fun moveWholeRouteCamera() {
+        val builder = LatLngBounds.builder()
+        convertedPoints.forEach { builder.include(it) }
+        val room = minOf(mapView.width, mapView.height) / 4
+        val padding = if (room <= 0) 0 else dp(18).coerceAtMost(room)
+        runCatching {
+            aMap.moveCamera(
+                CameraUpdateFactory.newLatLngBounds(
+                    builder.build(),
+                    mapView.width,
+                    mapView.height,
+                    padding
+                )
+            )
+        }
     }
 
     private fun applyContentRotation() {
@@ -694,7 +792,7 @@ class MapRouteView @JvmOverloads constructor(
             return
         }
         viewportScaleIndex = nextIndex
-        fitWholeRoute = false
+        setWholeRouteMode(false)
         userCameraLocked = false
         routeCameraInitialized = false
         updateCamera()
@@ -833,7 +931,7 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     private fun lockCameraForUserGesture() {
-        fitWholeRoute = false
+        setWholeRouteMode(false)
         userCameraLocked = true
         updateButtons()
     }
@@ -868,6 +966,18 @@ class MapRouteView @JvmOverloads constructor(
 
     private data class PlayedRun(val scale: Float, val points: MutableList<LatLng>)
 
+    fun setTrackAlphaPercent(percent: Int) {
+        trackAlphaPercent = percent.coerceIn(0, 100)
+        val route = routeColor()
+        val played = playedColor()
+        routeSegments.forEach { it.color = route }
+        playedPolylines.forEach { it.color = played }
+    }
+
+    private fun routeColor(): Int = RouteTrackStyle.withAlpha(ROUTE_COLOR, trackAlphaPercent)
+
+    private fun playedColor(): Int = RouteTrackStyle.withAlpha(Color.WHITE, trackAlphaPercent)
+
     private fun routeWidthPx(scale: Float): Float = dp(ROUTE_BASE_WIDTH_DP).toFloat() * scale
 
     private fun renderPlayedRoute(playedIndex: Int, currentLatLng: LatLng) {
@@ -883,7 +993,7 @@ class MapRouteView @JvmOverloads constructor(
                 PolylineOptions()
                     .addAll(run.points)
                     .width(routeWidthPx(RouteTrackStyle.playedWidthScale(run.scale)))
-                    .color(Color.WHITE)
+                    .color(playedColor())
                     .zIndex(30f)
             ) ?: return@forEach
             playedPolylines += line
@@ -978,6 +1088,7 @@ class MapRouteView @JvmOverloads constructor(
         private const val CURRENT_PULSE_MIN_DP = 8f / 3f
         private const val CURRENT_PULSE_MAX_DP = 16f / 3f
         private const val ROUTE_BASE_WIDTH_DP = 5
+        /** 绿色轨迹。透明度由回放页的滑块决定，默认不透明。 */
         private val ROUTE_COLOR = Color.rgb(79, 214, 151)
         private const val WEB_MERCATOR_EQUATOR_METERS_PER_PIXEL = 156543.03392
     }

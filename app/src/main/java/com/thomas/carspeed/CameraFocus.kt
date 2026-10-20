@@ -21,6 +21,8 @@ object CameraFocus {
             .getBoolean(DashcamSettings.PREF_MANUAL_FOCUS_ENABLED, false)
     }
 
+    fun stepPercent(current: Int, delta: Int): Int = (current + delta).coerceIn(0, 100)
+
     fun percent(context: Context): Int {
         return context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
             .getInt(DashcamSettings.PREF_FOCUS_PERCENT, DashcamSettings.DEFAULT_FOCUS_PERCENT)

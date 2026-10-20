@@ -10,8 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.Surface
+import android.view.ViewConfiguration
 import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
@@ -24,16 +26,17 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import kotlin.math.roundToInt
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class VideoReplayActivity : AppCompatActivity() {
-    private lateinit var replayRoot: LinearLayout
+    private lateinit var replayRoot: FrameLayout
     private lateinit var toolbar: MaterialToolbar
     private lateinit var videoCard: MaterialCardView
-    private lateinit var infoCard: MaterialCardView
+    private lateinit var infoCard: FloatMapCard
     private lateinit var infoContent: LinearLayout
     private lateinit var videoFrame: FrameLayout
     private lateinit var videoStage: FrameLayout
@@ -68,6 +71,12 @@ class VideoReplayActivity : AppCompatActivity() {
     private lateinit var btnOfflineMap: MaterialButton
     private lateinit var btnMapScaleOut: MaterialButton
     private lateinit var btnMapScaleIn: MaterialButton
+    private lateinit var btnReplayLayout: MaterialButton
+    private lateinit var tvReplayLayout: TextView
+    private lateinit var layoutTrackAlpha: LinearLayout
+    private lateinit var seekTrackAlpha: SeekBar
+    private lateinit var tvTrackAlpha: TextView
+    private lateinit var floatTouch: FloatWindowTouch
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var videoFile: File? = null
@@ -96,6 +105,9 @@ class VideoReplayActivity : AppCompatActivity() {
     private var normalVideoRadius = 0f
     private var normalInfoRadius = 0f
     private var videoMapRatio = DEFAULT_VIDEO_MAP_RATIO
+    private var layoutMode = ReplayMapLayout.MODE_SPLIT
+    private var floatSpec = ReplayMapLayout.defaultFloatSpec()
+    private var trackAlphaPercent = 100
     private var dividerDragStartY = 0f
     private var dividerDragStartVideoHeight = 0
     private var dividerDragTotalHeight = 0
@@ -103,6 +115,10 @@ class VideoReplayActivity : AppCompatActivity() {
     private var lastVideoHeight = 0
     private var playbackSpeedIndex = 0
     private var radarLookup: HistoricalRadarLookup? = null
+    private var mapActionPadStart = 0
+    private var mapActionPadTop = 0
+    private var mapActionPadEnd = 0
+    private var mapActionPadBottom = 0
 
     private val syncTicker = object : Runnable {
         override fun run() {
@@ -156,6 +172,15 @@ class VideoReplayActivity : AppCompatActivity() {
         btnOfflineMap = findViewById(R.id.btnOfflineMap)
         btnMapScaleOut = findViewById(R.id.btnMapScaleOut)
         btnMapScaleIn = findViewById(R.id.btnMapScaleIn)
+        btnReplayLayout = findViewById(R.id.btnReplayLayout)
+        tvReplayLayout = findViewById(R.id.tvReplayLayout)
+        layoutTrackAlpha = findViewById(R.id.layoutTrackAlpha)
+        seekTrackAlpha = findViewById(R.id.seekTrackAlpha)
+        tvTrackAlpha = findViewById(R.id.tvTrackAlpha)
+        mapActionPadStart = btnMapViewportAll.paddingStart
+        mapActionPadTop = btnMapViewportAll.paddingTop
+        mapActionPadEnd = btnMapViewportAll.paddingEnd
+        mapActionPadBottom = btnMapViewportAll.paddingBottom
         videoCard.clipToOutline = false
         videoCard.clipChildren = false
         videoFrame.clipChildren = false
@@ -165,6 +190,12 @@ class VideoReplayActivity : AppCompatActivity() {
         normalVideoRadius = videoCard.radius
         normalInfoRadius = infoCard.radius
         videoMapRatio = loadVideoMapRatio()
+        layoutMode = loadLayoutMode()
+        floatSpec = loadFloatSpec()
+        trackAlphaPercent = loadTrackAlphaPercent()
+        mapRouteView.setTrackAlphaPercent(trackAlphaPercent)
+        seekTrackAlpha.progress = trackAlphaPercent
+        tvTrackAlpha.text = getString(R.string.video_replay_track_alpha_value, trackAlphaPercent)
         applyVideoMapRatio(videoMapRatio)
         applyPlaybackSystemUi()
 
@@ -174,6 +205,8 @@ class VideoReplayActivity : AppCompatActivity() {
         tvReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvMapReplaySpeed.setOnClickListener { switchPlaybackSpeed() }
         tvReplayFullscreen.setOnClickListener { setFullscreen(!fullscreen) }
+        tvReplayLayout.setOnClickListener { toggleReplayLayout() }
+        btnReplayLayout.setOnClickListener { toggleReplayLayout() }
         tvReplayRotate.setOnClickListener { rotatePlayback(90) }
         mapRouteView.onMapTap = { if (!mapFullscreen) setMapFullscreen(true) }
         mapRouteView.onPhotoClick = { path -> openRoutePhoto(path) }
@@ -194,6 +227,8 @@ class VideoReplayActivity : AppCompatActivity() {
             updateMapControls()
         }
         setupVideoMapDivider()
+        setupFloatMapGestures()
+        setupTrackAlphaSeek()
         updateMapControls()
         setupSeekBar(seekReplayProgress)
         setupSeekBar(seekMapReplayProgress)
@@ -299,11 +334,9 @@ class VideoReplayActivity : AppCompatActivity() {
         layoutReplayControls.visibility = View.GONE
         layoutMapReplayControls.visibility = View.VISIBLE
         tvReplayFullscreen.visibility = View.GONE
-        infoCard.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f
-        ).apply { topMargin = 0 }
+        tvReplayLayout.visibility = View.GONE
+        btnReplayLayout.visibility = View.GONE
+        applyReplayLayout()
         val points = record.routePoints.mapIndexed { index, point ->
             val elapsedMs = (point.timeMs - record.startTimeMs).takeIf { it >= 0L } ?: (index * 1_000L)
             VideoTrackPoint(
@@ -491,6 +524,13 @@ class VideoReplayActivity : AppCompatActivity() {
         tvReplaySpeed.text = playbackSpeedLabel()
         tvMapReplaySpeed.text = tvReplaySpeed.text
         tvReplayFullscreen.text = if (fullscreen) "退出" else "全屏"
+        val layoutLabel = if (layoutMode == ReplayMapLayout.MODE_FLOAT) {
+            getString(R.string.video_replay_layout_split)
+        } else {
+            getString(R.string.video_replay_layout_float)
+        }
+        tvReplayLayout.text = layoutLabel
+        btnReplayLayout.text = layoutLabel
     }
 
     private fun updateMapControls() {
@@ -516,15 +556,7 @@ class VideoReplayActivity : AppCompatActivity() {
             if (enabled) android.graphics.Color.BLACK else androidx.core.content.ContextCompat.getColor(this, R.color.brand_sand)
         )
         videoCard.radius = if (enabled) 0f else normalVideoRadius
-        if (enabled) {
-            videoCard.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            ).apply { topMargin = 0 }
-        } else {
-            applyVideoMapRatio(videoMapRatio)
-        }
+        applyReplayLayout()
         applyPlaybackSystemUi()
         mediaPlayer?.let { player -> videoFrame.post { updateVideoLayout(player.videoWidth, player.videoHeight) } }
         showControls()
@@ -561,16 +593,9 @@ class VideoReplayActivity : AppCompatActivity() {
             0,
             0
         )
-        if (enabled) {
-            infoCard.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            ).apply { topMargin = 0 }
-        } else {
-            applyVideoMapRatio(videoMapRatio)
-        }
+        applyReplayLayout()
         applyPlaybackSystemUi()
+        mapRouteView.post { mapRouteView.revealWholeRoute() }
     }
 
     private fun renderStaticInfo(files: List<File>) {
@@ -820,7 +845,9 @@ class VideoReplayActivity : AppCompatActivity() {
 
     private fun setupVideoMapDivider() {
         videoMapDivider.setOnTouchListener { view, event ->
-            if (fullscreen || mapFullscreen || trackOnly) return@setOnTouchListener false
+            if (fullscreen || mapFullscreen || trackOnly || layoutMode == ReplayMapLayout.MODE_FLOAT) {
+                return@setOnTouchListener false
+            }
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     dividerDragStartY = event.rawY
@@ -856,24 +883,286 @@ class VideoReplayActivity : AppCompatActivity() {
     }
 
     private fun applyVideoMapRatio(ratio: Float) {
-        val clampedRatio = ratio.coerceIn(MIN_VIDEO_MAP_RATIO, MAX_VIDEO_MAP_RATIO)
-        videoMapRatio = clampedRatio
-        videoCard.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            clampedRatio
-        ).apply { topMargin = 0 }
-        infoCard.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f - clampedRatio
-        ).apply { topMargin = 0 }
+        videoMapRatio = ratio.coerceIn(MIN_VIDEO_MAP_RATIO, MAX_VIDEO_MAP_RATIO)
+        applyReplayLayout()
+    }
+
+    private fun applyReplayLayout() {
+        val width = replayRoot.width
+        val height = replayRoot.height
+        if (width <= 0 || height <= 0) {
+            replayRoot.post { applyReplayLayout() }
+            return
+        }
+        val floating = layoutMode == ReplayMapLayout.MODE_FLOAT && !trackOnly && !fullscreen && !mapFullscreen
+        videoMapDivider.visibility = if (floating || fullscreen || mapFullscreen || trackOnly) {
+            View.GONE
+        } else {
+            View.VISIBLE
+        }
+        infoCard.edgePx = if (floating) dp(ReplayMapLayout.FLOAT_EDGE_DP) else 0
+        if (!trackOnly) tvReplayLayout.visibility = View.VISIBLE
+        applyMapChrome(ReplayMapLayout.chrome(layoutMode, mapFullscreen, trackOnly))
+        infoCard.cardElevation = if (floating) dp(8).toFloat() else 0f
+        infoCard.clipToOutline = floating
+        infoCard.radius = when {
+            floating -> dp(16).toFloat()
+            mapFullscreen -> 0f
+            else -> normalInfoRadius
+        }
+        when {
+            trackOnly || mapFullscreen -> {
+                videoCard.visibility = View.GONE
+                infoCard.visibility = View.VISIBLE
+                placeReplayChild(infoCard, 0, 0, width, height)
+            }
+            fullscreen -> {
+                infoCard.visibility = View.GONE
+                videoCard.visibility = View.VISIBLE
+                placeReplayChild(videoCard, 0, 0, width, height)
+            }
+            floating -> {
+                videoCard.visibility = View.VISIBLE
+                infoCard.visibility = View.VISIBLE
+                placeReplayChild(videoCard, 0, 0, width, height)
+                val window = ReplayMapLayout.frame(floatSpec, width, height, dp(160), dp(140))
+                placeReplayChild(infoCard, window.left, window.top, window.width, window.height)
+                infoCard.bringToFront()
+            }
+            else -> {
+                videoCard.visibility = View.VISIBLE
+                infoCard.visibility = View.VISIBLE
+                val dividerHeight = dp(18)
+                val space = (height - dividerHeight).coerceAtLeast(2)
+                val minSection = minOf(dp(150), (space * 0.35f).toInt(), space / 2).coerceAtLeast(1)
+                val videoHeight = (space * videoMapRatio).roundToInt()
+                    .coerceIn(minSection, space - minSection)
+                placeReplayChild(videoCard, 0, 0, width, videoHeight)
+                placeReplayChild(videoMapDivider, 0, videoHeight, width, dividerHeight)
+                placeReplayChild(
+                    infoCard,
+                    0,
+                    videoHeight + dividerHeight,
+                    width,
+                    height - videoHeight - dividerHeight
+                )
+            }
+        }
         refreshVideoLayoutAfterResize()
+    }
+
+    private fun applyMapChrome(chrome: ReplayMapChrome) {
+        val textVisibility = if (chrome.showTrackText) View.VISIBLE else View.GONE
+        tvReplayTitle.visibility = textVisibility
+        tvReplayStats.visibility = textVisibility
+        tvReplayPosition.visibility = textVisibility
+        layoutTrackAlpha.visibility = if (chrome.showTrackSlider) View.VISIBLE else View.GONE
+        mapRouteView.setSpeedCaptionVisible(chrome.showSpeedCaption)
+        layoutMapScaleControls.visibility = if (chrome.showScaleControls) View.VISIBLE else View.GONE
+        btnOfflineMap.visibility = if (chrome.showOfflineButton) View.VISIBLE else View.GONE
+        btnReplayLayout.visibility = if (chrome.showLayoutButton) View.VISIBLE else View.GONE
+        val height = if (chrome.compactActions) dp(26) else dp(28)
+        val gap = if (chrome.compactActions) dp(4) else dp(6)
+        layoutMapActionControls.layoutParams = layoutMapActionControls.layoutParams.apply {
+            this.height = height
+        }
+        listOf(btnMapViewportAll, btnMapViewportCurrent, btnMapType).forEachIndexed { index, button ->
+            val params = button.layoutParams as LinearLayout.LayoutParams
+            if (chrome.compactActions) {
+                params.width = LinearLayout.LayoutParams.WRAP_CONTENT
+                params.weight = 0f
+            } else {
+                params.width = 0
+                params.weight = 1f
+            }
+            params.height = height
+            params.marginStart = if (index == 0) 0 else gap
+            button.layoutParams = params
+            button.minWidth = 0
+            button.minimumWidth = 0
+            button.minHeight = 0
+            button.minimumHeight = 0
+            button.insetTop = 0
+            button.insetBottom = 0
+            button.maxLines = 1
+            button.ellipsize = null
+            button.setTextColor(android.graphics.Color.WHITE)
+            button.textSize = if (chrome.compactActions) 12f else 10f
+            if (chrome.compactActions) {
+                button.setPaddingRelative(dp(8), 0, dp(8), 0)
+            } else {
+                button.setPaddingRelative(
+                    mapActionPadStart,
+                    mapActionPadTop,
+                    mapActionPadEnd,
+                    mapActionPadBottom
+                )
+            }
+        }
+    }
+
+    private fun placeReplayChild(view: View, left: Int, top: Int, width: Int, height: Int) {
+        view.layoutParams = FrameLayout.LayoutParams(width, height).apply {
+            leftMargin = left
+            topMargin = top
+            gravity = Gravity.TOP or Gravity.START
+        }
+    }
+
+    private fun toggleReplayLayout() {
+        if (trackOnly) return
+        layoutMode = if (layoutMode == ReplayMapLayout.MODE_FLOAT) {
+            ReplayMapLayout.MODE_SPLIT
+        } else {
+            ReplayMapLayout.MODE_FLOAT
+        }
+        persistLayoutMode()
+        applyReplayLayout()
+        updateControls()
+        updateMapControls()
+    }
+
+    private fun setupFloatMapGestures() {
+        floatTouch = FloatWindowTouch(
+            edgePx = dp(ReplayMapLayout.FLOAT_EDGE_DP),
+            touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        )
+        infoCard.onEdgeTouch = { event -> onFloatWindowTouch(event, bodyOnly = false) }
+        mapRouteView.setConsumeTouchListener { event -> onFloatWindowTouch(event, bodyOnly = true) }
+    }
+
+    private fun onFloatWindowTouch(event: MotionEvent, bodyOnly: Boolean): Boolean {
+        if (layoutMode != ReplayMapLayout.MODE_FLOAT || fullscreen || mapFullscreen || trackOnly) {
+            return false
+        }
+        val parentWidth = replayRoot.width
+        val parentHeight = replayRoot.height
+        val consumed = when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (bodyOnly) {
+                    floatTouch.downBody(event.rawX, event.rawY, currentFloatFrame(), event.eventTime)
+                } else {
+                    floatTouch.down(
+                        localX = event.x,
+                        localY = event.y,
+                        rawX = event.rawX,
+                        rawY = event.rawY,
+                        viewWidth = infoCard.width,
+                        viewHeight = infoCard.height,
+                        frame = currentFloatFrame(),
+                        timeMs = event.eventTime
+                    )
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val next = floatTouch.move(
+                    rawX = event.rawX,
+                    rawY = event.rawY,
+                    timeMs = event.eventTime,
+                    parentWidth = parentWidth,
+                    parentHeight = parentHeight,
+                    minWidth = dp(160),
+                    minHeight = dp(140)
+                )
+                if (next != null) {
+                    floatSpec = ReplayMapLayout.spec(next, parentWidth, parentHeight)
+                    applyReplayLayout()
+                    replayRoot.requestDisallowInterceptTouchEvent(true)
+                }
+                floatTouch.consuming()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val handled = floatTouch.up(event.eventTime)
+                if (handled) persistFloatSpec()
+                handled
+            }
+            else -> floatTouch.consuming()
+        }
+        if (floatTouch.takeDragEntry()) {
+            infoCard.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
+        return consumed
+    }
+
+    private fun currentFloatFrame(): ReplayFloatFrame {
+        return ReplayMapLayout.frame(
+            floatSpec,
+            replayRoot.width,
+            replayRoot.height,
+            dp(160),
+            dp(140)
+        )
+    }
+
+    private fun setupTrackAlphaSeek() {
+        seekTrackAlpha.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser || layoutTrackAlpha.visibility != View.VISIBLE) return
+                trackAlphaPercent = ReplayMapLayout.trackAlphaPercent(progress)
+                tvTrackAlpha.text = getString(R.string.video_replay_track_alpha_value, trackAlphaPercent)
+                mapRouteView.setTrackAlphaPercent(trackAlphaPercent)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                persistTrackAlphaPercent()
+            }
+        })
     }
 
     private fun refreshVideoLayoutAfterResize() {
         if (lastVideoWidth <= 0 || lastVideoHeight <= 0) return
         videoFrame.post { updateVideoLayout(lastVideoWidth, lastVideoHeight) }
+    }
+
+    private fun loadLayoutMode(): String {
+        return ReplayMapLayout.normalizeMode(
+            getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+                .getString(ReplayMapLayout.PREF_LAYOUT_MODE, ReplayMapLayout.MODE_SPLIT)
+        )
+    }
+
+    private fun persistLayoutMode() {
+        getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(ReplayMapLayout.PREF_LAYOUT_MODE, layoutMode)
+            .apply()
+    }
+
+    private fun loadFloatSpec(): ReplayFloatSpec {
+        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+        val defaults = ReplayMapLayout.defaultFloatSpec()
+        return ReplayFloatSpec(
+            leftFraction = prefs.getFloat(ReplayMapLayout.PREF_FLOAT_LEFT, defaults.leftFraction),
+            topFraction = prefs.getFloat(ReplayMapLayout.PREF_FLOAT_TOP, defaults.topFraction),
+            widthFraction = prefs.getFloat(ReplayMapLayout.PREF_FLOAT_WIDTH, defaults.widthFraction),
+            heightFraction = prefs.getFloat(ReplayMapLayout.PREF_FLOAT_HEIGHT, defaults.heightFraction)
+        )
+    }
+
+    private fun persistFloatSpec() {
+        getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+            .edit()
+            .putFloat(ReplayMapLayout.PREF_FLOAT_LEFT, floatSpec.leftFraction)
+            .putFloat(ReplayMapLayout.PREF_FLOAT_TOP, floatSpec.topFraction)
+            .putFloat(ReplayMapLayout.PREF_FLOAT_WIDTH, floatSpec.widthFraction)
+            .putFloat(ReplayMapLayout.PREF_FLOAT_HEIGHT, floatSpec.heightFraction)
+            .apply()
+    }
+
+    private fun loadTrackAlphaPercent(): Int {
+        return ReplayMapLayout.trackAlphaPercent(
+            getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+                .getInt(ReplayMapLayout.PREF_TRACK_ALPHA, 100)
+        )
+    }
+
+    private fun persistTrackAlphaPercent() {
+        getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+            .edit()
+            .putInt(ReplayMapLayout.PREF_TRACK_ALPHA, trackAlphaPercent)
+            .apply()
     }
 
     private fun loadVideoMapRatio(): Float {

@@ -11,11 +11,11 @@ import java.io.File
 import java.io.FileOutputStream
 
 object PhotoWatermark {
-    fun apply(context: Context, file: File, mode: VideoMode) {
+    fun apply(context: Context, file: File, mode: VideoMode, timeMs: Long? = null) {
         val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return
         val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(mutable)
-        val lines = DashcamOverlayText.lines(context, mode, forceTime = true)
+        val lines = DashcamOverlayText.lines(context, mode, forceTime = true, timeMs = timeMs)
         draw(context, canvas, lines)
         FileOutputStream(file).use { out ->
             mutable.compress(Bitmap.CompressFormat.JPEG, 92, out)

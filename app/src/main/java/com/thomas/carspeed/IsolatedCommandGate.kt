@@ -12,6 +12,7 @@ internal class IsolatedCommandGate(
     private var predecessorEndMs: Long? = null
     private var confirmedThroughMs = 0L
     private var firedThroughMs = Long.MIN_VALUE
+    private var lastFiredStartMs: Long? = null
     private var textState: TextState = TextState.Idle
 
     @Synchronized
@@ -20,8 +21,13 @@ internal class IsolatedCommandGate(
         predecessorEndMs = null
         confirmedThroughMs = 0L
         firedThroughMs = Long.MIN_VALUE
+        lastFiredStartMs = null
         textState = TextState.Idle
     }
+
+    /** 刚确认的口令里，第一个词的开始时间。纯文本路径没有词时间时为空。 */
+    @Synchronized
+    fun firedStartMs(): Long? = lastFiredStartMs
 
     @Synchronized
     fun onWords(incoming: List<TimedWord>, confirmedThroughMs: Long): VoiceCommand? {
@@ -60,6 +66,7 @@ internal class IsolatedCommandGate(
         val pending = textState as? TextState.Pending ?: return null
         if (!pending.leadingOk || nowMs - pending.sinceMs < pauseMs) return null
         textState = TextState.Fired(pending.command, nowMs)
+        lastFiredStartMs = null
         return pending.command
     }
 
@@ -68,6 +75,7 @@ internal class IsolatedCommandGate(
             is TextState.Pending -> {
                 if (state.leadingOk && (endpoint || nowMs - state.sinceMs >= pauseMs)) {
                     textState = TextState.Fired(state.command, nowMs)
+                    lastFiredStartMs = null
                     return state.command
                 }
                 if (!state.leadingOk) textState = TextState.Separated(nowMs)
@@ -97,6 +105,7 @@ internal class IsolatedCommandGate(
         val pending = textState as? TextState.Pending ?: return null
         if (pending.leadingOk && (endpoint || nowMs - pending.sinceMs >= pauseMs)) {
             textState = TextState.Fired(command, nowMs)
+            lastFiredStartMs = null
             return command
         }
         return null
@@ -131,6 +140,7 @@ internal class IsolatedCommandGate(
         val ready = readySpans().maxByOrNull { it.endMs } ?: return null
         if (ready.endMs <= firedThroughMs) return null
         firedThroughMs = ready.endMs
+        lastFiredStartMs = ready.startMs
         return ready.command
     }
 
@@ -155,13 +165,13 @@ internal class IsolatedCommandGate(
                     confirmedThroughMs - tokens[j].endMs
                 }
                 if (gapAfter < pauseMs) continue
-                found.add(Span(command, tokens[j].endMs))
+                found.add(Span(command, tokens[i].startMs, tokens[j].endMs))
             }
         }
         return found
     }
 
-    private data class Span(val command: VoiceCommand, val endMs: Long)
+    private data class Span(val command: VoiceCommand, val startMs: Long, val endMs: Long)
 
     private sealed class TextState {
         data object Idle : TextState()

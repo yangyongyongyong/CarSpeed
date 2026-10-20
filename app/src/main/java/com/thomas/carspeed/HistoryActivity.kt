@@ -60,6 +60,7 @@ class HistoryActivity : AppCompatActivity() {
     private lateinit var btnBatchExit: MaterialButton
     private lateinit var btnBatchToggleAll: MaterialButton
     private lateinit var btnBatchDeleteSelected: MaterialButton
+    private lateinit var btnBatchExportSelected: MaterialButton
     private lateinit var tvVideoSummary: TextView
     private lateinit var tvVideoPage: TextView
     private lateinit var layoutVideoList: LinearLayout
@@ -110,6 +111,7 @@ class HistoryActivity : AppCompatActivity() {
         btnBatchExit = findViewById(R.id.btnBatchExit)
         btnBatchToggleAll = findViewById(R.id.btnBatchToggleAll)
         btnBatchDeleteSelected = findViewById(R.id.btnBatchDeleteSelected)
+        btnBatchExportSelected = findViewById(R.id.btnBatchExportSelected)
         tvVideoSummary = findViewById(R.id.tvVideoSummary)
         tvVideoPage = findViewById(R.id.tvVideoPage)
         layoutVideoList = findViewById(R.id.layoutVideoList)
@@ -441,12 +443,27 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun exportTrip(trip: VideoStorage.VideoTrip) {
+        openExport(listOf(trip))
+    }
+
+    private fun exportSelectedVideos() {
+        val selected = currentFilteredVideoTrips.filter { it.id in batchSelectedTripIds }
+        if (selected.isEmpty()) {
+            Toast.makeText(this, R.string.video_batch_none_selected_export, Toast.LENGTH_SHORT).show()
+            return
+        }
+        openExport(selected)
+    }
+
+    private fun openExport(trips: List<VideoStorage.VideoTrip>) {
+        val paths = HistoryExportOrder.orderedSegments(trips).map { it.absolutePath }
+        if (paths.isEmpty()) {
+            Toast.makeText(this, R.string.video_replay_no_video, Toast.LENGTH_SHORT).show()
+            return
+        }
         startActivity(
             Intent(this, ShareExportActivity::class.java).apply {
-                putStringArrayListExtra(
-                    ShareExportActivity.EXTRA_VIDEO_PATHS,
-                    ArrayList(trip.segments.map { it.absolutePath })
-                )
+                putStringArrayListExtra(ShareExportActivity.EXTRA_VIDEO_PATHS, ArrayList(paths))
             }
         )
     }
@@ -537,6 +554,7 @@ class HistoryActivity : AppCompatActivity() {
             refreshBatchSelectionViews()
         }
         btnBatchDeleteSelected.setOnClickListener { confirmDeleteSelectedVideos() }
+        btnBatchExportSelected.setOnClickListener { exportSelectedVideos() }
     }
 
     private fun updateBatchModeViews() {
@@ -556,6 +574,11 @@ class HistoryActivity : AppCompatActivity() {
             getString(R.string.video_batch_delete_selected)
         } else {
             getString(R.string.video_batch_delete_selected) + "（" + batchSelectedTripIds.size + "）"
+        }
+        btnBatchExportSelected.text = if (batchSelectedTripIds.isEmpty()) {
+            getString(R.string.video_batch_export_selected)
+        } else {
+            getString(R.string.video_batch_export_selected) + "（" + batchSelectedTripIds.size + "）"
         }
         updateBatchCheckBoxes(layoutVideoList)
     }

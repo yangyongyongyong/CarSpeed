@@ -107,7 +107,7 @@ internal object RouteRadarMarks {
 
     /**
      * 同一限速合成一段。数字升序，没有限速的放在最后。
-     * 例：测速 100×4 · 120×3
+     * 例：测速 100kph×4 · 120kph×3
      */
     fun limitSummary(speedLimits: List<Int?>): String? {
         val known = speedLimits.mapNotNull { limit -> limit?.takeIf { it > 0 } }
@@ -115,7 +115,7 @@ internal object RouteRadarMarks {
             .eachCount()
         val unknown = speedLimits.size - known.values.sum()
         if (known.isEmpty() && unknown <= 0) return null
-        val parts = known.toSortedMap().map { (limit, count) -> "${limit}×$count" }.toMutableList()
+        val parts = known.toSortedMap().map { (limit, count) -> "${limit}kph×$count" }.toMutableList()
         if (unknown > 0) parts += "无限速×$unknown"
         return "测速 " + parts.joinToString(" · ")
     }

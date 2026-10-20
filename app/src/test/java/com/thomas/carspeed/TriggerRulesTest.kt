@@ -102,15 +102,24 @@ class TriggerRulesTest {
     }
 
     @Test
-    fun disconnected_stationary_stop_requires_zero_speed() {
+    fun disconnected_stop_when_speed_stays_under_10_kph() {
         assertFalse(
             TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = false, speedKmh = 0f)
         )
         assertFalse(
-            TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = 1f)
+            TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = Float.NaN)
         )
         assertTrue(
             TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = 0f)
+        )
+        assertTrue(
+            TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = 9.9f)
+        )
+        assertFalse(
+            TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = 10f)
+        )
+        assertFalse(
+            TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = 11f)
         )
     }
 }

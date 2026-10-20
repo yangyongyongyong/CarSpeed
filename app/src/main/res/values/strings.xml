@@ -28,6 +28,7 @@
     <string name="video_recording">正在录像，保持手机固定并确保前方视野清晰。</string>
     <string name="video_recording_starting">正在启动录像…</string>
     <string name="video_recording_background">正在后台录像</string>
+    <string name="recording_bubble_desc">正在录像 %1$s</string>
     <string name="video_background_hint">切到导航或熄屏前请保持通知存在；退到后台时会自动尝试显示车速悬浮窗。</string>
     <string name="video_stopping">正在结束录像…</string>
     <string name="video_saved">录像已保存</string>
@@ -96,7 +97,7 @@
     <string name="auto_trigger_start_on_bluetooth_speed_toggle">连接车机蓝牙且车速 &gt; 10km/h 时开始录像</string>
     <string name="auto_trigger_stop_on_power_disconnected_toggle">拔出充电线时停止录像</string>
     <string name="auto_trigger_stop_on_bluetooth_disconnected_toggle">车机蓝牙断开时停止录像</string>
-    <string name="auto_trigger_stop_on_bluetooth_stationary_toggle">车机蓝牙断开且车速为 0 时停止录像</string>
+    <string name="auto_trigger_stop_on_bluetooth_stationary_toggle">车机蓝牙断开且车速低于 10 km/h 时停止录像</string>
     <string name="auto_trigger_helper">多个触发条件是“或”的关系：任意已勾选条件满足即触发。</string>
     <string name="radar_settings_title">测速雷达预警</string>
     <string name="radar_settings_short_title">测速雷达</string>
@@ -202,10 +203,10 @@
     <string name="trigger_notif_text">已连接 %1$s，等待车速超过 10km/h 后开始录像。</string>
     <string name="trigger_stop_notif_title">等待自动停止录像</string>
     <string name="trigger_stop_notif_text">%1$s 已断开；将停止录像。</string>
-    <string name="trigger_stop_stationary_notif_text">%1$s 已断开；等待车速为 0 后停止录像。</string>
+    <string name="trigger_stop_stationary_notif_text">%1$s 已断开；等待车速低于 10 km/h 后停止录像。</string>
     <string name="trigger_stop_recording_finished">车机蓝牙已断开，录像已停止。</string>
     <string name="trigger_bluetooth_disconnected_stop">车机蓝牙已断开，正在停止录像。</string>
-    <string name="trigger_bluetooth_disconnected_stationary_stop">车机蓝牙已断开且车速为 0，正在停止录像。</string>
+    <string name="trigger_bluetooth_disconnected_stationary_stop">车机蓝牙已断开且车速低于 10 km/h，正在停止录像。</string>
     <string name="trigger_power_disconnected_stop">充电线已拔出，正在停止录像。</string>
     <string name="trigger_unknown_car">指定蓝牙设备</string>
     <string name="video_mode_label">录像规格</string>
@@ -239,6 +240,8 @@
     <string name="focus_label">对焦：%1$d%%（%2$s）</string>
     <string name="focus_auto_label">对焦：自动 AF</string>
     <string name="manual_focus_toggle">手动对焦（MF）</string>
+    <string name="focus_step_down">对焦减 1%</string>
+    <string name="focus_step_up">对焦加 1%</string>
     <string name="focus_far_label">远处/∞</string>
     <string name="focus_near_label">近处</string>
     <string name="focus_unsupported_label">当前镜头不支持手动对焦</string>
@@ -265,6 +268,14 @@
     <string name="dashcam_notif_text_ready">等待开始录像。</string>
     <string name="dashcam_action_photo">拍照</string>
     <string name="history_title">驾驶记录</string>
+    <string name="trip_stats_title">行驶统计</string>
+    <string name="trip_stats_hint">行程结束后写入统计。打开本页只读已保存的结果。</string>
+    <string name="trip_stats_today">今日</string>
+    <string name="trip_stats_month">本月累计</string>
+    <string name="trip_stats_total">累计</string>
+    <string name="trip_stats_distance">里程 %1$s</string>
+    <string name="trip_stats_speed">平均速度 %1$s</string>
+    <string name="trip_stats_duration">总耗时 %1$s</string>
     <string name="history_subtitle">按时间、距离或速度筛选录像和 GPS 轨迹。</string>
     <string name="video_filter_none">录像筛选</string>
     <string name="video_filter_start_none">开始：不限</string>
@@ -341,6 +352,10 @@
     <string name="video_replay_map_road">道路</string>
     <string name="video_replay_map_satellite">卫星</string>
     <string name="video_replay_map_offline">离线</string>
+    <string name="video_replay_layout_float">悬浮</string>
+    <string name="video_replay_layout_split">分区</string>
+    <string name="video_replay_track_alpha">轨迹</string>
+    <string name="video_replay_track_alpha_value">%1$d%%</string>
     <string name="video_replay_position_empty">暂无当前位置数据</string>
     <string name="video_replay_position">进度 %1$s    %2$.1f km/h    里程 %3$s/%4$s    %7$s</string>
     <string name="video_history_summary">历史录像：%1$d 个，占用 %2$s</string>
@@ -359,7 +374,9 @@
     <string name="video_batch_clear_all">取消全选</string>
     <string name="video_batch_selected_count">已选 %1$d 个</string>
     <string name="video_batch_delete_selected">删除所选</string>
+    <string name="video_batch_export_selected">导出所选</string>
     <string name="video_batch_none_selected">请先勾选要删除的录像</string>
+    <string name="video_batch_none_selected_export">请先勾选要导出的录像</string>
     <string name="video_delete_confirm">删除</string>
     <string name="video_delete_done">已删除 %1$d 个文件。</string>
     <string name="video_rename">重命名</string>

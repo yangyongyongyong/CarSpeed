@@ -551,6 +551,16 @@ object ShareSubtitleFormatter {
             .joinToString("  |  ")
     }
 
+    /** 回放页字幕是按行叠在画面上的。预览保留换行，只拿掉未勾选的字段。 */
+    fun overlayText(text: String, fields: ShareSubtitleFields): String {
+        return text.lines().mapNotNull { line ->
+            val kept = line.split('|')
+                .map { it.trim() }
+                .filter { segment -> segment.isNotBlank() && keepLine(segment, fields) }
+            if (kept.isEmpty()) null else kept.joinToString("  |  ")
+        }.joinToString("\n")
+    }
+
     fun keepLine(line: String, fields: ShareSubtitleFields): Boolean {
         val text = line.trim()
         if (text.isBlank()) return false

@@ -174,7 +174,8 @@ object TriggerConnectionState {
 
 object TriggerRules {
     const val DEFAULT_SPEED_THRESHOLD_KMH = 10f
-    const val STATIONARY_SPEED_KMH = 0.5f
+    /** 人拿着手机离开车时，步行速度通常到不了 10 km/h，定位速度也经常不是精确的 0。 */
+    const val DISCONNECT_STOP_SPEED_KMH = 10f
 
     fun shouldArmForBluetooth(
         settings: AutoTriggerSettings,
@@ -234,10 +235,10 @@ object TriggerRules {
     fun shouldStopRecordingAfterDisconnectStationary(
         bluetoothDisconnected: Boolean,
         speedKmh: Float,
-        thresholdKmh: Float = STATIONARY_SPEED_KMH
+        thresholdKmh: Float = DISCONNECT_STOP_SPEED_KMH
     ): Boolean {
         if (!bluetoothDisconnected) return false
         if (speedKmh.isNaN()) return false
-        return speedKmh.coerceAtLeast(0f) <= thresholdKmh
+        return speedKmh.coerceAtLeast(0f) < thresholdKmh
     }
 }

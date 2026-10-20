@@ -1,5 +1,7 @@
 package com.thomas.carspeed
 
+internal data class RouteRun(val scale: Float, val startIndex: Int, val endIndex: Int)
+
 internal object RouteTrackStyle {
     const val FAST_SPEED_KMH = 180f
     const val FAST_WIDTH_SCALE = 1.5f
@@ -14,4 +16,31 @@ internal object RouteTrackStyle {
 
     /** 已走白线取对应绿线宽度的一半，避免盖住两侧绿色。 */
     fun playedWidthScale(routeWidthScale: Float): Float = routeWidthScale * PLAYED_WIDTH_RATIO
+
+    /**
+     * 把相邻、同样粗细的小段合成一条。全程缩得很小时，一段 GPS 一条线会被地图丢掉，路线就看不见了。
+     * startIndex、endIndex 都是点的下标，包含两端。
+     */
+    fun groupRuns(segmentScales: List<Float>): List<RouteRun> {
+        if (segmentScales.isEmpty()) return emptyList()
+        val runs = mutableListOf<RouteRun>()
+        var start = 0
+        var scale = segmentScales[0]
+        for (index in 1 until segmentScales.size) {
+            if (segmentScales[index] != scale) {
+                runs += RouteRun(scale, start, index)
+                start = index
+                scale = segmentScales[index]
+            }
+        }
+        runs += RouteRun(scale, start, segmentScales.size)
+        return runs
+    }
+
+    /** 轨迹透明度。100 为不透明，0 为完全看不见。原来的颜色里若带透明度，会被这次的百分比替换。 */
+    fun withAlpha(color: Int, percent: Int): Int {
+        val clamped = percent.coerceIn(0, 100)
+        val alpha = (clamped * 255 + 50) / 100
+        return (alpha shl 24) or (color and 0x00FFFFFF)
+    }
 }

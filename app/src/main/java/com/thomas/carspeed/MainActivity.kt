@@ -13,6 +13,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStatus: Button
     private lateinit var btnRadar: Button
     private lateinit var btnTrack: Button
+    private lateinit var btnTripStats: Button
     private var lastAutoStartAtMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,6 +26,7 @@ class MainActivity : AppCompatActivity() {
         btnStatus = findViewById(R.id.btnStatus)
         btnRadar = findViewById(R.id.btnRadar)
         btnTrack = findViewById(R.id.btnTrack)
+        btnTripStats = findViewById(R.id.btnTripStats)
 
         btnCamera.setOnClickListener {
             startActivity(Intent(this, CameraRecordActivity::class.java))
@@ -48,6 +50,10 @@ class MainActivity : AppCompatActivity() {
 
         btnTrack.setOnClickListener {
             startActivity(Intent(this, TrackRecordingSettingsActivity::class.java))
+        }
+
+        btnTripStats.setOnClickListener {
+            startActivity(Intent(this, TripStatsActivity::class.java))
         }
     }
 

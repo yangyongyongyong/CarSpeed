@@ -19,7 +19,7 @@ class RoutePlanFormatTest {
 
         assertEquals(4, radars.size)
         assertEquals(
-            "测速雷达 4 个 · 100×2 · 120×2",
+            "测速雷达 4 个 · 100kph×2 · 120kph×2",
             RoutePlanFormat.summary(radars)
         )
         assertFalse(
