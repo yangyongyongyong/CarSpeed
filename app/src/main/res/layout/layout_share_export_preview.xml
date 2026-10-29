@@ -353,44 +353,6 @@
                         app:strokeWidth="1dp" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/exportTrackAlpha"
-                    android:layout_width="match_parent"
-                    android:layout_height="28dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="28dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
-                        android:includeFontPadding="false"
-                        android:text="@string/video_replay_track_alpha"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp" />
-
-                    <SeekBar
-                        android:id="@+id/exportTrackAlphaSeek"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:max="100"
-                        android:progress="100" />
-
-                    <TextView
-                        android:id="@+id/exportTrackAlphaValue"
-                        android:layout_width="40dp"
-                        android:layout_height="wrap_content"
-                        android:gravity="end"
-                        android:includeFontPadding="false"
-                        android:text="100%"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
                 <TextView
                     android:id="@+id/exportReplayTitle"
                     android:layout_width="match_parent"

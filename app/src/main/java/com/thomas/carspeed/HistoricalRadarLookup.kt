@@ -28,7 +28,7 @@ internal class HistoricalRadarLookup(context: Context) {
 
     fun load(points: List<VideoTrackPoint>, onResult: (List<VideoTrackRadar>) -> Unit) {
         this.onResult = onResult
-        if (RadarAlertController.currentState().active) {
+        if (!PrivacyConsent.isAgreed(appContext) || RadarAlertController.currentState().active) {
             deliver(emptyList())
             return
         }

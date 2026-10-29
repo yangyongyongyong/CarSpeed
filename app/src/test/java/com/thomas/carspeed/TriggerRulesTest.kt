@@ -67,20 +67,53 @@ class TriggerRulesTest {
         assertFalse(
             TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(
                 settings = settings,
-                connectedSelectedAddresses = setOf("11:22:33:44:55:66")
+                connectedSelectedAddresses = setOf("11:22:33:44:55:66"),
+                speedKmh = 0f
             )
         )
         assertTrue(
             TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(
                 settings = settings,
-                connectedSelectedAddresses = emptySet()
+                connectedSelectedAddresses = emptySet(),
+                speedKmh = 0f
             )
         )
         assertFalse(
             TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(
                 settings = settings.copy(stopOnBluetoothDisconnected = false),
-                connectedSelectedAddresses = emptySet()
+                connectedSelectedAddresses = emptySet(),
+                speedKmh = 0f
             )
+        )
+    }
+
+    @Test
+    fun immediate_stop_only_when_the_car_is_actually_at_rest() {
+        val settings = AutoTriggerSettings(
+            bluetoothAddresses = setOf("AA:BB:CC:DD:EE:FF"),
+            stopOnBluetoothDisconnected = true
+        )
+
+        // 车在跑：蓝牙闪断不能把录像切掉，这正是 10-26 20:02 那次停录的成因。
+        assertFalse(
+            TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, emptySet(), speedKmh = 77.8f)
+        )
+        assertFalse(
+            TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, emptySet(), speedKmh = 10f)
+        )
+        // 停稳了才当场停。
+        assertTrue(
+            TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, emptySet(), speedKmh = 0f)
+        )
+        assertTrue(
+            TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, emptySet(), speedKmh = 9.9f)
+        )
+        // 读不到车速时按「还在行驶」处理，宁可多录。
+        assertFalse(
+            TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, emptySet(), speedKmh = null)
+        )
+        assertFalse(
+            TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, emptySet(), speedKmh = Float.NaN)
         )
     }
 
@@ -121,5 +154,24 @@ class TriggerRulesTest {
         assertFalse(
             TriggerRules.shouldStopRecordingAfterDisconnectStationary(bluetoothDisconnected = true, speedKmh = 11f)
         )
+    }
+
+    @Test
+    fun disconnect_stop_needs_sustained_low_speed() {
+        var since = 0L
+        since = TriggerRules.updateLowSpeedSince(since, 3f, nowMs = 1_000L)
+        assertFalse(TriggerRules.shouldStopAfterSustainedLowSpeed(since, nowMs = 30_000L))
+        since = TriggerRules.updateLowSpeedSince(since, null, nowMs = 40_000L)
+        since = TriggerRules.updateLowSpeedSince(since, 0f, nowMs = 50_000L)
+        assertTrue(TriggerRules.shouldStopAfterSustainedLowSpeed(since, nowMs = 61_000L))
+    }
+
+    @Test
+    fun moving_again_resets_disconnect_low_speed_timer() {
+        var since = TriggerRules.updateLowSpeedSince(0L, 2f, nowMs = 1_000L)
+        since = TriggerRules.updateLowSpeedSince(since, 25f, nowMs = 20_000L)
+        since = TriggerRules.updateLowSpeedSince(since, 1f, nowMs = 30_000L)
+        assertFalse(TriggerRules.shouldStopAfterSustainedLowSpeed(since, nowMs = 70_000L))
+        assertTrue(TriggerRules.shouldStopAfterSustainedLowSpeed(since, nowMs = 90_000L))
     }
 }

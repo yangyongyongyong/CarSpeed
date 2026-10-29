@@ -46,7 +46,7 @@ object TrackRecordingSettingsStore {
             .putBoolean(PREF_TRACK_RECORDING_ENABLED, enabled)
             .putBoolean(PREF_TRACK_TRIGGER_BT_SPEED, triggerOnBluetoothSpeed)
             .putBoolean(PREF_TRACK_TRIGGER_BT_DISTANCE, triggerOnBluetoothDistance)
-            .commit()
+            .apply()
     }
 }
 
@@ -73,4 +73,13 @@ object TrackRecordingRules {
     fun hasGpsSignal(accuracyMeters: Float?): Boolean {
         return accuracyMeters == null || accuracyMeters <= MAX_TRIGGER_ACCURACY_METERS
     }
+
+    /** 去掉开始移动前原地等待的点，只保留移动前的最后一个点作为起点。没有明显移动的点时原样返回。 */
+    fun trimLeadingStationary(points: List<VideoTrackPoint>, movingSpeedKmh: Float = MOVING_SPEED_KMH): List<VideoTrackPoint> {
+        val firstMoving = points.indexOfFirst { it.speedKmh >= movingSpeedKmh }
+        if (firstMoving <= 0) return points.toList()
+        return points.subList(firstMoving - 1, points.size).toList()
+    }
+
+    const val MOVING_SPEED_KMH = 3f
 }

@@ -77,11 +77,16 @@ internal object TripStatsStore {
         }
         return TripStatsSnapshot(
             dayKey = json.optString("dayKey"),
-            day = TripStatsBucket(json.optDouble("dayDistance"), json.optLong("dayDuration")),
+            day = TripStatsBucket(json.optFiniteDouble("dayDistance"), json.optLong("dayDuration", 0L)),
             monthKey = json.optString("monthKey"),
-            month = TripStatsBucket(json.optDouble("monthDistance"), json.optLong("monthDuration")),
-            cumulative = TripStatsBucket(json.optDouble("totalDistance"), json.optLong("totalDuration")),
+            month = TripStatsBucket(json.optFiniteDouble("monthDistance"), json.optLong("monthDuration", 0L)),
+            cumulative = TripStatsBucket(json.optFiniteDouble("totalDistance"), json.optLong("totalDuration", 0L)),
             recentSpans = spans
         )
+    }
+
+    private fun JSONObject.optFiniteDouble(key: String): Double {
+        val value = optDouble(key, 0.0)
+        return if (value.isNaN() || value.isInfinite()) 0.0 else value
     }
 }

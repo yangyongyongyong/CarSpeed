@@ -1,8 +1,11 @@
 package com.thomas.carspeed
 
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.LruCache
 import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
@@ -20,6 +23,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.Executors
 
 class PhotoGalleryActivity : AppCompatActivity() {
 
@@ -43,6 +47,13 @@ class PhotoGalleryActivity : AppCompatActivity() {
     private lateinit var btnPhotoDeleteAll: MaterialButton
 
     private var photos: List<GalleryPhoto> = emptyList()
+    private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val thumbExecutor = Executors.newFixedThreadPool(2)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var reloadRequest = 0
+    private val thumbCache = object : LruCache<String, Bitmap>(thumbCacheBytes()) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
     private var pageIndex = 0
     private var daySelection: DaySelection? = null
     private var batchMode = false
@@ -112,13 +123,33 @@ class PhotoGalleryActivity : AppCompatActivity() {
         reload()
     }
 
+    override fun onDestroy() {
+        ioExecutor.shutdownNow()
+        thumbExecutor.shutdownNow()
+        super.onDestroy()
+    }
+
+    /** 扫照片目录要遍历整棵目录树，放到后台做，扫完再刷新。 */
     private fun reload() {
-        val alive = VideoStorage.photoFiles(this).map { file ->
-            GalleryPhoto(file, PhotoCalendar.captureTimeMs(file.name, file.lastModified()))
-        }.sortedByDescending { it.timeMs }
-        photos = alive
-        selectedPaths.retainAll(alive.map { it.file.absolutePath }.toSet())
-        render()
+        if (ioExecutor.isShutdown) return
+        val request = ++reloadRequest
+        val appContext = applicationContext
+        ioExecutor.execute {
+            val alive = VideoStorage.photoFiles(appContext).map { file ->
+                GalleryPhoto(
+                    file = file,
+                    timeMs = PhotoCalendar.captureTimeMs(file.name, file.lastModified()),
+                    bytes = file.length(),
+                    modifiedMs = file.lastModified()
+                )
+            }.sortedByDescending { it.timeMs }
+            mainHandler.post {
+                if (isDestroyed || request != reloadRequest) return@post
+                photos = alive
+                selectedPaths.retainAll(alive.map { it.file.absolutePath }.toSet())
+                render()
+            }
+        }
     }
 
     private fun showCalendar() {
@@ -150,7 +181,7 @@ class PhotoGalleryActivity : AppCompatActivity() {
             batchMode = false
             selectedPaths.clear()
         }
-        val pageBytes = page.sumOf { it.file.length() }
+        val pageBytes = page.sumOf { it.bytes }
         val first = if (visible.isEmpty()) 0 else pageIndex * PhotoCalendar.PAGE_SIZE + 1
         val last = (pageIndex * PhotoCalendar.PAGE_SIZE + page.size).coerceAtMost(visible.size)
         tvPhotoSummary.text = if (daySelection == null) {
@@ -247,7 +278,7 @@ class PhotoGalleryActivity : AppCompatActivity() {
         }
         thumb.addView(ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setImageBitmap(loadScaledBitmap(photo.file, dp(96)))
+            loadThumbnail(photo, this)
         }, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT
@@ -340,9 +371,15 @@ class PhotoGalleryActivity : AppCompatActivity() {
     }
 
     private fun deletePhotos(targets: List<GalleryPhoto>) {
-        val deleted = targets.count { VideoStorage.deletePhoto(it.file) }
-        Toast.makeText(this, getString(R.string.photo_delete_done, deleted), Toast.LENGTH_SHORT).show()
-        reload()
+        if (ioExecutor.isShutdown) return
+        ioExecutor.execute {
+            val deleted = targets.count { VideoStorage.deletePhoto(it.file) }
+            mainHandler.post {
+                if (isDestroyed) return@post
+                Toast.makeText(this, getString(R.string.photo_delete_done, deleted), Toast.LENGTH_SHORT).show()
+                reload()
+            }
+        }
     }
 
     private fun openPhoto(photo: File) {
@@ -352,14 +389,28 @@ class PhotoGalleryActivity : AppCompatActivity() {
         )
     }
 
-    private fun loadScaledBitmap(file: File, maxSize: Int) = BitmapFactory.Options().run {
-        inJustDecodeBounds = true
-        BitmapFactory.decodeFile(file.absolutePath, this)
-        var sample = 1
-        while (outWidth / sample > maxSize || outHeight / sample > maxSize) sample *= 2
-        inJustDecodeBounds = false
-        inSampleSize = sample
-        BitmapFactory.decodeFile(file.absolutePath, this)
+    /** 缩略图在后台解码并缓存；勾选时整页重绘也只是从缓存里取。 */
+    private fun loadThumbnail(photo: GalleryPhoto, target: ImageView) {
+        val key = "${photo.file.absolutePath}:${photo.bytes}:${photo.modifiedMs}"
+        target.tag = key
+        thumbCache.get(key)?.let { bitmap ->
+            target.setImageBitmap(bitmap)
+            return
+        }
+        if (thumbExecutor.isShutdown) return
+        val size = dp(96)
+        thumbExecutor.execute {
+            val bitmap = PhotoBitmapLoader.decode(photo.file, size) ?: return@execute
+            mainHandler.post {
+                if (isDestroyed) return@post
+                thumbCache.put(key, bitmap)
+                if (target.tag == key) target.setImageBitmap(bitmap)
+            }
+        }
+    }
+
+    private fun thumbCacheBytes(): Int {
+        return (Runtime.getRuntime().maxMemory() / 16L).coerceIn(4L * 1024 * 1024, 24L * 1024 * 1024).toInt()
     }
 
     private fun formatBytes(bytes: Long): String {
@@ -373,5 +424,5 @@ class PhotoGalleryActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private data class GalleryPhoto(val file: File, val timeMs: Long)
+    private data class GalleryPhoto(val file: File, val timeMs: Long, val bytes: Long, val modifiedMs: Long)
 }

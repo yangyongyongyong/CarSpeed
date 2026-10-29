@@ -72,6 +72,18 @@ class TripStatsTest {
     }
 
     @Test
+    fun partially_overlapping_longer_trip_only_adds_uncovered_portion() {
+        val start = at(2026, 10, 16, 9, 0)
+        val clipEnd = start + 10 * 60_000L
+        val fullEnd = start + 40 * 60_000L
+        val afterClip = TripStats.apply(TripStatsSnapshot(), start, clipEnd, 5_000.0, 10 * 60_000L, zone)
+        val afterFull = TripStats.apply(afterClip, start, fullEnd, 20_000.0, 40 * 60_000L, zone)
+
+        assertEquals(20_000.0, afterFull.day.distanceMeters, 0.01)
+        assertEquals(40 * 60_000L, afterFull.day.durationMs)
+    }
+
+    @Test
     fun reading_on_a_later_day_does_not_keep_yesterdays_mileage_as_today() {
         val yesterday = at(2026, 10, 15, 21, 0)
         val stored = TripStats.apply(TripStatsSnapshot(), yesterday - 600_000L, yesterday, 8_000.0, 600_000L, zone)
@@ -88,6 +100,19 @@ class TripStatsTest {
         val updated = TripStats.apply(TripStatsSnapshot(), end, end, 0.0, 0L, zone)
         assertTrue(updated.recentSpans.isEmpty())
         assertEquals(0.0, updated.cumulative.distanceMeters, 0.01)
+    }
+
+    @Test
+    fun late_saved_older_trip_keeps_todays_buckets() {
+        val today = at(2026, 11, 2, 9, 0)
+        val lastMonth = at(2026, 10, 31, 20, 0)
+        val stored = TripStats.apply(TripStatsSnapshot(), today - 600_000L, today, 3_000.0, 600_000L, zone)
+        val updated = TripStats.apply(stored, lastMonth - 600_000L, lastMonth, 7_000.0, 600_000L, zone)
+        assertEquals("20261102", updated.dayKey)
+        assertEquals(3_000.0, updated.day.distanceMeters, 0.01)
+        assertEquals("202611", updated.monthKey)
+        assertEquals(3_000.0, updated.month.distanceMeters, 0.01)
+        assertEquals(10_000.0, updated.cumulative.distanceMeters, 0.01)
     }
 
     private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long {

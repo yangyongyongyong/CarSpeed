@@ -4,6 +4,7 @@ import android.content.Context
 
 object TrackRecordingController {
     fun sync(context: Context, stopUnavailable: Boolean = false) {
+        if (TrackRecordingService.isManual()) return
         val appContext = context.applicationContext
         val settings = TrackRecordingSettingsStore.load(appContext)
         if (!settings.enabled || !settings.hasTrigger || settings.bluetoothAddresses.isEmpty() || !BluetoothDeviceList.hasPermission(appContext)) {
@@ -28,6 +29,7 @@ object TrackRecordingController {
     }
 
     fun onBluetoothDisconnected(context: Context) {
+        if (TrackRecordingService.isManual()) return
         val settings = TrackRecordingSettingsStore.load(context)
         val connectedSelected = TriggerConnectionState.connectedSelectedAddresses(context, TriggerSettings.load(context))
         if (settings.enabled && settings.hasTrigger && connectedSelected.isEmpty()) {

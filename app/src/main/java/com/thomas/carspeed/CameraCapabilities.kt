@@ -8,7 +8,6 @@ import android.media.CamcorderProfile
 import android.media.MediaRecorder
 import android.os.Build
 import android.util.Size
-import androidx.camera.video.Quality
 
 data class VideoMode(
     val qualityKey: String,
@@ -56,7 +55,17 @@ object CameraCapabilities {
 
     private data class ProfileQuery(val fallbackKey: String, val profileQuality: Int)
 
+    @Volatile private var cachedModes: List<VideoMode>? = null
+    @Volatile private var cachedPreviewSizes: Map<String, Size> = emptyMap()
+    @Volatile private var cachedBackCameraId: String? = null
+
+    /** 相机能力在进程内不会变；界面每秒刷新时不能每次都跨进程查一遍。 */
     fun supportedVideoModes(context: Context): List<VideoMode> {
+        cachedModes?.let { return it }
+        return querySupportedVideoModes(context).also { cachedModes = it }
+    }
+
+    private fun querySupportedVideoModes(context: Context): List<VideoMode> {
         val cameraId = backCameraId(context) ?: return fallbackModes()
         val numericCameraId = cameraId.toIntOrNull()
         val profileModes = queryProfileModes(cameraId, numericCameraId)
@@ -102,6 +111,14 @@ object CameraCapabilities {
     }
 
     fun mainRecordingPreviewSize(context: Context, videoMode: VideoMode): Size {
+        val key = "${videoMode.width}x${videoMode.height}"
+        cachedPreviewSizes[key]?.let { return it }
+        return queryMainRecordingPreviewSize(context, videoMode).also { size ->
+            cachedPreviewSizes = cachedPreviewSizes + (key to size)
+        }
+    }
+
+    private fun queryMainRecordingPreviewSize(context: Context, videoMode: VideoMode): Size {
         val cameraId = backCameraId(context) ?: return Size(videoMode.width, videoMode.height)
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val chars = manager.getCameraCharacteristics(cameraId)
@@ -138,35 +155,17 @@ object CameraCapabilities {
             .sorted()
     }
 
-    fun fallbackCandidates(context: Context, requested: VideoMode): List<VideoMode> {
-        val supported = supportedVideoModes(context)
-        val sameResolution = supported.filter { it.width == requested.width && it.height == requested.height }
-        val notLarger = supported.filter {
-            it.width.toLong() * it.height.toLong() <= requested.width.toLong() * requested.height.toLong()
-        }
-        return (listOf(requested) + sameResolution + notLarger + supported)
-            .distinctBy { "${it.width}x${it.height}:${it.fps}" }
-    }
 
-    fun toCameraXQuality(mode: VideoMode): Quality {
-        if (mode.width.toLong() * mode.height.toLong() > 3840L * 2160L) return Quality.HIGHEST
-        return when (mode.qualityKey) {
-            QUALITY_UHD -> Quality.UHD
-            QUALITY_FHD -> Quality.FHD
-            QUALITY_HD -> Quality.HD
-            QUALITY_SD -> Quality.SD
-            else -> closestCameraXQuality(mode)
-        }
-    }
 
     fun debugModes(context: Context): List<VideoMode> = supportedVideoModes(context)
 
     private fun backCameraId(context: Context): String? {
+        cachedBackCameraId?.let { return it }
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        return manager.cameraIdList.firstOrNull { id ->
+        return (manager.cameraIdList.firstOrNull { id ->
             val chars = manager.getCameraCharacteristics(id)
             chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        } ?: manager.cameraIdList.firstOrNull()
+        } ?: manager.cameraIdList.firstOrNull())?.also { cachedBackCameraId = it }
     }
 
     private fun profileQueries(): List<ProfileQuery> {
@@ -278,16 +277,6 @@ object CameraCapabilities {
         }
     }
 
-    private fun closestCameraXQuality(mode: VideoMode): Quality {
-        val longEdge = maxOf(mode.width, mode.height)
-        val shortEdge = minOf(mode.width, mode.height)
-        return when {
-            longEdge >= 3800 && shortEdge >= 2100 -> Quality.UHD
-            longEdge >= 1900 && shortEdge >= 1000 -> Quality.FHD
-            longEdge >= 1200 && shortEdge >= 700 -> Quality.HD
-            else -> Quality.SD
-        }
-    }
 
     private fun camera2QualityKey(width: Int, height: Int): String {
         return "CAMERA2_${width}x$height"

@@ -1,6 +1,8 @@
 package com.thomas.carspeed
 
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * 回放页手动把画面按 90 度转到竖屏时，用交换后的宽高去铺满画面。
@@ -39,6 +41,31 @@ internal object VideoReplayRotation {
         return if (isQuarterTurn(rotationDegrees)) contentHeight to contentWidth else contentWidth to contentHeight
     }
 
+    /**
+     * 白底参数栏属于画面的一部分。参数是屏幕像素高度（回放页是 62dp，导出时换算到视频像素）。
+     * 先按视频比例缩放，再把参数栏高度加到短边上。
+     */
+    fun fittedStageSize(
+        frameWidth: Int,
+        frameHeight: Int,
+        videoWidth: Int,
+        videoHeight: Int,
+        barPx: Int,
+        rotationDegrees: Int
+    ): Pair<Int, Int> {
+        if (frameWidth <= 0 || frameHeight <= 0 || videoWidth <= 0 || videoHeight <= 0) return 1 to 1
+        val quarter = isQuarterTurn(rotationDegrees)
+        val availableWidth = (if (quarter) frameHeight else frameWidth).toFloat()
+        val availableHeight = (if (quarter) frameWidth else frameHeight).toFloat()
+        val bar = barPx.coerceAtLeast(0).toFloat().coerceAtMost(availableHeight * 0.4f)
+        val scale = min(
+            availableWidth / videoWidth.toFloat(),
+            (availableHeight - bar) / videoHeight.toFloat()
+        ).coerceAtLeast(0.01f)
+        return (videoWidth * scale).toInt().coerceAtLeast(1) to
+            (videoHeight * scale + bar).toInt().coerceAtLeast(1)
+    }
+
     fun videoAreaFraction(
         containerWidth: Int,
         containerHeight: Int,
@@ -58,5 +85,29 @@ internal object VideoReplayRotation {
         }
         val neededHeight = containerWidth.toFloat() * displayHeight.toFloat() / displayWidth.toFloat()
         return (neededHeight / containerHeight.toFloat()).coerceIn(minFraction, maxFraction)
+    }
+
+    /**
+     * 旋转前画面里的点，绕画面中心顺时针转到成片上。
+     * 和预览里 videoStage.rotation 是同一个方向：字幕贴在画面左下角时，顺时针 90 度会到成片左上角。
+     */
+    fun mapContentPoint(
+        x: Float,
+        y: Float,
+        contentWidth: Float,
+        contentHeight: Float,
+        outputWidth: Float,
+        outputHeight: Float,
+        rotationDegrees: Int
+    ): Pair<Float, Float> {
+        val turns = normalize(rotationDegrees)
+        val dx = x - contentWidth / 2f
+        val dy = y - contentHeight / 2f
+        val radians = Math.toRadians(turns.toDouble())
+        val cosTurns = cos(radians).toFloat()
+        val sinTurns = sin(radians).toFloat()
+        val rotatedX = dx * cosTurns - dy * sinTurns
+        val rotatedY = dx * sinTurns + dy * cosTurns
+        return outputWidth / 2f + rotatedX to outputHeight / 2f + rotatedY
     }
 }

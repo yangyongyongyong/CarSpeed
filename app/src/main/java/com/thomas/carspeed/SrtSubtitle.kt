@@ -27,11 +27,81 @@ object SrtSubtitle {
     }
 
     fun cueAt(cues: List<SrtCue>, elapsedMs: Long, holdGapMs: Long = 0L): SrtCue? {
+        if (cues.isEmpty()) return null
+        val index = indexFor(cues)
+        if (!index.sortedByStart) return linearCueAt(cues, elapsedMs, holdGapMs)
+        val last = lastStartAtOrBefore(cues, elapsedMs)
+        if (last < 0) return null
+        // 按开始时间排好序时，能覆盖当前时刻的字幕只可能落在 [t - 最长时长, t] 这一段里。
+        val activeFrom = firstStartAtOrAfter(cues, elapsedMs - index.maxDurationMs)
+        for (i in activeFrom..last) {
+            val cue = cues[i]
+            if (elapsedMs < cue.endMs) return cue
+        }
+        if (holdGapMs <= 0L) return null
+        val holdFrom = firstStartAtOrAfter(cues, elapsedMs - holdGapMs - index.maxDurationMs)
+        for (i in last downTo holdFrom) {
+            val cue = cues[i]
+            if (elapsedMs >= cue.endMs && elapsedMs - cue.endMs <= holdGapMs) return cue
+        }
+        return null
+    }
+
+    internal fun linearCueAt(cues: List<SrtCue>, elapsedMs: Long, holdGapMs: Long): SrtCue? {
         val active = cues.firstOrNull { elapsedMs in it.startMs until it.endMs }
         if (active != null || holdGapMs <= 0L) return active
         return cues.asReversed().firstOrNull { cue ->
             elapsedMs >= cue.endMs && elapsedMs - cue.endMs <= holdGapMs
         }
+    }
+
+    private class CueIndex(val cues: List<SrtCue>, val sortedByStart: Boolean, val maxDurationMs: Long)
+
+    private val recentIndexes = ArrayDeque<CueIndex>()
+
+    private fun indexFor(cues: List<SrtCue>): CueIndex {
+        synchronized(recentIndexes) {
+            recentIndexes.firstOrNull { it.cues === cues }?.let { return it }
+        }
+        var sorted = true
+        var maxDuration = 0L
+        for (i in cues.indices) {
+            val cue = cues[i]
+            if (i > 0 && cue.startMs < cues[i - 1].startMs) sorted = false
+            maxDuration = maxOf(maxDuration, cue.endMs - cue.startMs)
+        }
+        val built = CueIndex(cues, sorted, maxDuration)
+        synchronized(recentIndexes) {
+            recentIndexes.addFirst(built)
+            while (recentIndexes.size > 4) recentIndexes.removeLast()
+        }
+        return built
+    }
+
+    private fun lastStartAtOrBefore(cues: List<SrtCue>, timeMs: Long): Int {
+        var low = 0
+        var high = cues.lastIndex
+        var result = -1
+        while (low <= high) {
+            val mid = (low + high) ushr 1
+            if (cues[mid].startMs <= timeMs) {
+                result = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return result
+    }
+
+    private fun firstStartAtOrAfter(cues: List<SrtCue>, timeMs: Long): Int {
+        var low = 0
+        var high = cues.size
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            if (cues[mid].startMs < timeMs) low = mid + 1 else high = mid
+        }
+        return low
     }
 
     private fun parseBlock(block: String, offsetMs: Long, durationMs: Long): SrtCue? {

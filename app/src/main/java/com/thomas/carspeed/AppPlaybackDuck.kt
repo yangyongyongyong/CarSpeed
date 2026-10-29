@@ -56,6 +56,7 @@ internal object AppPlaybackDuck {
             .build()
     }
 
+    @Synchronized
     fun acquire(context: Context): DuckToken {
         if (counter.acquire()) {
             val audio = context.applicationContext.getSystemService(AudioManager::class.java)
@@ -67,15 +68,17 @@ internal object AppPlaybackDuck {
             manager = audio
             request = focus
         }
-        return DuckToken {
-            if (counter.release()) {
-                val active = request
-                val audio = manager
-                request = null
-                if (active != null && audio != null) {
-                    runCatching { audio.abandonAudioFocusRequest(active) }
-                }
-            }
+        return DuckToken { releaseHold() }
+    }
+
+    @Synchronized
+    private fun releaseHold() {
+        if (!counter.release()) return
+        val active = request
+        val audio = manager
+        request = null
+        if (active != null && audio != null) {
+            runCatching { audio.abandonAudioFocusRequest(active) }
         }
     }
 }

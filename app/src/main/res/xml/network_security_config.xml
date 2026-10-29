@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <!-- 高德 SDK 的部分定位/离线地图接口仍走 http，仅对高德域名放行明文。 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">amap.com</domain>
+        <domain includeSubdomains="true">autonavi.com</domain>
+    </domain-config>
+</network-security-config>

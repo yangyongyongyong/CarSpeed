@@ -5,11 +5,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 
 object OverlayController {
-    private const val KEY_RUNNING = "overlay_service_running"
+    private const val LEGACY_KEY_RUNNING = "overlay_service_running"
+    private const val START_PENDING_WINDOW_MS = 5_000L
+
+    // 运行状态以进程内的服务实例为准；以前存在 SharedPreferences 里，进程被杀后会一直显示"运行中"。
+    @Volatile private var startPendingUntilElapsedMs = 0L
 
     fun hasLocationPermission(context: Context): Boolean {
         return ContextCompat.checkSelfPermission(
@@ -42,11 +47,13 @@ object OverlayController {
     }
 
     fun isRunning(context: Context): Boolean {
-        return prefs(context).getBoolean(KEY_RUNNING, false)
+        return OverlayService.isAlive || SystemClock.elapsedRealtime() < startPendingUntilElapsedMs
     }
 
     fun setRunning(context: Context, running: Boolean) {
-        prefs(context).edit().putBoolean(KEY_RUNNING, running).apply()
+        startPendingUntilElapsedMs = 0L
+        val prefs = prefs(context)
+        if (prefs.contains(LEGACY_KEY_RUNNING)) prefs.edit().remove(LEGACY_KEY_RUNNING).apply()
     }
 
     fun start(context: Context): Boolean {
@@ -54,17 +61,29 @@ object OverlayController {
         val intent = Intent(context, OverlayService::class.java).apply {
             action = OverlayService.ACTION_START
         }
-        ContextCompat.startForegroundService(context, intent)
-        setRunning(context, true)
-        return true
+        startPendingUntilElapsedMs = SystemClock.elapsedRealtime() + START_PENDING_WINDOW_MS
+        return try {
+            ContextCompat.startForegroundService(context, intent)
+            true
+        } catch (_: RuntimeException) {
+            // 后台被系统拦截（ForegroundServiceStartNotAllowedException 等）。
+            startPendingUntilElapsedMs = 0L
+            false
+        }
     }
 
     fun stop(context: Context) {
+        val pending = SystemClock.elapsedRealtime() < startPendingUntilElapsedMs
+        startPendingUntilElapsedMs = 0L
+        if (!OverlayService.isAlive && !pending) return
         val intent = Intent(context, OverlayService::class.java).apply {
             action = OverlayService.ACTION_STOP
         }
-        context.startService(intent)
-        setRunning(context, false)
+        try {
+            context.startService(intent)
+        } catch (_: RuntimeException) {
+            context.stopService(Intent(context, OverlayService::class.java))
+        }
     }
 
     fun toggle(context: Context): Boolean {

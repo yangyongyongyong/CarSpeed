@@ -38,7 +38,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private lateinit var recordingTextureView: TextureView
     private lateinit var plateOverlayView: PlateOverlayView
     private lateinit var tvTimer: TextView
-    private lateinit var tvOverlay: TextView
+    private lateinit var tvOverlay: DashcamInfoBar
     private lateinit var btnRecord: Button
     private lateinit var btnPhoto: Button
     private lateinit var btnClose: Button
@@ -118,7 +118,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         resumed = true
-        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         if (DashcamService.isRecording(this)) {
             stopIdlePreview()
         } else if (hasCameraPermission()) {
@@ -196,7 +195,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
         stopIdlePreview()
         recordingTextureView.visibility = View.VISIBLE
         previewView.visibility = View.GONE
-        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         updateRecordingPreviewSurfaceIfReady()
     }
 
@@ -294,7 +292,10 @@ class CameraFullscreenActivity : AppCompatActivity() {
                 formatDuration(DashcamService.recordingElapsedSeconds(this) * 1_000L)
             )
         }
-        tvOverlay.text = buildOverlayText()
+        tvOverlay.setInfo(
+            DashcamOverlayText.infoBar(this, CameraCapabilities.selectedVideoMode(this)),
+            DashcamSettings.subtitleFields(this).hasAnyField()
+        )
         plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
         if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
             scheduleIdlePreviewRestart()
@@ -313,8 +314,8 @@ class CameraFullscreenActivity : AppCompatActivity() {
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                clearRecordingPreviewSurface()
-                return true
+                clearRecordingPreviewSurface(surface)
+                return false
             }
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
@@ -347,10 +348,16 @@ class CameraFullscreenActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearRecordingPreviewSurface() {
+    /** 先让录像器把预览从请求里摘掉，再晚一点释放画面，避免录像断帧。[texture] 不为空时由这里释放。 */
+    private fun clearRecordingPreviewSurface(texture: SurfaceTexture? = null) {
         DashcamService.setRecordingPreviewSurface(null)
-        recordingPreviewSurface?.release()
+        val surface = recordingPreviewSurface
         recordingPreviewSurface = null
+        if (surface == null && texture == null) return
+        uiHandler.postDelayed({
+            surface?.release()
+            texture?.release()
+        }, PREVIEW_SURFACE_RELEASE_DELAY_MS)
     }
 
     private fun updateRecordingPreviewTransform() {
@@ -394,11 +401,6 @@ class CameraFullscreenActivity : AppCompatActivity() {
         return pending
     }
 
-    private fun buildOverlayText(): String {
-        val selectedMode = CameraCapabilities.selectedVideoMode(this)
-        return DashcamOverlayText.text(this, selectedMode)
-    }
-
     private fun hasCameraPermission(): Boolean {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
@@ -415,6 +417,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         private const val PREVIEW_REBIND_DELAY_MS = 700L
         private const val RECORDING_PREVIEW_PREPARE_MS = 150L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
+        private const val PREVIEW_SURFACE_RELEASE_DELAY_MS = 1_000L
 
         @Volatile
         private var instance: CameraFullscreenActivity? = null

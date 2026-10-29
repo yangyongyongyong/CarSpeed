@@ -3,6 +3,7 @@ package com.thomas.carspeed
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -15,28 +16,8 @@ class CarSpeedWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == ACTION_TOGGLE) {
-            if (!OverlayController.canStart(context) && !OverlayController.isRunning(context)) {
-                openStatus(context)
-            } else {
-                OverlayController.toggle(context)
-                updateAll(context)
-                CarSpeedTileService.requestListeningState(context)
-            }
-        }
-    }
-
-    private fun openStatus(context: Context) {
-        val intent = Intent(context, StatusActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        context.startActivity(intent)
-    }
-
     companion object {
-        private const val ACTION_TOGGLE = "com.thomas.carspeed.action.WIDGET_TOGGLE"
+        internal const val ACTION_TOGGLE = "com.thomas.carspeed.action.WIDGET_TOGGLE"
 
         fun updateAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -63,11 +44,29 @@ class CarSpeedWidgetProvider : AppWidgetProvider() {
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 0,
-                Intent(context, CarSpeedWidgetProvider::class.java).apply { action = ACTION_TOGGLE },
+                Intent(context, WidgetToggleReceiver::class.java).apply { action = ACTION_TOGGLE },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
             return views
+        }
+    }
+}
+
+// 小部件的提供者必须对外导出，所以开关动作交给一个不导出的接收器，其他应用无法伪造。
+class WidgetToggleReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != CarSpeedWidgetProvider.ACTION_TOGGLE) return
+        if (!OverlayController.canStart(context) && !OverlayController.isRunning(context)) {
+            context.startActivity(
+                Intent(context, StatusActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            )
+        } else {
+            OverlayController.toggle(context)
+            CarSpeedWidgetProvider.updateAll(context)
+            CarSpeedTileService.requestListeningState(context)
         }
     }
 }

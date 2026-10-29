@@ -260,6 +260,60 @@ class VideoStorageTest {
     }
 
     @Test
+    fun cleanup_plan_never_deletes_the_segment_being_recorded() {
+        val dir = Files.createTempDirectory("carspeed-active-trip-cleanup-test").toFile()
+        try {
+            val trip = dir.resolve("carspeed-trip-20261010-100000").apply { mkdirs() }
+            val first = trip.resolve("carspeed-20261010-100000.mp4").apply { writeBytes(ByteArray(80)) }
+            val firstSrt = trip.resolve("carspeed-20261010-100000.srt").apply { writeBytes(ByteArray(5)) }
+            val second = trip.resolve("carspeed-20261010-100100.mp4").apply { writeBytes(ByteArray(80)) }
+            val active = trip.resolve("carspeed-20261010-100200.mp4").apply { writeBytes(ByteArray(80)) }
+            val activeSrt = trip.resolve("carspeed-20261010-100200.srt").apply { writeBytes(ByteArray(5)) }
+            first.setLastModified(1_000L)
+            firstSrt.setLastModified(1_001L)
+            second.setLastModified(1_100L)
+            active.setLastModified(1_200L)
+            activeSrt.setLastModified(1_201L)
+
+            val plan = VideoStorage.planCleanup(
+                files = VideoStorage.managedVideoFiles(dir),
+                limitBytes = 100L,
+                usableSpaceBytes = 1_000L,
+                requiredFreeBytes = 0L,
+                minFreeBytes = 50L,
+                protectedFiles = listOf(active, activeSrt)
+            )
+
+            assertEquals(setOf(first, firstSrt, second), plan.filesToDelete.toSet())
+            assertEquals(85L, plan.projectedManagedBytes)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cleanup_plan_stops_when_only_the_active_segment_is_left() {
+        val dir = Files.createTempDirectory("carspeed-active-only-cleanup-test").toFile()
+        try {
+            val active = dir.resolve("carspeed-20261010-100200.mp4").apply { writeBytes(ByteArray(80)) }
+
+            val plan = VideoStorage.planCleanup(
+                files = VideoStorage.managedVideoFiles(dir),
+                limitBytes = 10L,
+                usableSpaceBytes = 0L,
+                requiredFreeBytes = 100L,
+                minFreeBytes = 50L,
+                protectedFiles = listOf(active)
+            )
+
+            assertTrue(plan.filesToDelete.isEmpty())
+            assertTrue(!plan.hasEnoughSpaceAfterCleanup)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun gallery_file_name_drops_the_trip_token() {
         val prefixed = "carspeed-trip-20261011-025338__carspeed-20261011-025338.mp4"
 
@@ -345,5 +399,45 @@ class VideoStorageTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun trip_duration_ignores_later_touched_modified_time_across_segments() {
+        val dir = Files.createTempDirectory("carspeed-trip-duration").toFile()
+        try {
+            val seg1 = dir.resolve("carspeed-20261013-094720.mp4").apply { writeBytes(ByteArray(10)) }
+            val seg2 = dir.resolve("carspeed-20261013-095120.mp4").apply { writeBytes(ByteArray(10)) }
+            val seg3 = dir.resolve("carspeed-20261013-095520.mp4").apply { writeBytes(ByteArray(10)) }
+            val seg4 = dir.resolve("carspeed-20261013-095920.mp4").apply { writeBytes(ByteArray(10)) }
+            val seg5 = dir.resolve("carspeed-20261013-100320.mp4").apply { writeBytes(ByteArray(10)) }
+            val segments = listOf(seg1, seg2, seg3, seg4, seg5)
+            val touchedLater = VideoStorage.recordingStartTimeMs(seg1)!! + 7 * 3_600_000L
+            segments.forEach { it.setLastModified(touchedLater) }
+
+            val fromGaps = VideoStorage.tripDurationMs(segments)
+            assertEquals(20 * 60_000L, fromGaps)
+
+            val mediaStoreMap = mapOf(
+                seg1.absolutePath to 240_000L,
+                seg2.absolutePath to 240_000L,
+                seg3.absolutePath to 240_000L,
+                seg4.absolutePath to 240_000L,
+                seg5.absolutePath to 132_000L
+            )
+            assertEquals(1_092_000L, VideoStorage.tripDurationMs(segments, mediaStoreMap))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun lower_resolutions_use_proportionally_lower_video_bitrate() {
+        val fhd = SeamlessDashcamRecorder.videoBitRate(VideoMode("1080p", 1920, 1080, 30))
+        val hd = SeamlessDashcamRecorder.videoBitRate(VideoMode("720p", 1280, 720, 30))
+        val sd = SeamlessDashcamRecorder.videoBitRate(VideoMode("480p", 854, 480, 30))
+
+        assertTrue(fhd in 5_500_000..7_000_000)
+        assertTrue(hd < fhd)
+        assertTrue(sd < hd)
     }
 }

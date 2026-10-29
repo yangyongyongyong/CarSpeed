@@ -64,10 +64,16 @@ object GpxExporter {
         return "carspeed-${formatFileTime(record.startTimeMs)}.gpx"
     }
 
+    private val gpxTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat {
+            return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+        }
+    }
+
     private fun formatGpxTime(timeMs: Long): String {
-        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }.format(Date(timeMs))
+        return gpxTimeFormat.get()!!.format(Date(timeMs))
     }
 
     private fun formatFileTime(timeMs: Long): String {

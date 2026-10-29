@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 
+// 断电是隐式广播，Android 8 起送不到清单里静态注册的接收器；由 DashcamService 在录像期间动态注册。
 class PowerTriggerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_POWER_DISCONNECTED) return

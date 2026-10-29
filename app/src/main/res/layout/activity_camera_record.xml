@@ -33,9 +33,16 @@
         android:clickable="true"
         android:focusable="true">
 
-        <FrameLayout
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/previewFrame"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:background="@android:color/black">
 
             <androidx.camera.view.PreviewView
@@ -52,6 +59,15 @@
                 android:layout_gravity="center"
                 android:visibility="gone" />
 
+            <!-- 仅记录轨迹时顶替摄像头预览：实时画出已经走过的轨迹线。
+                 常驻布局、只切 visibility：MapRouteView 一 detach 就会 onDestroy 掉高德地图，
+                 反复 inflate 反而会漏。 -->
+            <com.thomas.carspeed.MapRouteView
+                android:id="@+id/liveTrackMapView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
             <com.thomas.carspeed.PlateOverlayView
                 android:id="@+id/plateOverlayView"
                 android:layout_width="match_parent"
@@ -59,6 +75,7 @@
                 android:visibility="gone" />
 
             <TextView
+                android:id="@+id/tvPreviewBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="top|start"
@@ -74,6 +91,7 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/tvFullscreenHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="top|end"
@@ -103,18 +121,13 @@
                 android:textStyle="bold"
                 android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/tvPreviewOverlay"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
-                android:layout_margin="14dp"
-                android:background="@drawable/overlay_chip_dark_bg"
-                android:lineSpacingExtra="3dp"
-                android:padding="10dp"
-                android:textColor="@android:color/white"
-                android:textSize="12sp" />
         </FrameLayout>
+
+        <com.thomas.carspeed.DashcamInfoBar
+            android:id="@+id/tvPreviewOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+        </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
     <com.google.android.material.card.MaterialCardView
@@ -129,20 +142,14 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+            <!-- 一切正常时不显示任何状态文字：按钮本身已经说明当前状态。
+                 只有权限被拒、摄像头打开失败这类必须让用户知道的问题才会显示。 -->
             <TextView
                 android:id="@+id/tvCameraStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/camera_opening"
-                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
-
-            <TextView
-                android:id="@+id/tvSavedPath"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="@string/video_background_hint"
-                android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle"
+                android:visibility="gone" />
 
             <com.google.android.material.checkbox.MaterialCheckBox
                 android:id="@+id/cbManualFocus"
@@ -204,14 +211,30 @@
                     android:contentDescription="@string/focus_step_up" />
             </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRecordVideo"
-                style="@style/Widget.CarSpeed.Button"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:enabled="false"
-                android:text="@string/video_start_recording" />
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRecordVideo"
+                    style="@style/Widget.CarSpeed.Button"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:enabled="false"
+                    android:text="@string/video_start_recording" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnTrackOnly"
+                    style="@style/Widget.CarSpeed.Button.Outlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="@string/track_only_start" />
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"

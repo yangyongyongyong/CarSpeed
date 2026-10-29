@@ -74,6 +74,12 @@
         <item name="android:textColor">@color/text_primary</item>
     </style>
 
+    <!-- 顶栏压矮后标题跟着收一点，跟 40dp 的栏高比例才对得上。 -->
+    <style name="TextAppearance.CarSpeed.ToolbarCompact" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+
     <style name="Widget.CarSpeed.SeekBar" parent="Widget.AppCompat.SeekBar">
         <item name="android:progressTint">@color/brand_blue</item>
         <item name="android:thumbTint">@color/brand_blue</item>

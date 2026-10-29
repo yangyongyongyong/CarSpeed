@@ -35,13 +35,4 @@ class RouteTrackStyleTest {
         assertEquals(RouteRun(1.5f, 2, 3), runs[1])
         assertEquals(RouteRun(1f, 3, 4), runs[2])
     }
-
-    @Test
-    fun track_alpha_replaces_the_existing_opacity() {
-        val green = 0xFF4FD697.toInt()
-        assertEquals(0xFF4FD697.toInt(), RouteTrackStyle.withAlpha(green, 100))
-        assertEquals(0x004FD697, RouteTrackStyle.withAlpha(green, 0))
-        assertEquals(0x804FD697.toInt(), RouteTrackStyle.withAlpha(green, 50))
-        assertEquals(0xFF4FD697.toInt(), RouteTrackStyle.withAlpha(green, 140))
-    }
 }

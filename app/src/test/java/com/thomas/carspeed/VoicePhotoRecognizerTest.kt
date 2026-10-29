@@ -1,7 +1,6 @@
 package com.thomas.carspeed
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,14 +25,6 @@ class VoicePhotoRecognizerTest {
         assertNull(VoiceCommandParser.parseCommand("限速拍照"))
         assertNull(VoiceCommandParser.parseCommand("[unk] 拍照"))
         assertNull(VoiceCommandParser.parseCommand("拍照吧"))
-    }
-
-    @Test
-    fun app_speech_temporarily_suppresses_photo_commands() {
-        AppSpeechGuard.markSpeechStarted(nowMs = 10_000L)
-
-        assertTrue(AppSpeechGuard.shouldSuppressVoiceCommand(nowMs = 10_500L))
-        assertFalse(AppSpeechGuard.shouldSuppressVoiceCommand(nowMs = 17_000L))
     }
 
     @Test

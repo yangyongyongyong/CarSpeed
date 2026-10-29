@@ -13,8 +13,10 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -24,9 +26,19 @@ class TriggerMonitorService : Service(), LocationListener {
     private var bluetoothAddress: String? = null
     private var bluetoothName: String? = null
     private var locationManager: LocationManager? = null
+    private var lowSpeedSinceMs = 0L
+    private val handler = Handler(Looper.getMainLooper())
+    private val disconnectStopTicker = object : Runnable {
+        override fun run() {
+            if (mode != MonitorMode.STOP_AFTER_DISCONNECT_LOW_SPEED) return
+            updateDisconnectedStopTrigger(null)
+            handler.postDelayed(this, DISCONNECT_CHECK_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
     }
 
@@ -34,51 +46,79 @@ class TriggerMonitorService : Service(), LocationListener {
         when (intent?.action) {
             ACTION_ARM -> {
                 if (DashcamService.isRecording(this)) {
+                    // 通过 startForegroundService 启动的服务必须先进前台再停，否则系统直接让 App 崩溃。
+                    enterForeground()
                     stopSelf()
-                    return START_STICKY
+                    return START_NOT_STICKY
                 }
                 mode = MonitorMode.START_WHEN_MOVING
+                lowSpeedSinceMs = 0L
                 bluetoothAddress = TriggerSettings.normalizeAddress(intent.getStringExtra(EXTRA_BT_ADDRESS))
                 bluetoothName = intent.getStringExtra(EXTRA_BT_NAME)
-                startForeground(NOTIFICATION_ID, buildNotification())
+                if (!enterForeground()) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
                 startLocationWatch()
             }
-            ACTION_DISARM -> {
-                val address = TriggerSettings.normalizeAddress(intent.getStringExtra(EXTRA_BT_ADDRESS))
-                if (mode == MonitorMode.IDLE || address == null || address == bluetoothAddress) {
-                    stopSelf()
-                }
-            }
+            ACTION_DISARM -> handleDisarm(TriggerSettings.normalizeAddress(intent.getStringExtra(EXTRA_BT_ADDRESS)))
             ACTION_MONITOR_DISCONNECTED_STOP -> {
                 if (!DashcamService.isRecording(this)) {
+                    enterForeground()
                     stopSelf()
-                    return START_STICKY
+                    return START_NOT_STICKY
                 }
+                val wasMonitoring = mode == MonitorMode.STOP_AFTER_DISCONNECT_LOW_SPEED
                 mode = MonitorMode.STOP_AFTER_DISCONNECT_LOW_SPEED
+                if (!wasMonitoring) lowSpeedSinceMs = 0L
                 bluetoothAddress = TriggerSettings.normalizeAddress(intent.getStringExtra(EXTRA_BT_ADDRESS))
                 bluetoothName = intent.getStringExtra(EXTRA_BT_NAME)
-                startForeground(NOTIFICATION_ID, buildNotification())
-                startLocationWatch()
-            }
-            ACTION_CANCEL_DISCONNECTED_STOP -> {
-                val address = TriggerSettings.normalizeAddress(intent.getStringExtra(EXTRA_BT_ADDRESS))
-                val shouldCancelStopMonitor = mode == MonitorMode.STOP_AFTER_DISCONNECT_LOW_SPEED &&
-                    (address == null || address == bluetoothAddress)
-                val shouldClearEmptyService = mode == MonitorMode.IDLE ||
-                    (mode == MonitorMode.START_WHEN_MOVING && DashcamService.isRecording(this))
-                if (shouldCancelStopMonitor || shouldClearEmptyService) {
+                if (!enterForeground()) {
                     stopSelf()
+                    return START_NOT_STICKY
                 }
+                startLocationWatch()
+                handler.removeCallbacks(disconnectStopTicker)
+                handler.postDelayed(disconnectStopTicker, DISCONNECT_CHECK_INTERVAL_MS)
             }
-            else -> {
-                if (mode == MonitorMode.IDLE) stopSelf()
-            }
+            ACTION_CANCEL_DISCONNECTED_STOP -> handleCancelDisconnectedStop(
+                TriggerSettings.normalizeAddress(intent.getStringExtra(EXTRA_BT_ADDRESS))
+            )
+            else -> if (mode == MonitorMode.IDLE) stopSelf()
         }
         return START_STICKY
     }
 
+    private fun enterForeground(): Boolean {
+        return try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+            true
+        } catch (_: RuntimeException) {
+            false
+        }
+    }
+
+    private fun handleDisarm(address: String?) {
+        if (mode == MonitorMode.IDLE || address == null || address == bluetoothAddress) {
+            stopSelf()
+        }
+    }
+
+    private fun handleCancelDisconnectedStop(address: String?) {
+        val shouldCancelStopMonitor = mode == MonitorMode.STOP_AFTER_DISCONNECT_LOW_SPEED &&
+            (address == null || address == bluetoothAddress)
+        val shouldClearEmptyService = mode == MonitorMode.IDLE ||
+            (mode == MonitorMode.START_WHEN_MOVING && DashcamService.isRecording(this))
+        if (shouldCancelStopMonitor || shouldClearEmptyService) {
+            stopSelf()
+        }
+    }
+
     override fun onDestroy() {
+        handler.removeCallbacks(disconnectStopTicker)
         stopLocationWatch()
+        mode = MonitorMode.IDLE
+        if (instance === this) instance = null
         super.onDestroy()
     }
 
@@ -95,6 +135,10 @@ class TriggerMonitorService : Service(), LocationListener {
 
     private fun updateStartTrigger(speedKmh: Float?) {
         val currentSpeedKmh = speedKmh ?: return
+        if (!PrivacyConsent.isAgreed(this)) {
+            stopSelf()
+            return
+        }
         val settings = TriggerSettings.load(this)
         if (TriggerRules.shouldStartRecordingAfterBluetoothConnectedAndSpeed(settings, bluetoothAddress, currentSpeedKmh)) {
             BackgroundRecordingStart.start(this)
@@ -107,17 +151,15 @@ class TriggerMonitorService : Service(), LocationListener {
             stopSelf()
             return
         }
-        if (speedKmh == null) return
         val settings = TriggerSettings.load(this)
         if (!settings.stopOnBluetoothDisconnectedAndStationary) {
             stopSelf()
             return
         }
-        if (TriggerRules.shouldStopRecordingAfterDisconnectStationary(
-                bluetoothDisconnected = bluetoothAddress != null,
-                speedKmh = speedKmh
-            )
-        ) {
+        if (bluetoothAddress == null) return
+        val now = SystemClock.elapsedRealtime()
+        lowSpeedSinceMs = TriggerRules.updateLowSpeedSince(lowSpeedSinceMs, speedKmh, now)
+        if (TriggerRules.shouldStopAfterSustainedLowSpeed(lowSpeedSinceMs, now)) {
             Toast.makeText(this, R.string.trigger_bluetooth_disconnected_stationary_stop, Toast.LENGTH_SHORT).show()
             DashcamService.stopRecording(this)
             stopSelf()
@@ -134,7 +176,7 @@ class TriggerMonitorService : Service(), LocationListener {
         try {
             locationManager?.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
-                1_000L,
+                LOCATION_INTERVAL_MS,
                 0f,
                 this,
                 Looper.getMainLooper()
@@ -210,8 +252,15 @@ class TriggerMonitorService : Service(), LocationListener {
         private const val EXTRA_BT_NAME = "bt_name"
         private const val CHANNEL_ID = "dashcam_trigger_channel"
         private const val NOTIFICATION_ID = 3001
+        /** 只用来判断"开起来了没/停下来了没"，不需要 1 秒一次。 */
+        private const val LOCATION_INTERVAL_MS = 2_000L
+        private const val DISCONNECT_CHECK_INTERVAL_MS = 5_000L
+
+        @Volatile private var instance: TriggerMonitorService? = null
 
         fun arm(context: Context, bluetoothAddress: String?, bluetoothName: String?) {
+            if (!hasLocationPermission(context)) return
+            if (!PrivacyConsent.isAgreed(context)) return
             val intent = Intent(context, TriggerMonitorService::class.java).apply {
                 action = ACTION_ARM
                 putExtra(EXTRA_BT_ADDRESS, bluetoothAddress)
@@ -220,19 +269,23 @@ class TriggerMonitorService : Service(), LocationListener {
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (_: RuntimeException) {
-                // 部分系统限制后台广播直接启动前台服务；避免广播接收器崩溃。
+                // 系统不允许从后台拉起定位前台服务（Android 12+）。提醒用户点一下回到前台重新检查。
+                AmapWatchNotifier.showBackgroundStartBlocked(
+                    context,
+                    "已连接车辆蓝牙",
+                    "系统拦截了后台车速监测，点一下打开 App，满足条件后会自动开始录像。"
+                )
             }
         }
 
         fun disarm(context: Context, bluetoothAddress: String?) {
-            val intent = Intent(context, TriggerMonitorService::class.java).apply {
-                action = ACTION_DISARM
-                putExtra(EXTRA_BT_ADDRESS, bluetoothAddress)
-            }
-            context.startService(intent)
+            // 服务没在运行就没有什么可解除的；直接调用实例，避免在后台 startService 抛异常。
+            val service = instance ?: return
+            service.handleDisarm(TriggerSettings.normalizeAddress(bluetoothAddress))
         }
 
         fun monitorDisconnectedStop(context: Context, bluetoothAddress: String?, bluetoothName: String?) {
+            if (!hasLocationPermission(context)) return
             val intent = Intent(context, TriggerMonitorService::class.java).apply {
                 action = ACTION_MONITOR_DISCONNECTED_STOP
                 putExtra(EXTRA_BT_ADDRESS, bluetoothAddress)
@@ -241,16 +294,18 @@ class TriggerMonitorService : Service(), LocationListener {
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (_: RuntimeException) {
-                // 部分系统限制后台广播直接启动前台服务；避免广播接收器崩溃。
+                // 录像服务在前台时一般允许启动；真被拦截时只是少了"断开后低速停录"，录像本身不受影响。
             }
         }
 
         fun cancelDisconnectedStop(context: Context, bluetoothAddress: String?) {
-            val intent = Intent(context, TriggerMonitorService::class.java).apply {
-                action = ACTION_CANCEL_DISCONNECTED_STOP
-                putExtra(EXTRA_BT_ADDRESS, bluetoothAddress)
-            }
-            context.startService(intent)
+            val service = instance ?: return
+            service.handleCancelDisconnectedStop(TriggerSettings.normalizeAddress(bluetoothAddress))
+        }
+
+        private fun hasLocationPermission(context: Context): Boolean {
+            return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
         }
     }
 

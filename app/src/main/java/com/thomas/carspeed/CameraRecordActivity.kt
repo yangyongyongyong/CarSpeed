@@ -49,17 +49,22 @@ class CameraRecordActivity : AppCompatActivity() {
     private lateinit var previewCard: com.google.android.material.card.MaterialCardView
     private lateinit var previewView: PreviewView
     private lateinit var recordingTextureView: AspectRatioTextureView
+    private lateinit var liveTrackMapView: MapRouteView
+    private lateinit var tvPreviewBadge: TextView
+    private lateinit var tvFullscreenHint: TextView
     private lateinit var plateOverlayView: PlateOverlayView
-    private lateinit var tvPreviewOverlay: TextView
+    private lateinit var tvPreviewOverlay: DashcamInfoBar
     private lateinit var tvPreviewTimer: TextView
     private lateinit var tvStatus: TextView
-    private lateinit var tvSavedPath: TextView
+    /** 状态行当前显示的是不是错误信息。正常态一律隐藏，见 [showStatusError]。 */
+    private var statusErrorShown = false
     private lateinit var cbManualFocus: CheckBox
     private lateinit var tvFocusInlineLabel: TextView
     private lateinit var sbInlineFocus: SeekBar
     private lateinit var btnFocusDown: Button
     private lateinit var btnFocusUp: Button
     private lateinit var btnRecord: Button
+    private lateinit var btnTrackOnly: Button
     private lateinit var btnPhoto: Button
     private lateinit var btnPhotos: Button
     private lateinit var btnSettings: Button
@@ -78,8 +83,11 @@ class CameraRecordActivity : AppCompatActivity() {
     private var autoStartRequested = false
     private var autoStartConsumed = false
     private var startAfterNotificationPermission = false
+    private var startTrackAfterNotificationPermission = false
     private var recordingStartRequestedAtMs = 0L
     private var lastRecordingUiState = false
+    /** 上一轮界面是不是「仅记录轨迹」：用来在进出的那一刻停/恢复摄像头。 */
+    private var lastTrackOnlyUiState = false
     private var voicePermissionRequested = false
     private var pendingPhotoRequest = false
     private var targetRotation = Surface.ROTATION_0
@@ -87,6 +95,7 @@ class CameraRecordActivity : AppCompatActivity() {
     private var recordingPreviewSurface: Surface? = null
     private var updatingFocusControls = false
     private var resumed = false
+    private var privacyAgreed = false
     private val uiHandler = Handler(Looper.getMainLooper())
     private val photoExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -117,8 +126,9 @@ class CameraRecordActivity : AppCompatActivity() {
                 scheduleIdlePreviewRestart()
                 maybeAutoStartFromIntent()
             } else {
-                tvStatus.setText(R.string.camera_permission_denied)
+                showStatusError(getString(R.string.camera_permission_denied))
                 btnRecord.isEnabled = false
+                offerAppSettingsIfPermanentlyDenied(Manifest.permission.CAMERA)
             }
         }
 
@@ -131,19 +141,32 @@ class CameraRecordActivity : AppCompatActivity() {
                     .putBoolean(DashcamSettings.PREF_VOICE_PHOTO, false)
                     .apply()
                 Toast.makeText(this, R.string.voice_permission_denied, Toast.LENGTH_SHORT).show()
+                offerAppSettingsIfPermanentlyDenied(Manifest.permission.RECORD_AUDIO)
             }
             DashcamService.refreshSettings(this)
             refreshVoiceRecognition()
         }
 
+    private val requestLocationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                startTrackOnlyFromUi()
+            } else {
+                Toast.makeText(this, R.string.track_location_permission_required, Toast.LENGTH_SHORT).show()
+                offerAppSettingsIfPermanentlyDenied(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted && startAfterNotificationPermission) {
-                startAfterNotificationPermission = false
-                startRecordingFromUi()
-            } else {
-                startAfterNotificationPermission = false
-                Toast.makeText(this, R.string.recording_notification_required, Toast.LENGTH_LONG).show()
+            val startVideo = startAfterNotificationPermission
+            val startTrack = startTrackAfterNotificationPermission
+            startAfterNotificationPermission = false
+            startTrackAfterNotificationPermission = false
+            when {
+                !granted -> Toast.makeText(this, R.string.recording_notification_required, Toast.LENGTH_LONG).show()
+                startTrack -> startTrackOnlyFromUi()
+                startVideo -> startRecordingFromUi()
             }
         }
 
@@ -159,17 +182,20 @@ class CameraRecordActivity : AppCompatActivity() {
         previewCard = findViewById(R.id.previewCard)
         previewView = findViewById(R.id.previewView)
         recordingTextureView = findViewById(R.id.recordingTextureView)
+        liveTrackMapView = findViewById(R.id.liveTrackMapView)
+        tvPreviewBadge = findViewById(R.id.tvPreviewBadge)
+        tvFullscreenHint = findViewById(R.id.tvFullscreenHint)
         plateOverlayView = findViewById(R.id.plateOverlayView)
         tvPreviewOverlay = findViewById(R.id.tvPreviewOverlay)
         tvPreviewTimer = findViewById(R.id.tvPreviewTimer)
         tvStatus = findViewById(R.id.tvCameraStatus)
-        tvSavedPath = findViewById(R.id.tvSavedPath)
         cbManualFocus = findViewById(R.id.cbManualFocus)
         tvFocusInlineLabel = findViewById(R.id.tvFocusInlineLabel)
         sbInlineFocus = findViewById(R.id.sbInlineFocus)
         btnFocusDown = findViewById(R.id.btnFocusDown)
         btnFocusUp = findViewById(R.id.btnFocusUp)
         btnRecord = findViewById(R.id.btnRecordVideo)
+        btnTrackOnly = findViewById(R.id.btnTrackOnly)
         btnPhoto = findViewById(R.id.btnTakePhoto)
         btnPhotos = findViewById(R.id.btnOpenPhotos)
         btnSettings = findViewById(R.id.btnOpenSettings)
@@ -183,6 +209,7 @@ class CameraRecordActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { finish() }
         previewView.setOnClickListener { startActivity(Intent(this, CameraFullscreenActivity::class.java)) }
         btnRecord.setOnClickListener { toggleRecording() }
+        btnTrackOnly.setOnClickListener { toggleTrackOnly() }
         btnPhoto.setOnClickListener { takePhotoFromUi() }
         btnPhotos.setOnClickListener { startActivity(Intent(this, PhotoGalleryActivity::class.java)) }
         btnSettings.setOnClickListener { startActivity(Intent(this, DashcamSettingsActivity::class.java)) }
@@ -195,9 +222,13 @@ class CameraRecordActivity : AppCompatActivity() {
         setupFocusControls()
         setupRecordingPreviewSurface()
 
-        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
-        ensureCameraPermission()
         updatePreviewOverlay()
+        // 用户同意隐私协议之前不申请权限、不启动定位和高德相关服务。
+        PrivacyConsent.ensure(this) {
+            privacyAgreed = true
+            ensureCameraPermission()
+            if (resumed) startConsentedFeatures()
+        }
         if (intent.getBooleanExtra(EXTRA_TAKE_PHOTO, false) || pendingExternalPhotoRequest) {
             pendingExternalPhotoRequest = false
             pendingPhotoRequest = true
@@ -215,22 +246,27 @@ class CameraRecordActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         resumed = true
-        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
+        liveTrackMapView.onHostResume()
+        syncUi()
+        syncFocusControlsFromPrefs()
+        startOrientationListener()
+        if (privacyAgreed) startConsentedFeatures()
+        uiHandler.removeCallbacks(uiTicker)
+        uiHandler.post(uiTicker)
+    }
+
+    private fun startConsentedFeatures() {
         if (DashcamService.isRecording(this)) {
             stopIdlePreview()
         } else if (hasCameraPermission()) {
-            scheduleIdlePreviewRestart()
+            // 仅轨迹时上面是地图框，不用开摄像头。
+            if (TrackRecordingService.isManual()) stopIdlePreview() else scheduleIdlePreviewRestart()
         }
-        syncUi()
-        syncFocusControlsFromPrefs()
         RadarAlertService.sync(this)
         TrackRecordingController.sync(this, stopUnavailable = true)
         maybeAutoStartFromIntent()
         AutoTriggerController.sync(this)
-        startOrientationListener()
         refreshVoiceRecognition()
-        uiHandler.removeCallbacks(uiTicker)
-        uiHandler.post(uiTicker)
     }
 
     override fun onPause() {
@@ -238,9 +274,15 @@ class CameraRecordActivity : AppCompatActivity() {
         resumed = false
         uiHandler.removeCallbacks(uiTicker)
         stopOrientationListener()
+        liveTrackMapView.onHostPause()
         if (!DashcamService.isRecording(this)) {
             stopIdlePreview()
         }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        liveTrackMapView.onHostLowMemory()
     }
 
     override fun onStop() {
@@ -267,7 +309,6 @@ class CameraRecordActivity : AppCompatActivity() {
             stopIdlePreview()
         }
         clearRecordingPreviewSurface()
-        DashcamService.setPreviewSurfaceProvider(null)
         if (instance === this) instance = null
     }
 
@@ -285,19 +326,62 @@ class CameraRecordActivity : AppCompatActivity() {
             requestCameraPermission.launch(Manifest.permission.CAMERA)
             return
         }
+        if (DashcamService.isRecording(this) || isRecordingStartPending()) {
+            recordingStartRequestedAtMs = 0L
+            DashcamService.stopRecording(this)
+            syncUi()
+            return
+        }
         val settings = DashcamSettings.load(this)
         if (settings.voicePhotoEnabled && !hasAudioPermission()) {
             requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-
-        if (DashcamService.isRecording(this) || isRecordingStartPending()) {
-            recordingStartRequestedAtMs = 0L
-            DashcamService.stopRecording(this)
-        } else {
-            startRecordingFromUi()
-        }
+        startRecordingFromUi()
         syncUi()
+    }
+
+    private fun toggleTrackOnly() {
+        if (TrackRecordingService.isManual()) {
+            TrackRecordingService.stop(this)
+            syncUi()
+            return
+        }
+        if (DashcamService.isRecording(this) || isRecordingStartPending()) {
+            Toast.makeText(this, R.string.track_only_while_video, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!OverlayController.hasLocationPermission(this)) {
+            requestLocationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return
+        }
+        startTrackOnlyFromUi()
+    }
+
+    private fun startTrackOnlyFromUi() {
+        if (!ensureTrackNotificationVisible()) return
+        if (!OverlayController.hasLocationPermission(this)) {
+            requestLocationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return
+        }
+        // 仅轨迹时上面那块换成地图，摄像头可以放掉，省电也少一次权限占用。
+        stopIdlePreview()
+        TrackRecordingService.startNow(this)
+        syncUi()
+    }
+
+    private fun ensureTrackNotificationVisible(): Boolean {
+        if (DashcamNotificationGuard.canShowRecordingNotification(this)) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !DashcamNotificationGuard.hasRuntimeNotificationPermission(this)
+        ) {
+            startTrackAfterNotificationPermission = true
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            Toast.makeText(this, R.string.recording_notification_required, Toast.LENGTH_LONG).show()
+            startActivity(Intent(this, StatusActivity::class.java))
+        }
+        return false
     }
 
     private fun maybeAutoStartFromIntent() {
@@ -312,6 +396,9 @@ class CameraRecordActivity : AppCompatActivity() {
 
     private fun startRecordingFromUi() {
         if (!ensureRecordingNotificationVisible()) return
+        if (TrackRecordingService.isManual()) {
+            TrackRecordingService.stop(this)
+        }
         recordingStartRequestedAtMs = SystemClock.elapsedRealtime()
         prepareRecordingPreviewForServiceStart()
         val requestAt = recordingStartRequestedAtMs
@@ -326,9 +413,10 @@ class CameraRecordActivity : AppCompatActivity() {
 
     private fun prepareRecordingPreviewForServiceStart() {
         stopIdlePreview()
+        // 从「仅轨迹」直接开录时上面还挂着地图框，得先让开，不然盖住录像画面。
+        liveTrackMapView.visibility = View.GONE
         recordingTextureView.visibility = View.VISIBLE
         previewView.visibility = View.GONE
-        DashcamService.setPreviewSurfaceProvider(previewView.surfaceProvider)
         updateRecordingPreviewSurfaceIfReady()
     }
 
@@ -373,13 +461,13 @@ class CameraRecordActivity : AppCompatActivity() {
                     idleImageCapture = imageCapture
                     applyTargetRotation()
                     applyFocusToCurrentCamera()
-                    tvStatus.setText(R.string.camera_ready)
+                    clearStatusError()
                     if (pendingPhotoRequest) {
                         pendingPhotoRequest = false
                         previewView.postDelayed({ takePhotoFromUi() }, 300L)
                     }
                 } catch (e: RuntimeException) {
-                    tvStatus.text = getString(R.string.camera_open_failed, e.message ?: "unknown")
+                    showStatusError(getString(R.string.camera_open_failed, e.message ?: "unknown"))
                 }
             },
             ContextCompat.getMainExecutor(this)
@@ -513,23 +601,45 @@ class CameraRecordActivity : AppCompatActivity() {
         val activeRecordingUiState = recording || startPending
         btnRecord.isEnabled = hasCameraPermission()
         btnRecord.setText(if (activeRecordingUiState) R.string.video_stop_recording else R.string.video_start_recording)
+        btnTrackOnly.setText(if (TrackRecordingService.isManual()) R.string.track_only_stop else R.string.track_only_start)
         btnPhoto.isEnabled = hasCameraPermission()
-        tvStatus.setText(
-            when {
-                recording -> R.string.video_recording_background
-                startPending -> R.string.video_recording_starting
-                else -> R.string.camera_ready
-            }
-        )
-        tvSavedPath.text = getString(R.string.video_background_hint)
-        syncRecordingPreviewSurface(activeRecordingUiState)
+        // 正常状态不写状态行：按钮文字已经说明在录还是没录，
+        // 「摄像头已就绪」「正在后台录像」这类只是重复一遍。
+        // 只有出错信息（权限被拒、摄像头打不开）要留着，见 [showStatusError]。
         updatePreviewOverlay()
+        syncRecordingPreviewSurface(activeRecordingUiState)
         plateOverlayView.setFrame(if (recording) PlateRecognitionMonitor.currentOverlayFrame() else null)
-        if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
+        val trackOnly = !activeRecordingUiState && TrackRecordingService.isManual()
+        if (trackOnly && !lastTrackOnlyUiState) {
+            // 换成地图框后摄像头画面不用再开着。
+            stopIdlePreview()
+        } else if (!trackOnly && lastTrackOnlyUiState && resumed && hasCameraPermission()) {
             scheduleIdlePreviewRestart()
+        }
+        lastTrackOnlyUiState = trackOnly
+        if (lastRecordingUiState && !activeRecordingUiState && hasCameraPermission()) {
+            if (!trackOnly) scheduleIdlePreviewRestart()
             refreshVoiceRecognition()
         }
         lastRecordingUiState = activeRecordingUiState
+    }
+
+    /**
+     * 状态行只在真出问题时出现。正常情况下这一行整块隐藏，
+     * 「摄像头已就绪」「正在后台录像」这类正常态文案没有信息量，只是占地方。
+     */
+    private fun showStatusError(text: CharSequence) {
+        statusErrorShown = true
+        tvStatus.text = text
+        tvStatus.visibility = View.VISIBLE
+    }
+
+    /** 之前报过的错误不再成立时把状态行收回去。 */
+    private fun clearStatusError() {
+        if (!statusErrorShown) return
+        statusErrorShown = false
+        tvStatus.text = null
+        tvStatus.visibility = View.GONE
     }
 
     private fun setupRecordingPreviewSurface() {
@@ -543,8 +653,8 @@ class CameraRecordActivity : AppCompatActivity() {
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                clearRecordingPreviewSurface()
-                return true
+                clearRecordingPreviewSurface(surface)
+                return false
             }
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
@@ -552,13 +662,22 @@ class CameraRecordActivity : AppCompatActivity() {
     }
 
     private fun syncRecordingPreviewSurface(recording: Boolean) {
+        val trackOnly = !recording && TrackRecordingService.isManual()
         recordingTextureView.visibility = if (recording) View.VISIBLE else View.GONE
-        previewView.visibility = if (recording) View.GONE else View.VISIBLE
+        previewView.visibility = if (recording || trackOnly) View.GONE else View.VISIBLE
+        liveTrackMapView.visibility = if (trackOnly) View.VISIBLE else View.GONE
+        // 「CameraX 预览」「点按横屏全屏」说的是摄像头画面，地图框上没有意义。
+        val previewChips = if (recording || trackOnly) View.GONE else View.VISIBLE
+        tvPreviewBadge.visibility = previewChips
+        tvFullscreenHint.visibility = previewChips
         updatePreviewCardLayout(recording)
         if (recording) {
             updateRecordingPreviewSurfaceIfReady()
         } else {
             clearRecordingPreviewSurface()
+        }
+        if (trackOnly) {
+            liveTrackMapView.setRoute(TrackRecordingService.livePoints(), TrackRecordingService.liveElapsedMs())
         }
     }
 
@@ -579,10 +698,37 @@ class CameraRecordActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearRecordingPreviewSurface() {
+    /**
+     * 先让录像器把预览从请求里摘掉，再晚一点释放画面。立刻释放会让相机那一路请求卡住，录像跟着断帧。
+     * [texture] 不为空时由这里负责释放它（TextureView 销毁回调里返回了 false）。
+     */
+    private fun clearRecordingPreviewSurface(texture: SurfaceTexture? = null) {
         DashcamService.setRecordingPreviewSurface(null)
-        recordingPreviewSurface?.release()
+        val surface = recordingPreviewSurface
         recordingPreviewSurface = null
+        if (surface == null && texture == null) return
+        uiHandler.postDelayed({
+            surface?.release()
+            texture?.release()
+        }, PREVIEW_SURFACE_RELEASE_DELAY_MS)
+    }
+
+    private fun offerAppSettingsIfPermanentlyDenied(permission: String) {
+        // 选了“不再询问”后系统不再弹窗，只能去设置页手动打开。
+        if (shouldShowRequestPermissionRationale(permission)) return
+        if (isFinishing || isDestroyed) return
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setMessage("权限已被拒绝且不再询问，需要到系统设置里手动开启。")
+            .setPositiveButton("去设置") { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            .setData(android.net.Uri.fromParts("package", packageName, null))
+                    )
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun updateRecordingPreviewTransform() {
@@ -633,7 +779,15 @@ class CameraRecordActivity : AppCompatActivity() {
         val mode = CameraCapabilities.selectedVideoMode(this)
         val previewSize = CameraCapabilities.mainRecordingPreviewSize(this, mode)
         val cardWidth = previewCard.width.takeIf { it > 0 } ?: return
-        val targetHeight = (cardWidth.toFloat() * previewSize.width / previewSize.height).roundToInt()
+        // 字幕开关全关时白栏是 GONE，measuredHeight 还留着上次的值，不能算进去。
+        val barHeight = if (tvPreviewOverlay.visibility == View.VISIBLE) {
+            // 刚由 GONE 切回 VISIBLE 时还没测量，先按样式高度估，下一帧再校正。
+            tvPreviewOverlay.measuredHeight.takeIf { it > 0 }
+                ?: (ExportSubtitleStyle.barHeightDp() * resources.displayMetrics.density).roundToInt()
+        } else {
+            0
+        }
+        val targetHeight = (cardWidth.toFloat() * previewSize.width / previewSize.height).roundToInt() + barHeight
         if (params.height != targetHeight || params.weight != 0f) {
             params.height = targetHeight
             params.weight = 0f
@@ -656,7 +810,10 @@ class CameraRecordActivity : AppCompatActivity() {
     private fun updatePreviewOverlay() {
         val recording = DashcamService.isRecording(this)
         val selectedMode = CameraCapabilities.selectedVideoMode(this)
-        tvPreviewOverlay.text = DashcamOverlayText.text(this, selectedMode)
+        tvPreviewOverlay.setInfo(
+            DashcamOverlayText.infoBar(this, selectedMode),
+            DashcamSettings.subtitleFields(this).hasAnyField()
+        )
         if (recording) {
             tvPreviewTimer.visibility = android.view.View.VISIBLE
             tvPreviewTimer.text = getString(
@@ -746,6 +903,7 @@ class CameraRecordActivity : AppCompatActivity() {
         private const val PREVIEW_REBIND_DELAY_MS = 700L
         private const val RECORDING_PREVIEW_PREPARE_MS = 150L
         private const val RECORDING_START_PENDING_TIMEOUT_MS = 8_000L
+        private const val PREVIEW_SURFACE_RELEASE_DELAY_MS = 1_000L
         @Volatile
         private var instance: CameraRecordActivity? = null
 

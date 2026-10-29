@@ -6,7 +6,19 @@
     <external-files-path
         name="photos"
         path="Pictures/CarSpeed/" />
+    <external-files-path
+        name="private_videos"
+        path="Movies/CarSpeed/" />
+    <external-media-path
+        name="media_album"
+        path="CarSpeed/" />
     <external-path
-        name="gallery"
-        path="." />
+        name="dcim_album"
+        path="DCIM/CarSpeed/" />
+    <external-path
+        name="movies_album"
+        path="Movies/CarSpeed/" />
+    <external-path
+        name="pictures_album"
+        path="Pictures/CarSpeed/" />
 </paths>

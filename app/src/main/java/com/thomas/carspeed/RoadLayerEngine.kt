@@ -2,6 +2,7 @@ package com.thomas.carspeed
 
 import android.Manifest
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -29,6 +30,12 @@ internal object RoadLayerEngine {
     private var gnssStatusCallback: GnssStatus.Callback? = null
     private var decisionListener: ((RoadLayerDecision) -> Unit)? = null
     private var pendingSubtitleCorrection: DivergenceCorrection? = null
+    // 陀螺仪约 50 Hz 回调，不能每次都去读 SharedPreferences；设置变化时再刷新。
+    @Volatile private var cachedConfig: RoadLayerConfig? = null
+    private var observedPrefs: SharedPreferences? = null
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key.startsWith("radar_")) cachedConfig = null
+    }
 
     @Volatile var sensorsAvailable: Boolean = false
         private set
@@ -62,6 +69,10 @@ internal object RoadLayerEngine {
             clients += 1
             appContext = context.applicationContext
             if (clients > 1) return sensorsAvailable
+            cachedConfig = null
+            observedPrefs = appContext?.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)?.also {
+                it.registerOnSharedPreferenceChangeListener(prefsListener)
+            }
             val sensors = appContext?.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
             if (sensors == null) {
                 sensorsAvailable = false
@@ -86,6 +97,9 @@ internal object RoadLayerEngine {
             if (clients > 0) return
             sensorManager?.unregisterListener(sensorListener)
             sensorManager = null
+            observedPrefs?.unregisterOnSharedPreferenceChangeListener(prefsListener)
+            observedPrefs = null
+            cachedConfig = null
             unregisterSatellites()
             monitor = RoadLayerMonitor()
             divergenceTracker.clear()
@@ -172,6 +186,7 @@ internal object RoadLayerEngine {
     }
 
     private fun roadLayerConfig(): RoadLayerConfig {
+        cachedConfig?.let { return it }
         val settings = appContext?.let { RadarAlertSettingsStore.load(it) }
         return RoadLayerConfig(
             unknownDefaultsToElevated = settings?.unknownRoadLayerElevated
@@ -182,7 +197,7 @@ internal object RoadLayerEngine {
                 ?: RadarAlertSettingsStore.DEFAULT_PITCH_ROAD_LAYER,
             satelliteTunnelEnabled = settings?.satelliteTunnelEnabled
                 ?: RadarAlertSettingsStore.DEFAULT_SATELLITE_TUNNEL
-        )
+        ).also { if (settings != null) cachedConfig = it }
     }
 
     private fun registerSatellites(context: Context) {

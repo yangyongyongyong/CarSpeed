@@ -1,6 +1,8 @@
 package com.thomas.carspeed
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -11,6 +13,7 @@ import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
@@ -101,18 +104,24 @@ internal object VoiceCommandParser {
     )
 }
 
-// 播报开始时间仍会记下来。拍照口令不再靠这段静音丢掉，改看前后有没有约 1 秒停顿。
+// 播报开始时间只做记录：拍照口令不再靠播报后的静音窗口丢弃，改看前后有没有约 1 秒停顿。
 internal object AppSpeechGuard {
-    private const val COMMAND_SUPPRESSION_WINDOW_MS = 6_000L
-    @Volatile private var lastSpeechStartedAtMs = 0L
+    @Volatile var lastSpeechStartedAtMs = 0L
+        private set
 
     fun markSpeechStarted(nowMs: Long = System.currentTimeMillis()) {
         lastSpeechStartedAtMs = nowMs
     }
+}
 
-    fun shouldSuppressVoiceCommand(nowMs: Long = System.currentTimeMillis()): Boolean {
-        val elapsedMs = nowMs - lastSpeechStartedAtMs
-        return elapsedMs in 0..COMMAND_SUPPRESSION_WINDOW_MS
+internal object VoiceRetryBackoff {
+    private const val BASE_DELAY_MS = 5_000L
+    private const val MAX_DELAY_MS = 10 * 60_000L
+
+    /** 第 1 次失败等 5 秒，之后每次翻倍，最长 10 分钟。 */
+    fun delayMs(failures: Int): Long {
+        val shift = (failures - 1).coerceIn(0, 20)
+        return (BASE_DELAY_MS shl shift).coerceAtMost(MAX_DELAY_MS)
     }
 }
 
@@ -123,20 +132,25 @@ object VoicePhotoRecognizer {
     private const val SAMPLE_RATE = 16_000.0f
     private const val RESTART_DELAY_MS = 1_000L
     private const val COMMAND_DEBOUNCE_MS = 3_000L
+    private const val MAX_CONSECUTIVE_FAILURES = 8
+    private const val WAIT_FOR_WIFI_RETRY_MS = 60_000L
+    private const val SLOW_RETRY_MS = 30 * 60_000L
+    private const val CONNECT_TIMEOUT_MS = 15_000
+    private const val READ_TIMEOUT_MS = 30_000
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var state = VoicePhotoRecognizerState()
 
-    private var model: Model? = null
-    private var recognizer: Recognizer? = null
+    @Volatile private var model: Model? = null
+    @Volatile private var recognizer: Recognizer? = null
     private var speechService: SpeechService? = null
     @Volatile private var externalMic = false
     private val recognizerLock = Any()
     private val downsampler = PcmDownsampler()
     private val pcmQueue = ArrayBlockingQueue<PcmChunk>(4)
     private val pcmWorkerStarted = AtomicBoolean(false)
-    private var activeOwner: String? = null
+    @Volatile private var activeOwner: String? = null
     private var activeContext: Context? = null
     private var activeOnCommand: ((VoiceCommand, Long?) -> Unit)? = null
     private var starting = false
@@ -148,6 +162,9 @@ object VoicePhotoRecognizer {
     private var pauseRunnable: Runnable? = null
     private var armedText: String? = null
     private var sawWordTimes = false
+    private var consecutiveFailures = 0
+
+    private class ModelDownloadDeferred(message: String) : IllegalStateException(message)
 
     fun currentState(): VoicePhotoRecognizerState = state
 
@@ -195,6 +212,7 @@ object VoicePhotoRecognizer {
                                 listening = true,
                                 lastError = null
                             )
+                            consecutiveFailures = 0
                             VoicePhotoMonitor.markStarted(owner, ENGINE)
                             return@post
                         }
@@ -202,6 +220,7 @@ object VoicePhotoRecognizer {
                             service.startListening(listener(owner))
                         }
                         starting = false
+                        consecutiveFailures = 0
                         updateState(
                             owner,
                             modelState = "ready",
@@ -283,6 +302,7 @@ object VoicePhotoRecognizer {
         activeContext = null
         activeOnCommand = null
         starting = false
+        consecutiveFailures = 0
         state = state.copy(activeOwner = owner, listening = false)
         VoicePhotoMonitor.markStopped(owner)
     }
@@ -389,15 +409,31 @@ object VoicePhotoRecognizer {
 
     private fun handleError(owner: String, error: Exception) {
         val message = error.message ?: error.javaClass.simpleName
-        updateState(owner, listening = false, lastError = message)
-        VoicePhotoMonitor.markError(owner, -3, message)
         releaseSpeechService()
         synchronized(recognizerLock) {
             runCatching { recognizer?.close() }
             recognizer = null
         }
-        restart(owner)
+        if (error is ModelDownloadDeferred) {
+            // 等 Wi‑Fi 不算失败；只是定时看一眼网络，不会产生流量。
+            updateState(owner, modelState = "waiting_wifi", listening = false, lastError = message)
+            VoicePhotoMonitor.markError(owner, -3, message)
+            restart(owner, WAIT_FOR_WIFI_RETRY_MS)
+            return
+        }
+        consecutiveFailures += 1
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            val stoppedMessage = "语音识别连续失败：$message。30 分钟后再试，也可以检查网络后重新开启语音口令。"
+            updateState(owner, modelState = "failed", listening = false, lastError = stoppedMessage)
+            VoicePhotoMonitor.markError(owner, -3, stoppedMessage)
+            restart(owner, SLOW_RETRY_MS)
+            return
+        }
+        updateState(owner, listening = false, lastError = message)
+        VoicePhotoMonitor.markError(owner, -3, message)
+        restart(owner, VoiceRetryBackoff.delayMs(consecutiveFailures))
     }
+
 
     private fun newRecognizer(loadedModel: Model): Recognizer {
         streamClock.reset()
@@ -418,6 +454,7 @@ object VoicePhotoRecognizer {
                 service.startListening(listener(owner))
             }
             starting = false
+            consecutiveFailures = 0
             updateState(owner, modelState = "ready", modelReady = true, listening = true, lastError = null)
             VoicePhotoMonitor.markStarted(owner, ENGINE)
         } catch (e: Exception) {
@@ -480,13 +517,13 @@ object VoicePhotoRecognizer {
         val capturedAtElapsedMs: Long
     )
 
-    private fun restart(owner: String) {
+    private fun restart(owner: String, delayMs: Long = RESTART_DELAY_MS) {
         if (activeOwner != owner) return
         resetCommandGate()
         releaseSpeechService()
         val context = activeContext ?: return
         val onCommand = activeOnCommand ?: return
-        mainHandler.postDelayed({ start(context, owner, onCommand) }, RESTART_DELAY_MS)
+        mainHandler.postDelayed({ start(context, owner, onCommand) }, delayMs)
     }
 
     private fun ensureModel(context: Context): File {
@@ -495,19 +532,26 @@ object VoicePhotoRecognizer {
             updateState(activeOwner, modelState = "ready", modelPath = modelDir.absolutePath, modelReady = true)
             return modelDir
         }
+        if (!isUnmeteredNetwork(context)) {
+            throw ModelDownloadDeferred("等待连接 Wi‑Fi 后下载离线语音模型（约 42MB）")
+        }
         updateState(activeOwner, modelState = "downloading", modelPath = modelDir.absolutePath, modelReady = false)
         val baseDir = modelDir.parentFile ?: context.filesDir
         baseDir.mkdirs()
         val zipFile = File(context.cacheDir, "$MODEL_NAME.zip")
-        URL(MODEL_URL).openStream().use { input ->
-            FileOutputStream(zipFile).use { output -> input.copyTo(output) }
-        }
+        downloadModelZip(zipFile)
         updateState(activeOwner, modelState = "unpacking", modelPath = modelDir.absolutePath, modelReady = false)
         val tmpDir = File(baseDir, "$MODEL_NAME.tmp")
         tmpDir.deleteRecursively()
         tmpDir.mkdirs()
-        unzipModel(zipFile, tmpDir)
-        zipFile.delete()
+        try {
+            unzipModel(zipFile, tmpDir)
+        } catch (e: Exception) {
+            tmpDir.deleteRecursively()
+            throw IllegalStateException("离线语音模型压缩包损坏：${e.message ?: e.javaClass.simpleName}", e)
+        } finally {
+            zipFile.delete()
+        }
         modelDir.deleteRecursively()
         if (!tmpDir.renameTo(modelDir)) {
             throw IllegalStateException("无法保存离线语音模型")
@@ -519,14 +563,53 @@ object VoicePhotoRecognizer {
         return modelDir
     }
 
+    private fun isUnmeteredNetwork(context: Context): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
+    private fun downloadModelZip(target: File) {
+        val partFile = File(target.parentFile, target.name + ".part")
+        partFile.delete()
+        val connection = URL(MODEL_URL).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.instanceFollowRedirects = true
+            val code = connection.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                throw IllegalStateException("下载离线语音模型失败：HTTP $code")
+            }
+            val expectedBytes = connection.contentLengthLong
+            val written = connection.inputStream.use { input ->
+                FileOutputStream(partFile).use { output -> input.copyTo(output) }
+            }
+            if (expectedBytes > 0 && written != expectedBytes) {
+                throw IllegalStateException("离线语音模型下载不完整（$written/$expectedBytes 字节）")
+            }
+            target.delete()
+            if (!partFile.renameTo(target)) {
+                throw IllegalStateException("无法保存离线语音模型压缩包")
+            }
+        } catch (e: Exception) {
+            partFile.delete()
+            throw e
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun unzipModel(zipFile: File, outputDir: File) {
+        val rootPath = outputDir.canonicalPath + File.separator
         ZipInputStream(zipFile.inputStream()).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 val strippedName = entry.name.substringAfter('/', missingDelimiterValue = "")
                 if (strippedName.isBlank()) continue
                 val outFile = File(outputDir, strippedName)
-                if (!outFile.canonicalPath.startsWith(outputDir.canonicalPath)) {
+                if (!outFile.canonicalPath.startsWith(rootPath)) {
                     throw IllegalStateException("模型压缩包路径非法")
                 }
                 if (entry.isDirectory) {

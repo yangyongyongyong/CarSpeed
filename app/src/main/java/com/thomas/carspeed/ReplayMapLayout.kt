@@ -4,7 +4,7 @@ import kotlin.math.roundToInt
 
 internal enum class FloatEdge { LEFT, TOP, RIGHT, BOTTOM }
 
-internal data class ReplayFloatSpec(
+data class ReplayFloatSpec(
     val leftFraction: Float,
     val topFraction: Float,
     val widthFraction: Float,
@@ -22,7 +22,6 @@ internal data class ReplayFloatFrame(
 internal data class ReplayMapChrome(
     val showTrackText: Boolean,
     val showSpeedCaption: Boolean,
-    val showTrackSlider: Boolean,
     val showOfflineButton: Boolean,
     val showLayoutButton: Boolean,
     val showScaleControls: Boolean,
@@ -38,7 +37,6 @@ internal object ReplayMapLayout {
     const val FLOAT_DRAG_HOLD_MS = 1_000L
     const val FLOAT_EDGE_DP = 24
     const val PREF_LAYOUT_MODE = "video_replay_layout_mode"
-    const val PREF_TRACK_ALPHA = "video_replay_track_alpha_percent"
     const val PREF_FLOAT_LEFT = "video_replay_float_left"
     const val PREF_FLOAT_TOP = "video_replay_float_top"
     const val PREF_FLOAT_WIDTH = "video_replay_float_width"
@@ -48,14 +46,11 @@ internal object ReplayMapLayout {
         return if (stored == MODE_FLOAT) MODE_FLOAT else MODE_SPLIT
     }
 
-    fun trackAlphaPercent(value: Int): Int = value.coerceIn(0, 100)
-
     fun chrome(mode: String, mapFullscreen: Boolean, trackOnly: Boolean): ReplayMapChrome {
         val floating = mode == MODE_FLOAT && !trackOnly && !mapFullscreen
         return ReplayMapChrome(
             showTrackText = !floating && !mapFullscreen,
             showSpeedCaption = !floating,
-            showTrackSlider = !floating && !mapFullscreen,
             showOfflineButton = !floating,
             showLayoutButton = !floating && !mapFullscreen && !trackOnly,
             showScaleControls = !floating && !mapFullscreen,

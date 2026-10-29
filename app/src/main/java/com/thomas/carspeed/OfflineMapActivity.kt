@@ -43,12 +43,18 @@ class OfflineMapActivity : AppCompatActivity(), OfflineMapManager.OfflineMapDown
 
     override fun onDownload(status: Int, completeCode: Int, downName: String?) {
         runOnUiThread {
-            val name = downName.orEmpty()
-            rows[name]?.let { row ->
-                row.progress.progress = completeCode.coerceIn(0, 100)
-                row.detail.text = "${stateText(status)} · $completeCode%"
+            if (isDestroyed) return@runOnUiThread
+            val row = rows[downName.orEmpty()]
+            // 进度回调很密，只更新这一行；下完或行还没建出来时才整表重建。
+            if (row == null || status == OfflineMapStatus.SUCCESS) {
+                renderRows()
+                return@runOnUiThread
             }
-            renderRows()
+            row.progress.progress = completeCode.coerceIn(0, 100)
+            row.detail.text = "${stateText(status)} · $completeCode%"
+            row.primary.text = primaryText(status)
+            row.primary.visibility = View.VISIBLE
+            row.delete.isEnabled = completeCode > 0
         }
     }
 

@@ -1,19 +1,19 @@
 package com.thomas.carspeed
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Rect
-import androidx.annotation.OptIn as AndroidXOptIn
-import androidx.camera.core.ExperimentalGetImage
-import androidx.camera.core.ImageProxy
+import android.media.ExifInterface
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -102,50 +102,83 @@ class PlateRecognitionSession(
 ) {
     private val lock = Any()
     private val samples = mutableListOf<PlateRecognitionSample>()
+    /** 同一辆车的读数串成轨迹，整条轨迹只用一个号，避免逐帧"换牌"。 */
+    private val tracks = mutableListOf<PlateTrackBinder.Track>()
     private var lastAnalyzeElapsedMs = 0L
     private var analyzedFrames = 0
     private var recognizedPlates = 0
 
-    fun analyze(image: ImageProxy): PlateOverlayFrame? {
-        var frame: PlateOverlayFrame? = null
-        try {
-            val nowElapsed = android.os.SystemClock.elapsedRealtime()
-            if (nowElapsed - lastAnalyzeElapsedMs < intervalMs) return null
-            lastAnalyzeElapsedMs = nowElapsed
-            val recognition = PlateRecognitionEngine.recognize(image)
-            val plates = recognition.plates
-            val sample = PlateRecognitionSample(
-                elapsedMs = (nowElapsed - startElapsedMs).coerceAtLeast(0L),
-                timeMs = startWallMs + (nowElapsed - startElapsedMs).coerceAtLeast(0L),
-                imageWidth = image.width,
-                imageHeight = image.height,
-                rotationDegrees = image.imageInfo.rotationDegrees,
-                plates = plates,
+    /** 录像会话里抓到的 JPEG 帧。在后台线程调用。 */
+    fun analyzeJpeg(jpeg: ByteArray, capturedElapsedMs: Long): PlateOverlayFrame? {
+        if (capturedElapsedMs - lastAnalyzeElapsedMs < intervalMs) return null
+        lastAnalyzeElapsedMs = capturedElapsedMs
+        var bitmap: Bitmap? = null
+        return try {
+            val rotationDegrees = jpegRotationDegrees(jpeg)
+            bitmap = decodeForAnalysis(jpeg) ?: return null
+            val recognition = PlateRecognitionEngine.recognize(bitmap, rotationDegrees)
+            val elapsedMs = (capturedElapsedMs - startElapsedMs).coerceAtLeast(0L)
+            val raw = PlateRecognitionSample(
+                elapsedMs = elapsedMs,
+                timeMs = startWallMs + elapsedMs,
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height,
+                rotationDegrees = rotationDegrees,
+                plates = recognition.plates,
                 ocrText = recognition.text
             )
             val sampleCount: Int
             val frameCount: Int
             val totalPlateCount: Int
-            synchronized(lock) {
+            // 先并入轨迹再取号：画面和存盘用的是同一个号，回放时不会跟录像时看到的对不上。
+            val sample = synchronized(lock) {
+                val stabilized = PlateTrackBinder.stabilize(tracks, raw)
                 analyzedFrames += 1
-                recognizedPlates += plates.size
-                samples += sample
+                recognizedPlates += stabilized.plates.size
+                // 存原始读数：收尾时要拿未压缩的观测重新算全局最优，稳定后的结果信息已经塌缩了。
+                samples += raw
                 frameCount = analyzedFrames
                 sampleCount = samples.size
                 totalPlateCount = recognizedPlates
+                stabilized
             }
             PlateRecognitionMonitor.onFrame(sample, frameCount, sampleCount, totalPlateCount)
-            frame = sample.toOverlayFrame()
+            sample.toOverlayFrame()
         } catch (e: RuntimeException) {
             PlateRecognitionMonitor.onError(e.message ?: e.javaClass.simpleName)
-        } finally {
-            image.close()
+            null
         }
-        return frame
+        // 不手动 recycle：识别超时后 ML Kit 后台线程可能还在读这张图，交给 GC。
+    }
+
+    private fun decodeForAnalysis(jpeg: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        if (longEdge <= 0) return null
+        var sampleSize = 1
+        while (longEdge / (sampleSize * 2) >= ANALYSIS_LONG_EDGE) sampleSize *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        return BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, options)
+    }
+
+    private fun jpegRotationDegrees(jpeg: ByteArray): Int {
+        return runCatching {
+            when (
+                ExifInterface(ByteArrayInputStream(jpeg))
+                    .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            ) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        }.getOrDefault(0)
     }
 
     fun finish(context: Context, videoFile: File): File? {
-        val snapshot = synchronized(lock) { samples.toList() }
+        // 收尾时用原始读数重算一遍：整段都看完再定号，比录像过程中的实时判断更准。
+        val snapshot = synchronized(lock) { PlateTrackBinder.bindAll(samples.toList()) }
         return try {
             val file = PlateRecognitionStorage.writeSidecar(
                 context = context,
@@ -170,6 +203,7 @@ class PlateRecognitionSession(
 
     companion object {
         const val DEFAULT_INTERVAL_MS = 1_000L
+        private const val ANALYSIS_LONG_EDGE = 1280
     }
 }
 
@@ -310,55 +344,32 @@ object PlateRecognitionEngine {
     private var chineseRecognizer: TextRecognizer? = null
 
     @Volatile
-    private var latinRecognizer: TextRecognizer? = null
-
-    @Volatile
     private var lastError: String? = null
 
-    fun isReady(): Boolean = chineseRecognizer != null || latinRecognizer != null
+    fun isReady(): Boolean = chineseRecognizer != null
 
     fun currentError(): String? = lastError
 
-    @AndroidXOptIn(ExperimentalGetImage::class)
-    fun recognize(image: ImageProxy): PlateOcrFrame {
-        val mediaImage = image.image
-        if (mediaImage == null) {
-            lastError = "分析帧没有可用 Image"
-            return PlateOcrFrame(emptyList())
-        }
-        val recognizers = listOfNotNull(ensureChineseRecognizer(), ensureLatinRecognizer())
-        if (recognizers.isEmpty()) return PlateOcrFrame(emptyList())
-        val inputImage = InputImage.fromMediaImage(mediaImage, image.imageInfo.rotationDegrees)
-        val allPlates = mutableListOf<PlateRecognitionResult>()
-        val rawTexts = mutableListOf<String>()
-        var recognized = false
-        var failure: Exception? = null
-        recognizers.forEach { recognizer ->
-            try {
-                val text = Tasks.await(
-                    recognizer.process(inputImage),
-                    RECOGNITION_TIMEOUT_MS,
-                    TimeUnit.MILLISECONDS
-                )
-                recognized = true
-                rawTexts += text.text
-                allPlates += extractPlateCandidates(text)
-            } catch (e: Exception) {
-                failure = e
-            }
-        }
-        return if (recognized) {
+    /** 中文识别模型本身也认拉丁字母和数字，不再每帧多跑一遍拉丁模型。 */
+    fun recognize(bitmap: Bitmap, rotationDegrees: Int): PlateOcrFrame {
+        val recognizer = ensureChineseRecognizer() ?: return PlateOcrFrame(emptyList())
+        val inputImage = InputImage.fromBitmap(bitmap, rotationDegrees)
+        return try {
+            val text = Tasks.await(
+                recognizer.process(inputImage),
+                RECOGNITION_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS
+            )
             lastError = null
             PlateOcrFrame(
-                plates = allPlates.distinctBy { it.code },
-                text = rawTexts.joinToString("\n")
+                plates = extractPlateCandidates(text).distinctBy { it.code },
+                text = text.text
                     .trim()
                     .take(MAX_OCR_TEXT_CHARS)
                     .takeIf { it.isNotBlank() }
             )
-        } else {
-            val error = failure
-            lastError = error?.message ?: error?.javaClass?.simpleName
+        } catch (e: Exception) {
+            lastError = e.message ?: e.javaClass.simpleName
             PlateRecognitionMonitor.onError(lastError.orEmpty())
             PlateOcrFrame(emptyList())
         }
@@ -371,24 +382,6 @@ object PlateRecognitionEngine {
             try {
                 TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()).also { client ->
                     chineseRecognizer = client
-                    lastError = null
-                    PlateRecognitionMonitor.onEngineReady()
-                }
-            } catch (e: RuntimeException) {
-                lastError = e.message ?: e.javaClass.simpleName
-                PlateRecognitionMonitor.onError(lastError.orEmpty())
-                null
-            }
-        }
-    }
-
-    private fun ensureLatinRecognizer(): TextRecognizer? {
-        latinRecognizer?.let { return it }
-        return synchronized(initLock) {
-            latinRecognizer?.let { return@synchronized it }
-            try {
-                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).also { client ->
-                    latinRecognizer = client
                     lastError = null
                     PlateRecognitionMonitor.onEngineReady()
                 }
@@ -489,7 +482,7 @@ object PlateRecognitionEngine {
 
 object PlateRecognitionMonitor {
     const val ENGINE_NONE = "none"
-    const val ENGINE_MLKIT_CHINESE_OCR = "mlkit-chinese-latin-ocr"
+    const val ENGINE_MLKIT_CHINESE_OCR = "mlkit-chinese-ocr"
 
     @Volatile
     private var state = PlateRecognitionState()

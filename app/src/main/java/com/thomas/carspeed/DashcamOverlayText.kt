@@ -16,7 +16,46 @@ data class DashcamTelemetry(
     val autofocusState: String? = null
 )
 
+data class DashcamInfoBarText(
+    val title: String,
+    val label: String,
+    val parameters: String,
+    val caption: String
+) {
+    /** 四个位置都空时整条白栏不占位，等于把所有字幕开关都关了。 */
+    fun isEmpty(): Boolean =
+        title.isBlank() && label.isBlank() && parameters.isBlank() && caption.isBlank()
+}
+
+/**
+ * 对外取数据的外壳。内容怎么拼全在 [SubtitleContent] 里，
+ * 这里只负责读 Context 和全局单例，然后用 [SubtitleContent.Facts] 调过去。
+ *
+ * 两条路径必须走同一个 [SubtitleContent]。以前各写一遍，改了一边漏另一边，
+ * 结果就是同一个开关在预览和 SRT 字幕里表现不一样。
+ */
 object DashcamOverlayText {
+    /** 白栏一行放不下太多字符，日期用点分更紧凑。 */
+    private const val PATTERN_INFO_BAR = "yyyy.MM.dd HH:mm:ss"
+    /** SRT 字幕是给人读的独立文案，用标准格式。 */
+    private const val PATTERN_LINES = "yyyy-MM-dd HH:mm:ss"
+
+    /** 白栏空间窄，用短一点的占位文案；SRT 字幕沿用历史的「位置解析中」。 */
+    private const val INFO_BAR_ADDRESS_PENDING = "等待定位"
+
+    fun infoBar(
+        context: Context,
+        mode: VideoMode,
+        forceTime: Boolean = false,
+        timeMs: Long? = null
+    ): DashcamInfoBarText {
+        val settings = DashcamSettings.load(context)
+        return SubtitleContent.infoBar(
+            facts(context, settings, mode, forceTime, timeMs, PATTERN_INFO_BAR, placeholdersWhenMissing = false)
+                .copy(addressPendingText = INFO_BAR_ADDRESS_PENDING)
+        )
+    }
+
     fun text(
         context: Context,
         mode: VideoMode = CameraCapabilities.selectedVideoMode(context),
@@ -32,86 +71,50 @@ object DashcamOverlayText {
         timeMs: Long? = null
     ): List<String> {
         val settings = DashcamSettings.load(context)
+        // SRT 里一行一项，缺值必须写明占位，否则用户会以为功能被删了。
+        return SubtitleContent.lines(
+            facts(context, settings, mode, forceTime, timeMs, PATTERN_LINES, placeholdersWhenMissing = true)
+        )
+    }
+
+    /** 把 Context 和全局单例读成纯数据。所有 Android 依赖都收在这一处。 */
+    private fun facts(
+        context: Context,
+        settings: WatermarkSettings,
+        mode: VideoMode,
+        forceTime: Boolean,
+        timeMs: Long?,
+        timePattern: String,
+        placeholdersWhenMissing: Boolean
+    ): SubtitleContent.Facts {
         val telemetry = DashcamService.currentTelemetry()
-        val result = mutableListOf<String>()
-        if (forceTime || settings.showTime) {
-            result += SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                .format(Date(timeMs ?: System.currentTimeMillis()))
-        }
-        if (settings.showSpeed) {
-            result += String.format(Locale.US, "%.1f km/h", telemetry.speedKmh)
-        }
-        if (settings.showStationaryWait) {
-            result += formatStationaryWait(telemetry.stationaryWaitMs)
-        }
-        if (settings.showGps) {
-            val lat = telemetry.latitude
-            val lon = telemetry.longitude
-            result += if (lat != null && lon != null) {
-                String.format(Locale.US, "%.6f, %.6f", lat, lon)
+        val showTime = forceTime || settings.showTime
+        return SubtitleContent.Facts(
+            fields = settings.toSubtitleFields(),
+            timeText = if (showTime) {
+                SimpleDateFormat(timePattern, Locale.getDefault())
+                    .format(Date(timeMs ?: System.currentTimeMillis()))
             } else {
-                "GPS --"
-            }
-        }
-        if (settings.showSatellites) {
-            val count = telemetry.satelliteCount
-            result += if (count != null) {
-                context.getString(R.string.gps_satellite_label_fmt, count)
-            } else {
-                context.getString(R.string.gps_satellite_unknown)
-            }
-        }
-        if (settings.showRadarSummary) {
-            DashcamService.radarLimitSummary()?.let { result += it }
-        }
-        if (settings.showAddress) {
-            val layer = RoadLayerEngine.subtitleLabel()
-            result += telemetry.address?.let { PlaceSubtitle.withLayer(it, layer) }
-                ?: context.getString(R.string.watermark_address_pending)
-        }
-        if (settings.showRoadLayer && !settings.showAddress) {
-            RoadLayerEngine.subtitleLabel()?.let { result += it }
-        }
-        if (settings.showFocus) {
-            result += formatFocus(telemetry, context)
-        }
-        if (settings.showVideoMode) {
-            val hdr = if (DashcamService.isHdrActive()) " · ${context.getString(R.string.hdr_watermark_label)}" else ""
-            result += mode.label + hdr
-        }
-        return result
+                null
+            },
+            speedKmh = telemetry.speedKmh,
+            stationaryWaitMs = telemetry.stationaryWaitMs,
+            latitude = telemetry.latitude,
+            longitude = telemetry.longitude,
+            satelliteCount = telemetry.satelliteCount,
+            address = telemetry.address,
+            roadLayer = if (settings.showRoadLayer) RoadLayerEngine.subtitleLabel() else null,
+            radarLimit = if (settings.showRadarSummary) DashcamService.radarLimitSummary() else null,
+            videoModeLabel = mode.label,
+            fps = mode.fps,
+            hdrActive = DashcamService.isHdrActive(),
+            manualFocus = CameraFocus.isManualEnabled(context),
+            focusDistanceDiopters = telemetry.focusDistanceDiopters,
+            autofocusState = telemetry.autofocusState,
+            placeholdersWhenMissing = placeholdersWhenMissing,
+            addressPendingText = context.getString(R.string.watermark_address_pending)
+        )
     }
 
-    fun formatStationaryWait(waitDurationMs: Long): String {
-        val totalSec = (waitDurationMs / 1000).coerceAtLeast(0)
-        val hours = totalSec / 3600
-        val minutes = (totalSec % 3600) / 60
-        val seconds = totalSec % 60
-        return String.format(Locale.US, "静止等待：%02d:%02d:%02d", hours, minutes, seconds)
-    }
-
-    private fun formatFocus(telemetry: DashcamTelemetry, context: Context): String {
-        val focus = telemetry.focusDistanceDiopters
-        val focusText = when {
-            focus == null -> "--"
-            focus <= 0.01f -> "∞(${String.format(Locale.US, "%.2f", focus)}D)"
-            else -> {
-                val meters = 1f / focus
-                val distance = if (meters < 1f) {
-                    String.format(Locale.US, "%.0fcm", meters * 100f)
-                } else if (meters >= 10f) {
-                    String.format(Locale.US, "%.0fm", meters)
-                } else {
-                    String.format(Locale.US, "%.1fm", meters)
-                }
-                "${String.format(Locale.US, "%.2f", focus)}D($distance)"
-            }
-        }
-        val state = if (CameraFocus.isManualEnabled(context)) {
-            "MF"
-        } else {
-            telemetry.autofocusState ?: "AF--"
-        }
-        return context.getString(R.string.focus_watermark_fmt, focusText, state)
-    }
+    fun formatStationaryWait(waitDurationMs: Long): String = SubtitleContent.stationaryWaitText(waitDurationMs)
 }

@@ -22,6 +22,8 @@ object TrackMetrics {
     private const val MAX_SEGMENT_ACCURACY_METERS = 100f
     private const val MAX_SEGMENT_SPEED_MPS = 80f
     private const val MIN_GOOD_ACCURACY_METERS = 30f
+    /** 停车时 GPS 速度常在 0~1 km/h 抖动，低于这个值不计入里程。 */
+    const val STATIONARY_SPEED_FLOOR_KMH = 1.5f
 
     fun summary(points: List<VideoTrackPoint>): TrackSummary {
         if (points.isEmpty()) {
@@ -102,9 +104,12 @@ object TrackMetrics {
 
         val speedDistance = speedIntegratedDistance(from, to, dtSec)
         if (speedDistance > 0f) return speedDistance
+        // 两端都有速度但都低于抖动阈值：停车时的定位漂移，不计里程。
+        if (from.speedKmh > 0f || to.speedKmh > 0f) return 0f
 
         val distance = haversineMeters(from.latitude, from.longitude, to.latitude, to.longitude)
-        if (distance < MIN_SEGMENT_DISTANCE_METERS) return 0f
+        val jitterRadius = maxOf(from.accuracyMeters ?: 0f, to.accuracyMeters ?: 0f)
+        if (distance < maxOf(MIN_SEGMENT_DISTANCE_METERS, jitterRadius)) return 0f
         val maxReasonableDistance = (MAX_SEGMENT_SPEED_MPS * dtSec).coerceAtLeast(50f)
         return if (distance <= maxReasonableDistance) distance else 0f
     }
@@ -113,7 +118,7 @@ object TrackMetrics {
         val fromSpeedMps = (from.speedKmh.coerceIn(0f, MAX_SEGMENT_SPEED_MPS * 3.6f) / 3.6f)
         val toSpeedMps = (to.speedKmh.coerceIn(0f, MAX_SEGMENT_SPEED_MPS * 3.6f) / 3.6f)
         val averageSpeedMps = (fromSpeedMps + toSpeedMps) / 2f
-        return if (averageSpeedMps > 0f) averageSpeedMps * dtSec else 0f
+        return if (averageSpeedMps * 3.6f >= STATIONARY_SPEED_FLOOR_KMH) averageSpeedMps * dtSec else 0f
     }
 
     private fun haversineMeters(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): Float {

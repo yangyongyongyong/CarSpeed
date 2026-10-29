@@ -20,7 +20,6 @@ object SpeedRules {
     private const val TUNNEL_ENTRY_SPEED_MPS = 1.4f
     private const val TUNNEL_MAX_DT_SEC = 1.2f
     private const val TUNNEL_ACCEL_SMOOTHING = 0.18f
-    private const val TUNNEL_ACCEL_POSITIVE_LIMIT = 0.45f
     private const val TUNNEL_ACCEL_NEGATIVE_LIMIT = -1.4f
     private const val TUNNEL_BASE_DRAG_PER_SEC = 0.08f
     private const val TUNNEL_LOW_MOTION_DRAG_PER_SEC = 0.3f
@@ -341,10 +340,9 @@ object SpeedRules {
         val lowMotion = abs(smoothedAccel) < LOW_LINEAR_ACCEL_MPS2
         val lowMotionCount = if (lowMotion) old.lowMotionSampleCount + 1 else 0
 
-        val accelForEstimate = when {
-            smoothedAccel > 0f -> smoothedAccel.coerceAtMost(TUNNEL_ACCEL_POSITIVE_LIMIT)
-            else -> smoothedAccel.coerceAtLeast(TUNNEL_ACCEL_NEGATIVE_LIMIT)
-        }
+        // 传入的是线性加速度模长（恒为正），分不清加速和刹车，只能用来判断"车还在动"，
+        // 不能拿来积分出更高的速度，否则隧道里刹车或路面颠簸都会让推算速度往上漂。
+        val accelForEstimate = smoothedAccel.coerceIn(TUNNEL_ACCEL_NEGATIVE_LIMIT, 0f)
 
         val tunnelElapsedMs = if (entering) 0L else old.tunnelElapsedMs + (dtSec * 1000f).toLong()
         var confidence = if (entering) 1f else old.estimateConfidence
@@ -361,9 +359,7 @@ object SpeedRules {
         }
 
         val integrated = (estimateBaseSpeed + accelForEstimate * dtSec).coerceAtLeast(0f)
-        val confidenceScale = if (accelForEstimate > 0f) confidence.coerceAtLeast(0.18f) else 1f
-        val dragged = (integrated - drag * dtSec).coerceAtLeast(0f)
-        val estimatedSpeed = (dragged * confidenceScale).coerceAtLeast(0f)
+        val estimatedSpeed = (integrated - drag * dtSec).coerceAtLeast(0f)
 
         val estimateStatus = if (confidence <= TUNNEL_MIN_CONFIDENCE || lowMotionCount >= TUNNEL_LOW_MOTION_SAMPLES) {
             EstimateStatus.DECAY

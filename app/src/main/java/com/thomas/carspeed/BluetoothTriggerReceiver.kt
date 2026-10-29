@@ -42,6 +42,8 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
                 if (recordingBluetoothMatched) {
                     if (DashcamService.isRecording(context)) {
                         TriggerMonitorService.cancelDisconnectedStop(context, null)
+                    } else if (!PrivacyConsent.isAgreed(context)) {
+                        // 未同意隐私政策：不自动开录，只记录连接状态。
                     } else if (TriggerRules.shouldStartRecordingOnBluetoothConnected(settings, address)) {
                         BackgroundRecordingStart.start(context)
                     } else if (TriggerRules.shouldArmStartRecordingAfterBluetoothConnectedAndSpeed(settings, address)) {
@@ -55,7 +57,9 @@ class BluetoothTriggerReceiver : BroadcastReceiver() {
                 val connectedSelected = TriggerConnectionState.connectedSelectedAddresses(context, settings)
                 if (recordingBluetoothMatched) {
                     if (DashcamService.isRecording(context)) {
-                        if (TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, connectedSelected)) {
+                        // 断开时先看车速：车还在跑就继续录，不在高速上因为蓝牙闪断切掉整趟 footage。
+                        val speedKmh = TriggerSpeed.currentKmh(context)
+                        if (TriggerRules.shouldStopRecordingAfterSelectedBluetoothDisconnected(settings, connectedSelected, speedKmh)) {
                             Toast.makeText(context, R.string.trigger_bluetooth_disconnected_stop, Toast.LENGTH_SHORT).show()
                             DashcamService.stopRecording(context)
                         } else if (TriggerRules.shouldMonitorStopAfterBluetoothDisconnectedAndStationary(settings, connectedSelected)) {

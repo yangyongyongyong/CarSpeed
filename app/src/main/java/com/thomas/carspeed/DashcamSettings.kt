@@ -57,7 +57,7 @@ object DashcamSettings {
     const val MIN_LOOP_STORAGE_GB = 1
     const val MAX_LOOP_STORAGE_GB = 100
     const val DEFAULT_FOCUS_PERCENT = 0
-    const val DEFAULT_SEGMENT_MINUTES = 5
+    const val DEFAULT_SEGMENT_MINUTES = 1
     const val MIN_SEGMENT_MINUTES = 1
     const val MAX_SEGMENT_MINUTES = 10
     const val DEFAULT_CUE_VOLUME_PERCENT = 100
@@ -113,6 +113,26 @@ object DashcamSettings {
         val minutes = prefs.getInt(PREF_SEGMENT_MINUTES, DEFAULT_SEGMENT_MINUTES)
             .coerceIn(MIN_SEGMENT_MINUTES, MAX_SEGMENT_MINUTES)
         return minutes * 60_000L
+    }
+
+    /** 设置页那十个开关，回放和导出直接沿用，不在两处各维护一份。 */
+    fun subtitleFields(context: Context): ShareSubtitleFields = load(context).toSubtitleFields()
+
+    /** 回放页导出面板改了勾选，写回同一组设置，两处永远一致。 */
+    fun saveSubtitleFields(context: Context, fields: ShareSubtitleFields) {
+        context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_WATERMARK_TIME, fields.showTime)
+            .putBoolean(PREF_WATERMARK_SPEED, fields.showSpeed)
+            .putBoolean(PREF_WATERMARK_STATIONARY_WAIT, fields.showStationaryWait)
+            .putBoolean(PREF_WATERMARK_GPS, fields.showGps)
+            .putBoolean(PREF_WATERMARK_SATELLITES, fields.showSatellites)
+            .putBoolean(PREF_WATERMARK_RADAR, fields.showRadarSummary)
+            .putBoolean(PREF_WATERMARK_ADDRESS, fields.showAddress)
+            .putBoolean(PREF_WATERMARK_ROAD_LAYER, fields.showRoadLayer)
+            .putBoolean(PREF_WATERMARK_VIDEO_MODE, fields.showVideoMode)
+            .putBoolean(PREF_WATERMARK_FOCUS, fields.showFocus)
+            .apply()
     }
 }
 

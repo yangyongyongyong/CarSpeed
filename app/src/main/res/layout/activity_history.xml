@@ -260,11 +260,13 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/tvGpsTrackTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:text="@string/gps_track_history_title"
-            android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+            android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvGpsTrackSummary"

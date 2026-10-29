@@ -46,19 +46,58 @@ object VideoHistoryCache {
 
         fun save() {
             if (!dirty) return
-            prefs(context).edit().putString(KEY_ENTRIES, entries.toString()).apply()
+            writeCacheFile(context, entries.toString())
             dirty = false
         }
     }
 
+    /**
+     * 缓存存成单独的文件。以前整份 JSON 塞在 SharedPreferences 里，记录一多，
+     * 每次读写都要把整个偏好文件解析、重写一遍。
+     */
     fun load(context: Context): Store {
-        val raw = prefs(context).getString(KEY_ENTRIES, null)
+        val appContext = context.applicationContext
+        val raw = readCacheFile(appContext) ?: migrateFromPrefs(appContext)
         val entries = try {
             raw?.let { JSONObject(it) } ?: JSONObject()
         } catch (_: Exception) {
             JSONObject()
         }
-        return Store(context.applicationContext, entries)
+        return Store(appContext, entries)
+    }
+
+    private val fileLock = Any()
+
+    private fun cacheFile(context: Context): File = File(context.filesDir, CACHE_FILE_NAME)
+
+    private fun readCacheFile(context: Context): String? {
+        synchronized(fileLock) {
+            val file = cacheFile(context)
+            if (!file.isFile) return null
+            return runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
+        }
+    }
+
+    private fun writeCacheFile(context: Context, raw: String) {
+        synchronized(fileLock) {
+            val file = cacheFile(context)
+            val temp = File(file.parentFile, "${file.name}.tmp")
+            runCatching {
+                temp.writeText(raw, Charsets.UTF_8)
+                if (!temp.renameTo(file)) {
+                    file.delete()
+                    temp.renameTo(file)
+                }
+            }
+        }
+    }
+
+    private fun migrateFromPrefs(context: Context): String? {
+        val prefs = prefs(context)
+        val legacy = prefs.getString(KEY_ENTRIES, null) ?: return null
+        writeCacheFile(context, legacy)
+        prefs.edit().remove(KEY_ENTRIES).apply()
+        return legacy
     }
 
     fun signatureFor(trip: VideoStorage.VideoTrip): String {
@@ -174,5 +213,6 @@ object VideoHistoryCache {
 
     private const val PREF_NAME = "video_history_cache"
     private const val KEY_ENTRIES = "entries"
-    private const val CACHE_VERSION = 1
+    private const val CACHE_VERSION = 2
+    private const val CACHE_FILE_NAME = "video_history_cache.json"
 }

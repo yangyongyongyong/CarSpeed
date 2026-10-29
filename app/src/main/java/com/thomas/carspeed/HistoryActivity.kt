@@ -40,7 +40,10 @@ class HistoryActivity : AppCompatActivity() {
     private val historyExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val thumbnailExecutor: ExecutorService = Executors.newFixedThreadPool(2)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val thumbnailCache = mutableMapOf<String, Bitmap?>()
+    private val thumbnailCache = object : android.util.LruCache<String, Bitmap>(thumbnailCacheBytes()) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+    private val missingThumbnails = HashSet<String>()
     private val videoUriByPath = HashMap<String, android.net.Uri>()
     private var videoUrisLoaded = false
     private var routePhotoTimesMs: List<Long> = emptyList()
@@ -85,6 +88,8 @@ class HistoryActivity : AppCompatActivity() {
     private var allGpsTrackRecords: List<DriveRecord> = emptyList()
     @Volatile private var renderRequestId: Int = 0
     private var currentVideoItems: List<VideoListItem> = emptyList()
+    private var currentHistorySlots: List<HistorySlot> = emptyList()
+    private var currentHistoryRows: List<HistoryPageRow> = emptyList()
     private var currentFilteredVideoTrips: List<VideoStorage.VideoTrip> = emptyList()
     private var videoScopeCount: Int = 0
     private var videoListMutation: Int = 0
@@ -123,6 +128,12 @@ class HistoryActivity : AppCompatActivity() {
         toolbar = findViewById(R.id.toolbar)
 
         toolbar.setNavigationOnClickListener { finish() }
+        findViewById<View>(R.id.tvGpsTrackTitle).visibility = View.GONE
+        tvGpsTrackSummary.visibility = View.GONE
+        btnGpsPrevPage.visibility = View.GONE
+        btnGpsNextPage.visibility = View.GONE
+        tvGpsPage.visibility = View.GONE
+        layoutGpsTrackList.visibility = View.GONE
 
         val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
         filterSingleDayMs = prefs.getLong(PREF_VIDEO_FILTER_DAY_MS, 0L).takeIf { it > 0L }
@@ -144,6 +155,7 @@ class HistoryActivity : AppCompatActivity() {
         btnDeleteCurrentPageVideos.setOnClickListener { confirmDeleteCurrentPageVideos() }
         setupBatchDeleteUi()
         render()
+        thumbnailExecutor.execute { runCatching { pruneThumbnailDiskCache() } }
     }
 
     override fun onDestroy() {
@@ -413,21 +425,24 @@ class HistoryActivity : AppCompatActivity() {
     private fun invalidRange(start: Float?, end: Float?): Boolean = start != null && end != null && end < start
 
     private fun exportLatestGpx() {
-        val record = DriveRecordStore.loadRecords(this).maxByOrNull { it.startTimeMs }
-        if (record == null) {
-            Toast.makeText(this, R.string.history_empty, Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (record.routePoints.isEmpty()) {
-            Toast.makeText(this, R.string.gpx_no_route, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        try {
-            val share = GpxExporter.shareIntent(this, record)
-            startActivity(Intent.createChooser(share, getString(R.string.gpx_share_title)))
-        } catch (_: RuntimeException) {
-            Toast.makeText(this, getString(R.string.gpx_export_failed), Toast.LENGTH_SHORT).show()
+        if (historyExecutor.isShutdown) return
+        val appContext = applicationContext
+        historyExecutor.execute {
+            val record = DriveRecordStore.loadRecords(appContext).maxByOrNull { it.startTimeMs }
+            val share = if (record != null && record.routePoints.isNotEmpty()) {
+                runCatching { GpxExporter.shareIntent(appContext, record) }.getOrNull()
+            } else {
+                null
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                when {
+                    record == null -> Toast.makeText(this, R.string.history_empty, Toast.LENGTH_SHORT).show()
+                    record.routePoints.isEmpty() -> Toast.makeText(this, R.string.gpx_no_route, Toast.LENGTH_SHORT).show()
+                    share == null -> Toast.makeText(this, getString(R.string.gpx_export_failed), Toast.LENGTH_SHORT).show()
+                    else -> startActivity(Intent.createChooser(share, getString(R.string.gpx_share_title)))
+                }
+            }
         }
     }
 
@@ -462,8 +477,9 @@ class HistoryActivity : AppCompatActivity() {
             return
         }
         startActivity(
-            Intent(this, ShareExportActivity::class.java).apply {
-                putStringArrayListExtra(ShareExportActivity.EXTRA_VIDEO_PATHS, ArrayList(paths))
+            Intent(this, VideoReplayActivity::class.java).apply {
+                putStringArrayListExtra(VideoReplayActivity.EXTRA_VIDEO_PATHS, ArrayList(paths))
+                putExtra(VideoReplayActivity.EXTRA_OPEN_EXPORT, true)
             }
         )
     }
@@ -474,7 +490,7 @@ class HistoryActivity : AppCompatActivity() {
             ?: VideoStorage.tripFolderStartTimeMs(trip.title)
             ?: 0L
         val duration = durationMs.takeIf { it > 0L }
-            ?: trip.segments.sumOf { VideoStorage.recordingDurationMs(it) }
+            ?: VideoStorage.tripDurationMs(trip.segments)
         return VideoStorage.tripListTitle(start, duration) ?: trip.title.removePrefix("carspeed-trip-")
     }
 
@@ -483,9 +499,7 @@ class HistoryActivity : AppCompatActivity() {
             .setTitle(R.string.video_delete_one)
             .setMessage(tripListTitle(trip))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = VideoStorage.deleteVideoTrip(this, trip)
-                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                dropDeletedTrips(setOf(trip.id))
+                deleteTripsInBackground(listOf(trip))
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -501,9 +515,7 @@ class HistoryActivity : AppCompatActivity() {
             .setTitle(R.string.video_delete_all)
             .setMessage(getString(R.string.video_delete_all_confirm, trips.size))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = trips.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
-                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                dropDeletedTrips(trips.map { it.id }.toSet())
+                deleteTripsInBackground(trips)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -519,9 +531,7 @@ class HistoryActivity : AppCompatActivity() {
             .setTitle(R.string.video_delete_current_page)
             .setMessage(getString(R.string.video_delete_all_confirm, trips.size))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = trips.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
-                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                dropDeletedTrips(trips.map { it.id }.toSet())
+                deleteTripsInBackground(trips)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -620,9 +630,7 @@ class HistoryActivity : AppCompatActivity() {
             .setTitle(R.string.video_delete_selected)
             .setMessage(getString(R.string.video_delete_selected_confirm, selected.size))
             .setPositiveButton(R.string.video_delete_confirm) { _, _ ->
-                val deleted = selected.sumOf { trip -> VideoStorage.deleteVideoTrip(this, trip) }
-                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
-                dropDeletedTrips(selected.map { it.id }.toSet())
+                deleteTripsInBackground(selected)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -630,6 +638,7 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun render() {
         val requestId = ++renderRequestId
+        videoListMutation++
         val filter = currentVideoFilter()
         val favoriteOnly = showFavoriteVideosOnly
         showLoadingState()
@@ -657,9 +666,10 @@ class HistoryActivity : AppCompatActivity() {
                 RoutePhotoMarks.timeFromFileName(file.name)
             }
             routePhotoTimesMs = photoTimes
+            val mediaStoreDurations = VideoStorage.mediaStoreVideoDurations(appContext)
             val needsDetailedFilter = filter.requiresDetailedVideoData()
             val allVideoItems = if (needsDetailedFilter) {
-                scopedTrips.map { trip -> buildVideoListItem(trip, metadataCache, trip.id in favoriteIds) }
+                scopedTrips.map { trip -> buildVideoListItem(trip, metadataCache, trip.id in favoriteIds, mediaStoreDurations) }
             } else {
                 emptyList()
             }
@@ -668,56 +678,98 @@ class HistoryActivity : AppCompatActivity() {
             } else {
                 scopedTrips.filter { trip -> trip.matchesLightFilter(filter) }
             }
-            val pageCount = pageCount(filteredTrips.size)
+            val videoSpans = allTrips.map { trip ->
+                val start = tripStartTimeMs(trip, track = null)
+                start to tripEndTimeMs(trip, track = null, startTimeMs = start)
+            }
+            val storedRecords = DriveRecordStore.loadRecords(appContext)
+            val uncoveredTracks = HistoryTrackRows.uncovered(storedRecords, videoSpans)
+            val trackWindow = HistoryTrackWindow(
+                rangeStartMs = filter.dayStartMs ?: filter.rangeStartMs,
+                rangeEndMs = filter.dayEndMs ?: filter.rangeEndMs,
+                minDurationMs = filter.minDurationMs,
+                maxDurationMs = filter.maxDurationMs,
+                minDistanceMeters = filter.minDistanceMeters,
+                maxDistanceMeters = filter.maxDistanceMeters,
+                minPhotoCount = filter.minPhotoCount,
+                favoriteOnly = favoriteOnly
+            )
+            val visibleTracks = HistoryTrackRows.applyWindow(uncoveredTracks, trackWindow)
+            val slots = buildList {
+                filteredTrips.forEach { trip ->
+                    add(
+                        HistorySlot(
+                            sortMs = trip.segments.maxOfOrNull { it.lastModified() } ?: 0L,
+                            favorite = trip.id in favoriteIds,
+                            trip = trip,
+                            track = null
+                        )
+                    )
+                }
+                visibleTracks.forEach { record ->
+                    add(HistorySlot(sortMs = record.startTimeMs, favorite = false, trip = null, track = record))
+                }
+            }.sortedWith(compareByDescending<HistorySlot> { it.favorite }.thenByDescending { it.sortMs })
+            val mergedCount = slots.size
+            val pageCount = pageCount(mergedCount)
             val pageIndex = videoPageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-            val pageTrips = filteredTrips.drop(pageIndex * VIDEO_PAGE_SIZE).take(VIDEO_PAGE_SIZE)
+            val pageSlots = slots.drop(pageIndex * VIDEO_PAGE_SIZE).take(VIDEO_PAGE_SIZE)
+            val pageTrips = pageSlots.mapNotNull { it.trip }
             val videoItems = if (needsDetailedFilter) {
                 allVideoItems.filter { item -> item.trip in pageTrips }
             } else {
-                pageTrips.map { trip -> buildVideoListItem(trip, metadataCache, trip.id in favoriteIds) }
+                pageTrips.map { trip -> buildVideoListItem(trip, metadataCache, trip.id in favoriteIds, mediaStoreDurations) }
             }
-            val dateSpans = if (needsDetailedFilter) {
-                allVideoItems.map { item ->
-                    CountSpan(item.startTimeMs, item.endTimeMs.coerceAtLeast(item.startTimeMs))
+            val itemsById = videoItems.associateBy { it.trip.id }
+            val rows = pageSlots.mapNotNull { slot ->
+                val trip = slot.trip
+                if (trip != null) {
+                    itemsById[trip.id]?.let { HistoryPageRow.Video(it) }
+                } else {
+                    slot.track?.let { HistoryPageRow.Track(it) }
+                }
+            }
+            val dateSpans = ArrayList<CountSpan>()
+            if (needsDetailedFilter) {
+                allVideoItems.forEach { item ->
+                    dateSpans += CountSpan(item.startTimeMs, item.endTimeMs.coerceAtLeast(item.startTimeMs))
                 }
             } else {
-                scopedTrips.map { trip ->
+                scopedTrips.forEach { trip ->
                     val start = tripStartTimeMs(trip, track = null)
-                    CountSpan(start, tripEndTimeMs(trip, track = null, startTimeMs = start).coerceAtLeast(start))
+                    dateSpans += CountSpan(start, tripEndTimeMs(trip, track = null, startTimeMs = start).coerceAtLeast(start))
                 }
+            }
+            uncoveredTracks.forEach { record ->
+                dateSpans += CountSpan(record.startTimeMs, record.endTimeMs.coerceAtLeast(record.startTimeMs))
             }
             metadataCache.save()
             if (requestId != renderRequestId) return@execute
             val totalBytes = videoItems.sumOf { it.totalBytes }
+            val allCount = if (favoriteOnly) scopedTrips.size else scopedTrips.size + uncoveredTracks.size
             mainHandler.post {
                 if (requestId != renderRequestId || isFinishing || isDestroyed) return@post
                 videoPageIndex = pageIndex
                 videoDateSpans = dateSpans
                 routePhotoTimesMs = photoTimes
                 currentFilteredVideoTrips = filteredTrips
-                renderVideoList(
-                    videoItems,
+                currentHistorySlots = slots
+                renderHistoryPage(
+                    rows,
                     totalBytes,
-                    filteredTrips.size,
-                    scopedTrips.size,
+                    mergedCount,
+                    allCount,
                     pageIndex,
                     favoriteOnly
                 )
-            }
-            val storedRecords = DriveRecordStore.loadRecords(appContext)
-            val gpsTrackRecords = storedRecords.filter { record ->
-                record.source == DriveRecordStore.SOURCE_GPS_TRACK && record.routePoints.isNotEmpty()
-            }.sortedByDescending { it.startTimeMs }
-            if (requestId != renderRequestId) return@execute
-            mainHandler.post {
-                if (requestId != renderRequestId || isFinishing || isDestroyed) return@post
-                renderGpsTrackList(gpsTrackRecords)
             }
         }
     }
 
     private fun showLoadingState() {
         currentVideoItems = emptyList()
+        currentHistorySlots = emptyList()
+        currentHistoryRows = emptyList()
         currentFilteredVideoTrips = emptyList()
         btnDeleteAllVideos.isEnabled = false
         btnVideoPrevPage.isEnabled = false
@@ -745,30 +797,33 @@ class HistoryActivity : AppCompatActivity() {
     private fun buildVideoListItem(
         trip: VideoStorage.VideoTrip,
         metadataCache: VideoHistoryCache.Store,
-        favorite: Boolean
+        favorite: Boolean,
+        mediaStoreDurations: Map<String, Long> = emptyMap()
     ): VideoListItem {
         val signature = VideoHistoryCache.signatureFor(trip)
         metadataCache.read(trip.id, signature)?.let { cached ->
             return cached.toVideoListItem(trip, favorite)
         }
-        val item = buildVideoListItemUncached(trip, favorite)
+        val item = buildVideoListItemUncached(trip, favorite, mediaStoreDurations)
         metadataCache.write(item.toCacheEntry(trip.id, signature))
         return item
     }
 
     private fun buildVideoListItemUncached(
         trip: VideoStorage.VideoTrip,
-        favorite: Boolean
+        favorite: Boolean,
+        mediaStoreDurations: Map<String, Long> = emptyMap()
     ): VideoListItem {
-        val track = VideoTrackStorage.readMergedTrack(trip.segments)
+        val track = VideoTrackStorage.readMergedTrack(this, trip.segments)
         val points = track?.points.orEmpty()
         val trackSummary = points.takeIf { it.isNotEmpty() }?.let { TrackMetrics.summary(it) }
         val startTimeMs = tripStartTimeMs(trip, track)
-        val endTimeMs = tripEndTimeMs(trip, track, startTimeMs)
-        val durationMs = trip.segments.sumOf { VideoStorage.recordingDurationMs(it) }
-            .takeIf { it > 0L }
-            ?: trackSummary?.durationMs
-            ?: (endTimeMs - startTimeMs).coerceAtLeast(0L)
+        val durationMs = VideoStorage.tripDurationMs(
+            segments = trip.segments,
+            mediaStoreDurations = mediaStoreDurations,
+            trackDurationMs = trackSummary?.durationMs
+        )
+        val endTimeMs = tripEndTimeMs(trip, track, startTimeMs, durationMs)
         return VideoListItem(
             trip = trip,
             favorite = favorite,
@@ -824,64 +879,87 @@ class HistoryActivity : AppCompatActivity() {
         )
     }
 
-    private fun dropDeletedTrips(tripIds: Set<String>) {
-        if (tripIds.isEmpty()) return
-        videoListMutation++
-        val mutation = videoListMutation
-        currentFilteredVideoTrips = currentFilteredVideoTrips.filter { it.id !in tripIds }
-        currentVideoItems = currentVideoItems.filter { it.trip.id !in tripIds }
-        videoScopeCount = (videoScopeCount - tripIds.size).coerceAtLeast(currentFilteredVideoTrips.size)
-        batchSelectedTripIds.removeAll(tripIds)
-        animateRemoveVideoCards(tripIds)
-        val pages = pageCount(currentFilteredVideoTrips.size)
-        if (videoPageIndex > pages - 1) videoPageIndex = (pages - 1).coerceAtLeast(0)
-        publishVideoPageChrome()
-        if (currentFilteredVideoTrips.isEmpty()) {
-            showVideoListEmpty()
-            return
+    private fun deleteTripsInBackground(trips: List<VideoStorage.VideoTrip>) {
+        if (trips.isEmpty() || historyExecutor.isShutdown) return
+        val appContext = applicationContext
+        historyExecutor.execute {
+            val removedIds = mutableSetOf<String>()
+            val deleted = trips.sumOf { trip ->
+                val count = runCatching { VideoStorage.deleteVideoTrip(appContext, trip) }.getOrDefault(0)
+                if (trip.segments.none { it.exists() }) removedIds += trip.id
+                count
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                Toast.makeText(this, getString(R.string.video_delete_done, deleted), Toast.LENGTH_SHORT).show()
+                dropDeletedTrips(removedIds)
+            }
         }
-        fillVideoPageGap(mutation)
     }
 
-    private fun animateRemoveVideoCards(tripIds: Set<String>) {
+    private fun dropDeletedTrips(tripIds: Set<String>) {
+        if (tripIds.isEmpty()) return
+        val removedCount = currentHistorySlots.count { it.trip?.id in tripIds }
+        batchSelectedTripIds.removeAll(tripIds)
+        if (removedCount == 0) return
+        val mutation = ++videoListMutation
+        currentFilteredVideoTrips = currentFilteredVideoTrips.filter { it.id !in tripIds }
+        currentHistorySlots = currentHistorySlots.filter { it.trip?.id !in tripIds }
+        videoScopeCount = (videoScopeCount - removedCount).coerceAtLeast(currentHistorySlots.size)
+        videoPageIndex = videoPageIndex.coerceAtMost((pageCount(currentHistorySlots.size) - 1).coerceAtLeast(0))
+        val pageKeys = currentHistorySlots.drop(videoPageIndex * VIDEO_PAGE_SIZE)
+            .take(VIDEO_PAGE_SIZE).map { it.key }.toSet()
+        currentHistoryRows = currentHistoryRows.filter { it.key in pageKeys }
+        currentVideoItems = currentHistoryRows.mapNotNull { (it as? HistoryPageRow.Video)?.item }
         layoutVideoList.layoutTransition = videoListTransition()
-        val doomed = (0 until layoutVideoList.childCount)
+        val removedViews = (0 until layoutVideoList.childCount)
             .map { layoutVideoList.getChildAt(it) }
-            .filter { (it.tag as? String) in tripIds }
-        doomed.forEach { layoutVideoList.removeView(it) }
+            .filter { it.tag !in pageKeys }
+        removedViews.forEach { layoutVideoList.removeView(it) }
+        publishVideoPageChrome()
+        if (currentHistorySlots.isEmpty()) {
+            showVideoListEmpty()
+        } else {
+            fillVideoPageGap(mutation)
+        }
     }
 
     private fun fillVideoPageGap(mutation: Int) {
-        val pageTrips = currentFilteredVideoTrips
-            .drop(videoPageIndex * VIDEO_PAGE_SIZE)
-            .take(VIDEO_PAGE_SIZE)
-        val shownIds = currentVideoItems.map { it.trip.id }.toSet()
-        val missing = pageTrips.filter { it.id !in shownIds }
-        if (missing.isEmpty()) {
-            if (currentVideoItems.isEmpty()) showVideoListEmpty()
-            return
-        }
+        val pageSlots = currentHistorySlots.drop(videoPageIndex * VIDEO_PAGE_SIZE).take(VIDEO_PAGE_SIZE)
+        val shownKeys = currentHistoryRows.map { it.key }.toSet()
+        val missing = pageSlots.filter { it.key !in shownKeys }
+        if (missing.isEmpty()) return
         val appContext = applicationContext
         historyExecutor.execute {
             val cache = VideoHistoryCache.load(appContext)
-            val favoriteIds = VideoStorage.favoriteTripIds(appContext, missing)
-            val items = missing.map { trip ->
-                buildVideoListItem(trip, cache, trip.id in favoriteIds)
+            val mediaStoreDurations = if (missing.any { it.trip != null }) {
+                VideoStorage.mediaStoreVideoDurations(appContext)
+            } else {
+                emptyMap()
+            }
+            val addedRows = missing.mapNotNull { slot ->
+                slot.trip?.let { trip ->
+                    HistoryPageRow.Video(buildVideoListItem(trip, cache, slot.favorite, mediaStoreDurations))
+                } ?: slot.track?.let { HistoryPageRow.Track(it) }
             }
             cache.save()
             mainHandler.post {
                 if (mutation != videoListMutation || isFinishing || isDestroyed) return@post
-                if (layoutVideoList.childCount == 1 && layoutVideoList.getChildAt(0).tag !is String) {
-                    layoutVideoList.layoutTransition = null
-                    layoutVideoList.removeAllViews()
-                }
+                val rowsByKey = (currentHistoryRows + addedRows).associateBy { it.key }
+                val rows = pageSlots.mapNotNull { rowsByKey[it.key] }
+                val existingKeys = currentHistoryRows.map { it.key }.toSet()
                 layoutVideoList.layoutTransition = videoListTransition()
-                items.forEach { item ->
-                    if (currentVideoItems.none { it.trip.id == item.trip.id }) {
-                        currentVideoItems = currentVideoItems + item
-                        layoutVideoList.addView(videoCard(item))
+                rows.forEachIndexed { index, row ->
+                    if (row.key !in existingKeys) {
+                        val card = when (row) {
+                            is HistoryPageRow.Video -> videoCard(row.item)
+                            is HistoryPageRow.Track -> gpsTrackCard(row.record)
+                        }
+                        layoutVideoList.addView(card, index)
                     }
                 }
+                currentHistoryRows = rows
+                currentVideoItems = rows.mapNotNull { (it as? HistoryPageRow.Video)?.item }
                 publishVideoPageChrome()
             }
         }
@@ -907,15 +985,16 @@ class HistoryActivity : AppCompatActivity() {
     private fun publishVideoPageChrome() {
         bindVideoPageChrome(
             items = currentVideoItems,
-            filteredCount = currentFilteredVideoTrips.size,
+            filteredCount = currentHistorySlots.size,
             allCount = videoScopeCount,
             pageIndex = videoPageIndex,
-            favoriteOnly = showFavoriteVideosOnly
+            favoriteOnly = showFavoriteVideosOnly,
+            pageItemCount = currentHistoryRows.size
         )
     }
 
-    private fun renderVideoList(
-        items: List<VideoListItem>,
+    private fun renderHistoryPage(
+        rows: List<HistoryPageRow>,
         pageBytes: Long,
         filteredCount: Int,
         allCount: Int,
@@ -923,20 +1002,32 @@ class HistoryActivity : AppCompatActivity() {
         favoriteOnly: Boolean
     ) {
         videoListMutation++
-        currentVideoItems = items
+        currentHistoryRows = rows
+        currentVideoItems = rows.mapNotNull { (it as? HistoryPageRow.Video)?.item }
         videoScopeCount = allCount
-        bindVideoPageChrome(items, filteredCount, allCount, pageIndex, favoriteOnly, pageBytes)
+        bindVideoPageChrome(
+            currentVideoItems,
+            filteredCount,
+            allCount,
+            pageIndex,
+            favoriteOnly,
+            pageBytes,
+            rows.size
+        )
         layoutVideoList.layoutTransition = null
         layoutVideoList.removeAllViews()
-        if (items.isEmpty()) {
+        if (rows.isEmpty()) {
             layoutVideoList.addView(TextView(this).apply {
                 text = getString(videoEmptyTextRes(favoriteOnly))
                 setTextColor(getColorCompat(R.color.text_primary))
                 textSize = 13f
             })
         } else {
-            items.forEach { item ->
-                layoutVideoList.addView(videoCard(item))
+            rows.forEach { row ->
+                when (row) {
+                    is HistoryPageRow.Video -> layoutVideoList.addView(videoCard(row.item))
+                    is HistoryPageRow.Track -> layoutVideoList.addView(gpsTrackCard(row.record))
+                }
             }
         }
     }
@@ -947,10 +1038,11 @@ class HistoryActivity : AppCompatActivity() {
         allCount: Int,
         pageIndex: Int,
         favoriteOnly: Boolean,
-        pageBytes: Long = items.sumOf { it.totalBytes }
+        pageBytes: Long = items.sumOf { it.totalBytes },
+        pageItemCount: Int = items.size
     ) {
         val firstNumber = if (filteredCount == 0) 0 else pageIndex * VIDEO_PAGE_SIZE + 1
-        val lastNumber = (pageIndex * VIDEO_PAGE_SIZE + items.size).coerceAtMost(filteredCount)
+        val lastNumber = (pageIndex * VIDEO_PAGE_SIZE + pageItemCount).coerceAtMost(filteredCount)
         tvVideoSummary.text = when {
             favoriteOnly && hasVideoFilter() -> getString(
                 R.string.video_history_page_favorite_filtered_summary,
@@ -1044,13 +1136,16 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun gpsTrackCard(record: DriveRecord): View {
         val card = MaterialCardView(this).apply {
+            tag = trackRowKey(record)
             radius = 16f * resources.displayMetrics.density
             cardElevation = 0f
             strokeWidth = 0
             setCardBackgroundColor(getColorCompat(R.color.surface_primary))
             isClickable = true
             isFocusable = true
-            setOnClickListener { replayTrackRecord(record) }
+            setOnClickListener {
+                if (!batchDeleteMode) replayTrackRecord(record)
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1061,7 +1156,7 @@ class HistoryActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
         }
         content.addView(TextView(this).apply {
-            text = GpsTrackTimeLabel.format(record.startTimeMs, record.endTimeMs)
+            text = getString(R.string.track_only_badge) + "  " + GpsTrackTimeLabel.format(record.startTimeMs, record.endTimeMs)
             setTextColor(getColorCompat(R.color.text_primary))
             textSize = 14f
         })
@@ -1224,10 +1319,11 @@ class HistoryActivity : AppCompatActivity() {
     private fun loadVideoThumbnail(videoFile: File, target: ImageView) {
         val key = thumbnailKey(videoFile)
         target.tag = key
-        if (thumbnailCache.containsKey(key)) {
-            thumbnailCache[key]?.let { bitmap -> showVideoThumbnail(target, key, bitmap) }
+        thumbnailCache.get(key)?.let { bitmap ->
+            showVideoThumbnail(target, key, bitmap)
             return
         }
+        if (key in missingThumbnails) return
         val width = dp(132)
         val height = dp(82)
         thumbnailExecutor.execute {
@@ -1237,8 +1333,13 @@ class HistoryActivity : AppCompatActivity() {
                 ?: extractVideoThumbnail(videoFile, width, height)
             if (cached == null && bitmap != null) storeCachedThumbnail(videoFile, bitmap)
             mainHandler.post {
-                thumbnailCache[key] = bitmap
-                bitmap?.let { showVideoThumbnail(target, key, it) }
+                if (isDestroyed) return@post
+                if (bitmap == null) {
+                    missingThumbnails += key
+                } else {
+                    thumbnailCache.put(key, bitmap)
+                    showVideoThumbnail(target, key, bitmap)
+                }
             }
         }
     }
@@ -1300,7 +1401,23 @@ class HistoryActivity : AppCompatActivity() {
     private fun readCachedThumbnail(videoFile: File): Bitmap? {
         val file = thumbnailCacheFile(videoFile)
         if (!file.isFile) return null
+        // 用修改时间记最近一次使用，清理时据此判断。
+        file.setLastModified(System.currentTimeMillis())
         return android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+    }
+
+    /** 视频删了或改了以后旧缩略图就成了孤儿，一个月没用过的清掉。 */
+    private fun pruneThumbnailDiskCache() {
+        val dir = File(cacheDir, "video-thumbs")
+        val cutoff = System.currentTimeMillis() - THUMBNAIL_DISK_MAX_AGE_MS
+        dir.listFiles()?.forEach { file ->
+            if (file.isFile && file.lastModified() < cutoff) file.delete()
+        }
+    }
+
+    private fun thumbnailCacheBytes(): Int {
+        val maxBytes = Runtime.getRuntime().maxMemory()
+        return (maxBytes / 16L).coerceIn(4L * 1024 * 1024, 32L * 1024 * 1024).toInt()
     }
 
     private fun storeCachedThumbnail(videoFile: File, bitmap: Bitmap) {
@@ -1431,8 +1548,15 @@ class HistoryActivity : AppCompatActivity() {
         return trip.firstVideo.lastModified().takeIf { it > 0L } ?: 0L
     }
 
-    private fun tripEndTimeMs(trip: VideoStorage.VideoTrip, track: VideoTrack?, startTimeMs: Long): Long {
+    private fun tripEndTimeMs(
+        trip: VideoStorage.VideoTrip,
+        track: VideoTrack?,
+        startTimeMs: Long,
+        durationMs: Long = 0L
+    ): Long {
         track?.points?.lastOrNull()?.timeMs?.takeIf { it > 0L }?.let { return it }
+        val duration = durationMs.takeIf { it > 0L } ?: VideoStorage.tripDurationMs(trip.segments)
+        if (duration > 0L && startTimeMs > 0L) return startTimeMs + duration
         val modified = trip.lastModified.takeIf { it > 0L }
         if (modified != null && modified >= startTimeMs) return modified
         return startTimeMs
@@ -1552,6 +1676,27 @@ class HistoryActivity : AppCompatActivity() {
         return String.format("%02d:%02d:%02d", h, m, s)
     }
 
+    private data class HistorySlot(
+        val sortMs: Long,
+        val favorite: Boolean,
+        val trip: VideoStorage.VideoTrip?,
+        val track: DriveRecord?
+    ) {
+        val key: String get() = trip?.id ?: trackRowKey(requireNotNull(track))
+    }
+
+    private sealed class HistoryPageRow {
+        abstract val key: String
+
+        data class Video(val item: VideoListItem) : HistoryPageRow() {
+            override val key: String get() = item.trip.id
+        }
+
+        data class Track(val record: DriveRecord) : HistoryPageRow() {
+            override val key: String get() = trackRowKey(record)
+        }
+    }
+
     private data class TripSortKey(
         val trip: VideoStorage.VideoTrip,
         val favorite: Boolean,
@@ -1595,6 +1740,9 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     companion object {
+        private fun trackRowKey(record: DriveRecord): String = "track:${record.source}:${record.startTimeMs}:${record.endTimeMs}"
+
+        private const val THUMBNAIL_DISK_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000
         private const val PREF_VIDEO_FILTER_DAY_MS = "history_video_filter_day_ms"
         private const val PREF_VIDEO_FILTER_RANGE_START_MS = "history_video_filter_range_start_ms"
         private const val PREF_VIDEO_FILTER_RANGE_END_MS = "history_video_filter_range_end_ms"

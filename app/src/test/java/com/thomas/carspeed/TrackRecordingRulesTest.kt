@@ -46,4 +46,20 @@ class TrackRecordingRulesTest {
         assertTrue(TrackRecordingRules.hasGpsSignal(30f))
         assertFalse(TrackRecordingRules.hasGpsSignal(150f))
     }
+
+    @Test
+    fun trim_leading_stationary_keeps_last_parked_point_as_start() {
+        val points = listOf(0f, 0.5f, 0f, 1f, 12f, 30f).mapIndexed { i, speed ->
+            VideoTrackPoint(i * 1_000L, 1_000L + i * 1_000L, 30.0, 120.0, speed, 5f, null)
+        }
+        val trimmed = TrackRecordingRules.trimLeadingStationary(points)
+        org.junit.Assert.assertEquals(3, trimmed.size)
+        org.junit.Assert.assertEquals(1f, trimmed.first().speedKmh)
+    }
+
+    @Test
+    fun trim_leading_stationary_keeps_all_when_no_speed_info() {
+        val points = (0 until 4).map { i -> VideoTrackPoint(i * 1_000L, i * 1_000L, 30.0, 120.0 + i * 0.001, 0f, 5f, null) }
+        org.junit.Assert.assertEquals(4, TrackRecordingRules.trimLeadingStationary(points).size)
+    }
 }

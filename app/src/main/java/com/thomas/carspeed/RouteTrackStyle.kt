@@ -36,11 +36,4 @@ internal object RouteTrackStyle {
         runs += RouteRun(scale, start, segmentScales.size)
         return runs
     }
-
-    /** 轨迹透明度。100 为不透明，0 为完全看不见。原来的颜色里若带透明度，会被这次的百分比替换。 */
-    fun withAlpha(color: Int, percent: Int): Int {
-        val clamped = percent.coerceIn(0, 100)
-        val alpha = (clamped * 255 + 50) / 100
-        return (alpha shl 24) or (color and 0x00FFFFFF)
-    }
 }

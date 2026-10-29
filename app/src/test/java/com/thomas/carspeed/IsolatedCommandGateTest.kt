@@ -165,6 +165,17 @@ class IsolatedCommandGateTest {
         assertEquals(VoiceCommand.TAKE_PHOTO, gate.onSilenceAdvanced(2_800))
     }
 
+    @Test
+    fun different_voice_commands_do_not_block_each_other_during_cooldown() {
+        val cooldown = VoiceCommandCooldown(cooldownMs = 3_000L)
+
+        assertEquals(true, cooldown.tryAcquire(VoiceCommand.START_RECORDING, nowMs = 1_000L))
+        assertEquals(false, cooldown.tryAcquire(VoiceCommand.START_RECORDING, nowMs = 2_000L))
+        assertEquals(true, cooldown.tryAcquire(VoiceCommand.TAKE_PHOTO, nowMs = 1_500L))
+        assertEquals(false, cooldown.tryAcquire(VoiceCommand.TAKE_PHOTO, nowMs = 3_000L))
+        assertEquals(true, cooldown.tryAcquire(VoiceCommand.TAKE_PHOTO, nowMs = 4_501L))
+    }
+
     private fun phrase(text: String, startMs: Long, endMs: Long): List<TimedWord> {
         val chars = text.map { it.toString() }
         val step = (endMs - startMs) / chars.size

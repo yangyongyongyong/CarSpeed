@@ -35,6 +35,17 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
     private lateinit var cbUnknownRoadElevated: CheckBox
     private lateinit var cbRoadDivergenceCorrection: CheckBox
     private lateinit var tvRoadLayerStatus: TextView
+    private lateinit var cbRadarTrace: CheckBox
+    private lateinit var tvRadarTraceStatus: TextView
+    private lateinit var btnRadarTraceClear: Button
+    private lateinit var cbClearStretch: CheckBox
+    private lateinit var rowClearStretch: android.widget.LinearLayout
+    private lateinit var btnClearStretchSpan: Button
+    private lateinit var btnClearStretchInterval: Button
+    private lateinit var btnClearStretchSpeed: Button
+    private lateinit var tvClearStretchEstimate: TextView
+    /** 当前无雷达路段播报配置，改一处就整组写回，避免只改一半。 */
+    private var currentClearStretch = RadarClearStretch.Settings()
     private val uiHandler = Handler(Looper.getMainLooper())
     private var updating = false
     private val statusRefresh = object : Runnable {
@@ -83,6 +94,15 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
         cbUnknownRoadElevated = findViewById(R.id.cbUnknownRoadElevated)
         cbRoadDivergenceCorrection = findViewById(R.id.cbRoadDivergenceCorrection)
         tvRoadLayerStatus = findViewById(R.id.tvRoadLayerStatus)
+        cbRadarTrace = findViewById(R.id.cbRadarTrace)
+        tvRadarTraceStatus = findViewById(R.id.tvRadarTraceStatus)
+        btnRadarTraceClear = findViewById(R.id.btnRadarTraceClear)
+        cbClearStretch = findViewById(R.id.cbClearStretch)
+        rowClearStretch = findViewById(R.id.rowClearStretch)
+        btnClearStretchSpan = findViewById(R.id.btnClearStretchSpan)
+        btnClearStretchInterval = findViewById(R.id.btnClearStretchInterval)
+        btnClearStretchSpeed = findViewById(R.id.btnClearStretchSpeed)
+        tvClearStretchEstimate = findViewById(R.id.tvClearStretchEstimate)
 
         toolbar.setNavigationOnClickListener { finish() }
         setupControls()
@@ -124,6 +144,8 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
         }
 
         btnRadarThresholds.setOnClickListener { showRadarThresholdDialog() }
+        setupTraceControls()
+        setupClearStretchControls()
 
         sbRadarLeadSeconds.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -144,7 +166,7 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
                 getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
                     .edit()
                     .putInt(RadarAlertSettingsStore.PREF_RADAR_ALERT_LEAD_SECONDS, fixed)
-                    .commit()
+                    .apply()
                 RadarAlertService.sync(this@RadarAlertSettingsActivity)
             }
         })
@@ -173,7 +195,7 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
                 getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
                     .edit()
                     .putInt(RadarAlertSettingsStore.PREF_RADAR_ALERT_SPEECH_RATE_PERCENT, fixed)
-                    .commit()
+                    .apply()
                 RadarAlertService.sync(this@RadarAlertSettingsActivity)
             }
         })
@@ -183,7 +205,7 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
             getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
                 .edit()
                 .putBoolean(RadarAlertSettingsStore.PREF_RADAR_PITCH_ROAD_LAYER, checked)
-                .commit()
+                .apply()
         }
 
         cbSatelliteTunnel.setOnCheckedChangeListener { _, checked ->
@@ -191,7 +213,7 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
             getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
                 .edit()
                 .putBoolean(RadarAlertSettingsStore.PREF_RADAR_SATELLITE_TUNNEL, checked)
-                .commit()
+                .apply()
         }
 
         cbUnknownRoadElevated.setOnCheckedChangeListener { _, checked ->
@@ -199,7 +221,7 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
             getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
                 .edit()
                 .putBoolean(RadarAlertSettingsStore.PREF_RADAR_UNKNOWN_ROAD_LAYER_ELEVATED, checked)
-                .commit()
+                .apply()
             RadarAlertController.onUnknownRoadDefaultChanged(checked)
             renderStatus()
         }
@@ -209,7 +231,7 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
             getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
                 .edit()
                 .putBoolean(RadarAlertSettingsStore.PREF_RADAR_ROAD_DIVERGENCE_CORRECTION, checked)
-                .commit()
+                .apply()
         }
     }
 
@@ -227,11 +249,14 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
         cbSatelliteTunnel.isChecked = settings.satelliteTunnelEnabled
         cbUnknownRoadElevated.isChecked = settings.unknownRoadLayerElevated
         cbRoadDivergenceCorrection.isChecked = settings.roadDivergenceCorrectionEnabled
+        cbRadarTrace.isChecked = RadarAlertController.isTraceEnabled()
         updating = false
         updateRadarThresholdLabel(settings.thresholdsSeconds)
         updateRadarLeadLabel(settings.leadSeconds)
         updateRadarSpeechRateLabel(settings.speechRatePercent)
         renderStatus()
+        renderTraceStatus()
+        loadClearStretch()
     }
 
     private fun showRadarThresholdDialog() {
@@ -262,7 +287,146 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
         getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
             .edit()
             .putBoolean(RadarAlertSettingsStore.PREF_RADAR_ALERT_ENABLED, enabled)
-            .commit()
+            .apply()
+    }
+
+    /** 无雷达路段播报的三个数字都走这个输入框，只是提示语和范围不同。 */
+    private fun askNumber(
+        titleRes: Int,
+        hint: String,
+        current: Int,
+        onValue: (Int) -> Unit
+    ) {
+        val content = layoutInflater.cloneInContext(
+            android.view.ContextThemeWrapper(this, R.style.ThemeOverlay_CarSpeed_Dialog)
+        ).inflate(R.layout.dialog_text_field, null)
+        val field = content.findViewById<TextInputLayout>(R.id.tilDialogInput)
+        val input = content.findViewById<TextInputEditText>(R.id.etDialogInput)
+        field.hint = hint
+        input.setText(current.toString())
+        input.selectAll()
+        input.inputType = InputType.TYPE_CLASS_NUMBER
+        AlertDialog.Builder(this)
+            .setTitle(titleRes)
+            .setView(content)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val parsed = input.text.toString().trim().toIntOrNull() ?: return@setPositiveButton
+                onValue(parsed)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun saveClearStretch(
+        enabled: Boolean = currentClearStretch.enabled,
+        spanMeters: Int = currentClearStretch.spanMeters,
+        intervalSeconds: Int = currentClearStretch.intervalSeconds,
+        speedKmh: Int = currentClearStretch.referenceSpeedKmh
+    ) {
+        RadarAlertSettingsStore.saveClearStretch(
+            context = this,
+            enabled = enabled,
+            spanMeters = spanMeters,
+            intervalSeconds = intervalSeconds,
+            referenceSpeedKmh = speedKmh
+        )
+        loadClearStretch()
+    }
+
+    private fun loadClearStretch() {
+        val settings = RadarAlertSettingsStore.load(this)
+        currentClearStretch = RadarClearStretch.Settings(
+            enabled = settings.clearStretchEnabled,
+            spanMeters = settings.clearStretchSpanMeters,
+            intervalSeconds = settings.clearStretchIntervalSeconds,
+            referenceSpeedKmh = settings.clearStretchReferenceSpeedKmh
+        )
+        updating = true
+        cbClearStretch.isChecked = currentClearStretch.enabled
+        updating = false
+        // 开关关着时把三个输入藏起来，省得用户以为设了却没生效。
+        rowClearStretch.visibility = if (currentClearStretch.enabled) {
+            android.view.View.VISIBLE
+        } else {
+            android.view.View.GONE
+        }
+        val config = currentClearStretch
+        btnClearStretchSpan.text = getString(
+            R.string.radar_clear_stretch_span_value,
+            config.spanMeters
+        )
+        btnClearStretchInterval.text = getString(
+            R.string.radar_clear_stretch_interval_value,
+            config.intervalSeconds
+        )
+        btnClearStretchSpeed.text = getString(
+            R.string.radar_clear_stretch_speed_value,
+            config.referenceSpeedKmh
+        )
+        renderClearStretchEstimate(config)
+    }
+
+    /**
+     * 按用户填的速度把这段距离换算成秒数。
+     * 纯粹是让人有个直观印象，所以距离、速度任一没填好就显示提示，不去猜。
+     */
+    private fun renderClearStretchEstimate(config: RadarClearStretch.Settings) {
+        val seconds = RadarClearStretch.estimatedSeconds(
+            distanceMeters = config.spanMeters,
+            speedKmh = config.referenceSpeedKmh
+        )
+        tvClearStretchEstimate.text = if (seconds == null) {
+            getString(R.string.radar_clear_stretch_estimate_invalid)
+        } else {
+            getString(
+                R.string.radar_clear_stretch_estimate,
+                config.referenceSpeedKmh,
+                RadarAlertPlanner.distanceText(config.spanMeters),
+                seconds,
+                (seconds + 30) / 60
+            )
+        }
+    }
+
+    private fun setupClearStretchControls() {
+        cbClearStretch.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            saveClearStretch(enabled = checked)
+            RadarAlertService.sync(this)
+        }
+        btnClearStretchSpan.setOnClickListener {
+            askNumber(
+                titleRes = R.string.radar_clear_stretch_span_label,
+                hint = getString(
+                    R.string.radar_clear_stretch_span_hint,
+                    RadarClearStretch.MIN_SPAN_METERS,
+                    RadarClearStretch.MAX_SPAN_METERS
+                ),
+                current = currentClearStretch.spanMeters
+            ) { value -> saveClearStretch(spanMeters = value) }
+        }
+        btnClearStretchInterval.setOnClickListener {
+            askNumber(
+                titleRes = R.string.radar_clear_stretch_interval_label,
+                hint = getString(
+                    R.string.radar_clear_stretch_interval_hint,
+                    RadarClearStretch.MIN_INTERVAL_SECONDS,
+                    RadarClearStretch.MAX_INTERVAL_SECONDS
+                ),
+                current = currentClearStretch.intervalSeconds
+            ) { value -> saveClearStretch(intervalSeconds = value) }
+        }
+        btnClearStretchSpeed.setOnClickListener {
+            askNumber(
+                titleRes = R.string.radar_clear_stretch_speed_label,
+                hint = getString(
+                    R.string.radar_clear_stretch_speed_hint,
+                    RadarAlertSettingsStore.MIN_CLEAR_STRETCH_SPEED_KMH,
+                    RadarAlertSettingsStore.MAX_CLEAR_STRETCH_SPEED_KMH
+                ),
+                current = currentClearStretch.referenceSpeedKmh
+            ) { value -> saveClearStretch(speedKmh = value) }
+        }
     }
 
     private fun renderStatus() {
@@ -305,6 +469,27 @@ class RadarAlertSettingsActivity : AppCompatActivity() {
             elevated -> getString(R.string.radar_road_layer_elevated)
             else -> getString(R.string.radar_road_layer_ground)
         }
+    }
+
+    /**
+     * 预警留档只在调试版默认开启。正式版保留开关但不默认写文件：
+     * 真遇到「播报和现场雷达对不上」时，用户可以在这里打开复现一次。
+     */
+    private fun setupTraceControls() {
+        cbRadarTrace.setOnCheckedChangeListener { _, checked ->
+            if (updating) return@setOnCheckedChangeListener
+            RadarAlertController.setTraceEnabled(checked)
+            renderTraceStatus()
+        }
+        btnRadarTraceClear.setOnClickListener {
+            RadarAlertController.clearTrace(this)
+            renderTraceStatus()
+            Toast.makeText(this, R.string.radar_trace_cleared, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun renderTraceStatus() {
+        tvRadarTraceStatus.text = RadarAlertController.traceSummary(this)
     }
 
     private fun updateRadarThresholdLabel(thresholdsSeconds: List<Int>) {

@@ -10,10 +10,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 
 class StatusActivity : AppCompatActivity() {
@@ -33,6 +36,9 @@ class StatusActivity : AppCompatActivity() {
     private lateinit var btnNotification: Button
     private lateinit var btnGps: Button
     private lateinit var btnBattery: Button
+    private lateinit var rowBluetooth: View
+    private lateinit var tvBluetoothStatus: TextView
+    private lateinit var btnBluetooth: Button
 
     private val requestLocationLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -50,6 +56,11 @@ class StatusActivity : AppCompatActivity() {
         }
 
     private val requestMicrophoneLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            render()
+        }
+
+    private val requestBluetoothLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             render()
         }
@@ -74,22 +85,37 @@ class StatusActivity : AppCompatActivity() {
         btnNotification = findViewById(R.id.btnNotification)
         btnGps = findViewById(R.id.btnGps)
         btnBattery = findViewById(R.id.btnBattery)
+        rowBluetooth = findViewById(R.id.rowBluetooth)
+        tvBluetoothStatus = findViewById(R.id.tvBluetoothStatus)
+        btnBluetooth = findViewById(R.id.btnBluetooth)
 
         toolbar.setNavigationOnClickListener { finish() }
 
         btnLocation.setOnClickListener {
-            requestLocationLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
+            val permissions = arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
             )
+            requestOrOpenSettings(permissions) { requestLocationLauncher.launch(permissions) }
         }
         btnCamera.setOnClickListener {
-            requestCameraLauncher.launch(Manifest.permission.CAMERA)
+            requestOrOpenSettings(arrayOf(Manifest.permission.CAMERA)) {
+                requestCameraLauncher.launch(Manifest.permission.CAMERA)
+            }
         }
         btnMicrophone.setOnClickListener {
-            requestMicrophoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            requestOrOpenSettings(arrayOf(Manifest.permission.RECORD_AUDIO)) {
+                requestMicrophoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            btnBluetooth.setOnClickListener {
+                requestOrOpenSettings(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) {
+                    requestBluetoothLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                }
+            }
+        } else {
+            rowBluetooth.visibility = View.GONE
         }
         btnOverlay.setOnClickListener {
             startActivity(
@@ -103,7 +129,9 @@ class StatusActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 !DashcamNotificationGuard.hasRuntimeNotificationPermission(this)
             ) {
-                requestNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                requestOrOpenSettings(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) {
+                    requestNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
             } else {
                 openNotificationSettings()
             }
@@ -180,6 +208,40 @@ class StatusActivity : AppCompatActivity() {
         btnNotification.isEnabled = !notificationOk
         btnGps.isEnabled = !gpsOk
         btnBattery.isEnabled = !batteryOk
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val bluetoothOk = isGranted(Manifest.permission.BLUETOOTH_CONNECT)
+            tvBluetoothStatus.text = statusText(
+                bluetoothOk,
+                getString(R.string.status_bluetooth_ok),
+                getString(R.string.status_bluetooth_bad)
+            )
+            btnBluetooth.isEnabled = !bluetoothOk
+        }
+    }
+
+    // 系统不再弹窗时（用户选过“不再询问”或拒绝两次），只能去应用设置页手动打开。
+    private fun requestOrOpenSettings(permissions: Array<String>, request: () -> Unit) {
+        val prefs = getSharedPreferences(PREFS_PERMISSION_ASKED, Context.MODE_PRIVATE)
+        val askedBefore = permissions.any { prefs.getBoolean(it, false) }
+        val blocked = askedBefore && permissions.none { !isGranted(it) && shouldShowRequestPermissionRationale(it) }
+        if (blocked) {
+            Toast.makeText(this, R.string.status_permission_denied_settings, Toast.LENGTH_LONG).show()
+            tryStartActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+            return
+        }
+        prefs.edit().apply { permissions.forEach { putBoolean(it, true) } }.apply()
+        request()
+    }
+
+    private fun isGranted(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(this, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     private fun statusText(ok: Boolean, okText: String, badText: String): String {
@@ -195,10 +257,7 @@ class StatusActivity : AppCompatActivity() {
         }
     }
 
-    private fun hasMicrophonePermission(): Boolean {
-        return androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
+    private fun hasMicrophonePermission(): Boolean = isGranted(Manifest.permission.RECORD_AUDIO)
 
     private fun isIgnoringBatteryOptimizations(): Boolean {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -251,5 +310,9 @@ class StatusActivity : AppCompatActivity() {
         } catch (_: SecurityException) {
             false
         }
+    }
+
+    private companion object {
+        const val PREFS_PERMISSION_ASKED = "status_permission_asked"
     }
 }

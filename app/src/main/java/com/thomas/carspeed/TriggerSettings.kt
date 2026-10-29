@@ -43,6 +43,7 @@ object TriggerSettings {
     const val PREF_STOP_ON_POWER_DISCONNECTED = "auto_trigger_stop_on_power_disconnected"
     const val PREF_STOP_ON_BT_DISCONNECTED = "auto_trigger_stop_on_bt_disconnected"
     const val PREF_STOP_ON_BT_DISCONNECTED_AND_STATIONARY = "auto_trigger_stop_on_bt_disconnected_and_stationary"
+    const val PREF_SPEED_THRESHOLD_KMH = "auto_trigger_speed_threshold_kmh"
 
     fun load(context: Context): AutoTriggerSettings {
         val prefs = context.getSharedPreferences(MainActivity.PREF_NAME, Context.MODE_PRIVATE)
@@ -71,6 +72,9 @@ object TriggerSettings {
         return AutoTriggerSettings(
             bluetoothAddresses = addresses,
             bluetoothNamesByAddress = namesByAddress,
+            speedThresholdKmh = prefs.getFloat(PREF_SPEED_THRESHOLD_KMH, TriggerRules.DEFAULT_SPEED_THRESHOLD_KMH)
+                .takeIf { it.isFinite() && it > 0f }
+                ?: TriggerRules.DEFAULT_SPEED_THRESHOLD_KMH,
             startOnAppOpen = prefs.getBoolean(PREF_START_ON_APP_OPEN, prefs.getBoolean(DashcamSettings.PREF_AUTO_START_RECORDING, false)),
             startOnAmap = prefs.getBoolean(PREF_START_ON_AMAP, true),
             startOnBluetoothConnected = prefs.getBoolean(
@@ -114,6 +118,7 @@ object TriggerSettings {
             .putBoolean(PREF_STOP_ON_POWER_DISCONNECTED, settings.stopOnPowerDisconnected)
             .putBoolean(PREF_STOP_ON_BT_DISCONNECTED, settings.stopOnBluetoothDisconnected)
             .putBoolean(PREF_STOP_ON_BT_DISCONNECTED_AND_STATIONARY, settings.stopOnBluetoothDisconnectedAndStationary)
+            .putFloat(PREF_SPEED_THRESHOLD_KMH, settings.speedThresholdKmh)
             .apply()
     }
 
@@ -176,6 +181,8 @@ object TriggerRules {
     const val DEFAULT_SPEED_THRESHOLD_KMH = 10f
     /** 人拿着手机离开车时，步行速度通常到不了 10 km/h，定位速度也经常不是精确的 0。 */
     const val DISCONNECT_STOP_SPEED_KMH = 10f
+    /** 蓝牙断开后要持续低速这么久才停录，避免等红灯时蓝牙闪断就把录像停了。 */
+    const val DISCONNECT_STOP_HOLD_MS = 60_000L
 
     fun shouldArmForBluetooth(
         settings: AutoTriggerSettings,
@@ -214,15 +221,26 @@ object TriggerRules {
             speedKmh > settings.speedThresholdKmh
     }
 
+    /**
+     * 勾了「断开立即停」时，只有车确实停住了才当场停。
+     * 高速上蓝牙闪断一次就把录像切掉，丢的是整趟路的关键 footage，比多录几分钟贵得多。
+     */
     fun shouldStopRecordingAfterSelectedBluetoothDisconnected(
         settings: AutoTriggerSettings,
-        connectedSelectedAddresses: Set<String>
+        connectedSelectedAddresses: Set<String>,
+        speedKmh: Float? = null
     ): Boolean {
         if (!settings.stopOnBluetoothDisconnected) return false
         if (settings.bluetoothAddresses.isEmpty()) return false
-        return connectedSelectedAddresses.isEmpty()
+        if (connectedSelectedAddresses.isNotEmpty()) return false
+        return isAtRest(speedKmh)
     }
 
+    /**
+     * 蓝牙断开后是否改走「等车速降下来再停」。只认「断开后低速停」这个开关。
+     * 「断开立即停」在车还跑着的时候不做任何延时收尾：等红灯超过一分钟也属于中途断录，
+     * 要停就当场停（见 {@link #isAtRest}），要跑就一直录到用户自己停。
+     */
     fun shouldMonitorStopAfterBluetoothDisconnectedAndStationary(
         settings: AutoTriggerSettings,
         connectedSelectedAddresses: Set<String>
@@ -230,6 +248,12 @@ object TriggerRules {
         if (!settings.stopOnBluetoothDisconnectedAndStationary) return false
         if (settings.bluetoothAddresses.isEmpty()) return false
         return connectedSelectedAddresses.isEmpty()
+    }
+
+    /** 车速可信且低于阈值才算「已经停下」；拿不到车速时不能当作停车，按还在行驶处理。 */
+    private fun isAtRest(speedKmh: Float?): Boolean {
+        if (speedKmh == null || speedKmh.isNaN()) return false
+        return speedKmh.coerceAtLeast(0f) < DISCONNECT_STOP_SPEED_KMH
     }
 
     fun shouldStopRecordingAfterDisconnectStationary(
@@ -240,5 +264,19 @@ object TriggerRules {
         if (!bluetoothDisconnected) return false
         if (speedKmh.isNaN()) return false
         return speedKmh.coerceAtLeast(0f) < thresholdKmh
+    }
+
+    /**
+     * 返回新的"低速开始时间"：速度达到阈值时清零，低速时保留最早的开始时间。
+     * 速度未知（null）时保持原状。
+     */
+    fun updateLowSpeedSince(lowSpeedSinceMs: Long, speedKmh: Float?, nowMs: Long, thresholdKmh: Float = DISCONNECT_STOP_SPEED_KMH): Long {
+        if (speedKmh == null || speedKmh.isNaN()) return lowSpeedSinceMs
+        if (speedKmh.coerceAtLeast(0f) >= thresholdKmh) return 0L
+        return if (lowSpeedSinceMs > 0L) lowSpeedSinceMs else nowMs
+    }
+
+    fun shouldStopAfterSustainedLowSpeed(lowSpeedSinceMs: Long, nowMs: Long, holdMs: Long = DISCONNECT_STOP_HOLD_MS): Boolean {
+        return lowSpeedSinceMs > 0L && nowMs - lowSpeedSinceMs >= holdMs
     }
 }

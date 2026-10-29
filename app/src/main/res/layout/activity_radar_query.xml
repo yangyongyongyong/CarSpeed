@@ -5,31 +5,33 @@
     android:layout_height="match_parent"
     android:background="@color/brand_sand"
     android:orientation="vertical"
-    android:paddingStart="16dp"
-    android:paddingTop="8dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="16dp">
+    android:paddingStart="12dp"
+    android:paddingTop="4dp"
+    android:paddingEnd="12dp"
+    android:paddingBottom="8dp">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="40dp"
         android:backgroundTint="@android:color/transparent"
+        app:navigationIconTint="@color/text_primary"
         app:navigationIcon="@drawable/ic_nav_back"
         app:title="@string/radar_query_title"
-        app:titleTextColor="@color/text_primary" />
+        app:titleTextColor="@color/text_primary"
+        app:titleTextAppearance="@style/TextAppearance.CarSpeed.ToolbarCompact" />
 
     <com.google.android.material.card.MaterialCardView
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
+        android:layout_marginTop="4dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="10dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -67,10 +69,10 @@
                             android:importantForAutofill="no"
                             android:inputType="text"
                             android:maxLines="1"
-                            android:paddingStart="12dp"
-                            android:paddingTop="10dp"
-                            android:paddingEnd="12dp"
-                            android:paddingBottom="10dp"
+                            android:paddingStart="10dp"
+                            android:paddingTop="7dp"
+                            android:paddingEnd="10dp"
+                            android:paddingBottom="7dp"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
                             android:textSize="16sp" />
@@ -112,10 +114,10 @@
                             android:importantForAutofill="no"
                             android:inputType="text"
                             android:maxLines="1"
-                            android:paddingStart="12dp"
-                            android:paddingTop="10dp"
-                            android:paddingEnd="12dp"
-                            android:paddingBottom="10dp"
+                            android:paddingStart="10dp"
+                            android:paddingTop="7dp"
+                            android:paddingEnd="10dp"
+                            android:paddingBottom="7dp"
                             android:textColor="@color/text_primary"
                             android:textColorHint="@color/text_secondary"
                             android:textSize="16sp" />
@@ -124,12 +126,12 @@
 
                 <ImageButton
                     android:id="@+id/btnSwap"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
-                    android:layout_marginStart="8dp"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="6dp"
                     android:background="@drawable/bg_query_swap"
                     android:contentDescription="@string/radar_query_swap"
-                    android:padding="10dp"
+                    android:padding="7dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_query_swap" />
             </LinearLayout>
@@ -151,7 +153,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:orientation="horizontal">
 
                 <LinearLayout
@@ -164,12 +166,12 @@
                     android:focusable="true"
                     android:gravity="center_horizontal"
                     android:orientation="vertical"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="2dp">
+                    android:paddingTop="3dp"
+                    android:paddingBottom="1dp">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_query_my_location" />
 
@@ -192,12 +194,12 @@
                     android:focusable="true"
                     android:gravity="center_horizontal"
                     android:orientation="vertical"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="2dp">
+                    android:paddingTop="3dp"
+                    android:paddingBottom="1dp">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_query_favorite" />
 
@@ -220,12 +222,12 @@
                     android:focusable="true"
                     android:gravity="center_horizontal"
                     android:orientation="vertical"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="2dp">
+                    android:paddingTop="3dp"
+                    android:paddingBottom="1dp">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_query_home" />
 
@@ -248,12 +250,12 @@
                     android:focusable="true"
                     android:gravity="center_horizontal"
                     android:orientation="vertical"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="2dp">
+                    android:paddingTop="3dp"
+                    android:paddingBottom="1dp">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:contentDescription="@null"
                         android:src="@drawable/ic_query_company" />
 
@@ -281,7 +283,7 @@
         style="@style/Widget.CarSpeed.Card"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="6dp"
         android:layout_weight="1">
 
         <FrameLayout
@@ -331,8 +333,58 @@
                         android:paddingEnd="14dp"
                         android:paddingBottom="12dp"
                         android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnOpenAmap"
+                        style="@style/Widget.CarSpeed.Button.Tonal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="14dp"
+                        android:layout_marginBottom="14dp"
+                        android:text="@string/radar_query_open_amap"
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
+
+            <!-- 长按地图选点后的确认条。先选中、再确认，避免随手一碰就改掉终点。 -->
+            <LinearLayout
+                android:id="@+id/mapPickBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:layout_margin="10dp"
+                android:background="@color/surface_primary"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvMapPicked"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:maxLines="2"
+                    android:ellipsize="end"
+                    android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMapPickCancel"
+                    style="@style/Widget.CarSpeed.Button.Tonal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/radar_query_map_pick_cancel" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMapPickConfirm"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/radar_query_map_pick_confirm"
+                    android:visibility="gone" />
+            </LinearLayout>
         </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

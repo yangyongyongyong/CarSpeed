@@ -22,7 +22,6 @@ class ReplayMapLayoutTest {
         )
         assertFalse(chrome.showTrackText)
         assertFalse(chrome.showSpeedCaption)
-        assertFalse(chrome.showTrackSlider)
         assertFalse(chrome.showOfflineButton)
         assertFalse(chrome.showLayoutButton)
         assertFalse(chrome.showScaleControls)
@@ -38,7 +37,6 @@ class ReplayMapLayoutTest {
         )
         assertTrue(chrome.showTrackText)
         assertTrue(chrome.showSpeedCaption)
-        assertTrue(chrome.showTrackSlider)
         assertTrue(chrome.showOfflineButton)
         assertTrue(chrome.showLayoutButton)
         assertTrue(chrome.showScaleControls)
@@ -54,16 +52,8 @@ class ReplayMapLayoutTest {
         )
         assertFalse(chrome.showTrackText)
         assertTrue(chrome.showSpeedCaption)
-        assertFalse(chrome.showTrackSlider)
         assertFalse(chrome.compactActions)
         assertFalse(chrome.showLayoutButton)
-    }
-
-    @Test
-    fun track_alpha_stays_between_clear_and_solid() {
-        assertEquals(0, ReplayMapLayout.trackAlphaPercent(-5))
-        assertEquals(40, ReplayMapLayout.trackAlphaPercent(40))
-        assertEquals(100, ReplayMapLayout.trackAlphaPercent(180))
     }
 
     @Test
@@ -182,5 +172,80 @@ class ReplayMapLayoutTest {
         assertEquals(100, resized.height)
         assertEquals(300, resized.left)
         assertEquals(200, resized.top)
+    }
+
+    @Test
+    fun float_export_layout_keeps_video_canvas_and_places_map_overlay_inside_video() {
+        val options = ShareExportOptions(
+            includeRouteMap = true,
+            layoutMode = ReplayMapLayout.MODE_FLOAT,
+            floatSpec = ReplayFloatSpec(
+                leftFraction = 0.50f,
+                topFraction = 0.60f,
+                widthFraction = 0.40f,
+                heightFraction = 0.30f
+            )
+        )
+        val layout = ShareVideoExporter.resolveExportLayout(
+            sourceWidth = 1920,
+            sourceHeight = 1080,
+            options = options,
+            hasTrack = true
+        )
+        val bar = ExportSubtitleStyle.barHeightPx(1920, 1080)
+        assertEquals(1920, layout.width)
+        assertEquals(1080 + bar, layout.height)
+        assertEquals(bar, layout.infoBarHeight)
+        assertEquals(1920, layout.videoWidth)
+        assertEquals(0, layout.mapHeight)
+        val rect = layout.floatMapRect!!
+        assertEquals(960, rect.left)
+        assertEquals(648, rect.top)
+        assertEquals(768, rect.width)
+        assertEquals(324, rect.height)
+    }
+
+    @Test
+    fun split_export_layout_appends_bottom_map_and_quarter_turn_swaps_video_dimensions() {
+        val splitOptions = ShareExportOptions(
+            includeRouteMap = true,
+            layoutMode = ReplayMapLayout.MODE_SPLIT,
+            mapHeightPercent = 30,
+            rotationDegrees = 90
+        )
+        val layout = ShareVideoExporter.resolveExportLayout(
+            sourceWidth = 1920,
+            sourceHeight = 1080,
+            options = splitOptions,
+            hasTrack = true
+        )
+        val bar = ExportSubtitleStyle.barHeightPx(1080, 1920)
+        assertEquals(1080, layout.videoWidth)
+        assertEquals(1920, layout.videoHeight)
+        assertEquals(576, layout.mapHeight)
+        assertEquals(1080 + bar, layout.width)
+        assertEquals(2496, layout.height)
+        assertEquals(bar, layout.infoBarHeight)
+        assertEquals(null, layout.floatMapRect)
+    }
+
+    @Test
+    fun float_export_uses_the_on_screen_map_aspect_so_the_scale_is_not_cropped() {
+        val options = ShareExportOptions(
+            includeRouteMap = true,
+            layoutMode = ReplayMapLayout.MODE_FLOAT,
+            mapAspectRatio = 1.5f,
+            floatSpec = ReplayFloatSpec(
+                leftFraction = 0.50f,
+                topFraction = 0.60f,
+                widthFraction = 0.40f,
+                heightFraction = 0.30f
+            )
+        )
+        val rect = ShareVideoExporter.resolveExportLayout(1920, 1080, options, true).floatMapRect!!
+        assertEquals(768, rect.width)
+        assertEquals(512, rect.height)
+        assertEquals(1344, rect.left + rect.width / 2)
+        assertEquals(810, rect.top + rect.height / 2)
     }
 }

@@ -47,9 +47,18 @@ internal object RouteRadarMarks {
         }
     }
 
+    /**
+     * 同一位置归并用的格子：约 30 米。
+     *
+     * 原来乘 1e5 取整（约 1 米），巡航坐标每帧抖几米就会当成两个不同的点，
+     * 于是同一部摄像头在录像里留下好几条记录，回放地图上一条路标出一堆点。
+     * 放到约 30 米一格，同一部摄像头落在一格里，相隔一段距离的仍是两个点。
+     */
+    private const val LOCATION_KEY_CELLS_PER_DEGREE = 3_500.0
+
     fun locationKey(latitude: Double, longitude: Double): String {
-        val longitudeKey = (longitude * 100_000).roundToInt()
-        val latitudeKey = (latitude * 100_000).roundToInt()
+        val longitudeKey = (longitude * LOCATION_KEY_CELLS_PER_DEGREE).roundToInt()
+        val latitudeKey = (latitude * LOCATION_KEY_CELLS_PER_DEGREE).roundToInt()
         return "$longitudeKey:$latitudeKey"
     }
 

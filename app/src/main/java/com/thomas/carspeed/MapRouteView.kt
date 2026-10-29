@@ -2,9 +2,11 @@ package com.thomas.carspeed
 
 import android.content.Context
 import android.content.Intent
+import android.location.LocationManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.os.Bundle
 import android.os.SystemClock
@@ -36,9 +38,8 @@ import com.amap.api.maps.model.Marker
 import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
@@ -65,14 +66,18 @@ class MapRouteView @JvmOverloads constructor(
     private var points: List<VideoTrackPoint> = emptyList()
     private var convertedPoints: List<LatLng> = emptyList()
     private var elapsedMs: Long = 0L
+    private var captureReady: (() -> Unit)? = null
     private var summary: TrackSummary = TrackSummary(0L, 0f, 0f, 0f, null, 0f)
     private var routeKey: String? = null
+    private var lastRouteInput: List<VideoTrackPoint>? = null
+    private var lastRouteInputSize = -1
     private val routeSegments = mutableListOf<Polyline>()
     private val playedPolylines = mutableListOf<Polyline>()
     private var playedRunScales: List<Float> = emptyList()
     private var currentPulseCircle: Circle? = null
     private var currentCircle: Circle? = null
     private var maxSpeedMarker: Marker? = null
+    private var maxSpeedMarkerSpeedKmh = 0f
     private var maxSpeedIcon: BitmapDescriptor? = null
     var onMaxSpeedClick: ((Float) -> Unit)? = null
     private var photoMarks: List<RoutePhotoMark> = emptyList()
@@ -82,14 +87,35 @@ class MapRouteView @JvmOverloads constructor(
     private val radarMarkers = mutableListOf<Marker>()
     private val radarMarkerIcons = mutableMapOf<RadarIconKey, RadarMarkerBitmap>()
     private var fitWholeRoute = false
+    private var rememberWholeRoute = false
     private var wholeRouteAwaitingLayout = false
     private var currentMapType = AMap.MAP_TYPE_NORMAL
     private var userCameraLocked = false
+    private var gestureEndedAtMs = 0L
+    /** 用户松手后 10 秒内不抢镜头；中途再触摸会重新计时。 */
+    private val resumeCameraFollow = object : Runnable {
+        override fun run() {
+            if (!userCameraLocked || !isAttachedToWindow) return
+            val waitMs = MapCameraFollowHold.remainingMs(gestureEndedAtMs, SystemClock.elapsedRealtime())
+            if (waitMs > 0L) {
+                postDelayed(this, waitMs)
+                return
+            }
+            userCameraLocked = false
+            routeCameraInitialized = true
+            updateCamera()
+            updateButtons()
+        }
+    }
     private var routeCameraInitialized = false
+    private var cameraPrimed = false
     private var viewportScaleIndex = DEFAULT_VIEWPORT_SCALE_INDEX
     private var contentRotationDegrees = 0
+    private var rotationLayoutListener: View.OnLayoutChangeListener? = null
+    private var surfaceNudgeListener: View.OnLayoutChangeListener? = null
+    private var firstSurfaceRefreshed = false
+    private var surfaceRefreshTries = 0
     private var overlayControlsVisible = false
-    private var trackAlphaPercent = 100
     private var activeAutoProvince: String? = null
     private var activeAutoProgress: Int? = null
     private val autoDownloadFailedNames = mutableSetOf<String>()
@@ -99,6 +125,7 @@ class MapRouteView @JvmOverloads constructor(
     private var gestureStartedInWholeRoute = false
     var onMapTap: (() -> Unit)? = null
     var onScaleChanged: (() -> Unit)? = null
+    var onCameraPreferenceChanged: (() -> Unit)? = null
     var onPhotoClick: ((String) -> Unit)? = null
     var onRadarClick: ((VideoTrackRadar) -> Unit)? = null
 
@@ -120,22 +147,164 @@ class MapRouteView @JvmOverloads constructor(
 
     fun setRoute(points: List<VideoTrackPoint>, elapsedMs: Long) {
         this.elapsedMs = elapsedMs.coerceAtLeast(0L)
-        val sorted = points.sortedBy { it.elapsedMs }
-        val nextKey = sorted.routeKey()
+        val sameInput = points === lastRouteInput && points.size == lastRouteInputSize
+        if (!sameInput) {
+            lastRouteInput = points
+            lastRouteInputSize = points.size
+        }
+        val sorted = if (sameInput) this.points else points.sortedBy { it.elapsedMs }
+        val nextKey = if (sameInput) routeKey else sorted.routeKey()
         if (nextKey != routeKey) {
-            this.points = sorted
-            this.summary = TrackMetrics.summary(sorted)
-            this.convertedPoints = sorted.map { it.toAmapLatLng() }
-            routeKey = nextKey
-            renderRoute()
-            fitWholeRoute = false
-            userCameraLocked = false
-            routeCameraInitialized = false
-            ensureNeededOfflineMap()
+            // 实时记录时每秒来一个点，整条线重画在高德那边太贵，还会把镜头抢回去。
+            // 只是尾巴上追加就只补新的一段，见 [appendToRoute]。
+            if (appendToRoute(sorted)) {
+                routeKey = nextKey
+            } else {
+                this.points = sorted
+                this.summary = TrackMetrics.summary(sorted)
+                this.convertedPoints = sorted.map { it.toAmapLatLng() }
+                routeKey = nextKey
+                renderRoute()
+                if (sameInput) {
+                    // 同一条实时轨迹只是第一个点迟到了（手机刚定位），接着跟随就行，
+                    // 别把用户刚拖好的镜头拽回来。
+                    routeCameraInitialized = false
+                } else {
+                    fitWholeRoute = rememberWholeRoute
+                    userCameraLocked = false
+                    routeCameraInitialized = false
+                    cameraPrimed = false
+                }
+                ensureNeededOfflineMap()
+            }
         }
         renderPlaybackState()
         updateCamera()
         updateStats()
+    }
+
+    /**
+     * 刚点「仅轨迹」时还没有点，updateCamera 会直接返回，地图就停在默认的全国视野。
+     * 拿最后一次已知位置先把镜头放到位，等第一个 GPS 点到了再交给 followCamera。
+     */
+    private fun primeCameraIfEmpty() {
+        if (convertedPoints.isNotEmpty() || cameraPrimed) return
+        val location = lastKnownLocation() ?: return
+        cameraPrimed = true
+        val target = toAmapLatLng(location.first, location.second)
+        val zoom = if (width > 0) {
+            chooseZoomForScreenWidth(
+                target.latitude,
+                width.toFloat(),
+                VIEWPORT_SCALE_METERS[viewportScaleIndex]
+            ).toFloat()
+        } else {
+            PRIME_ZOOM
+        }
+        anchorCameraCenter()
+        runCatching {
+            aMap.moveCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder().target(target).zoom(zoom).bearing(0f).tilt(0f).build()
+                )
+            )
+        }
+    }
+
+    private fun lastKnownLocation(): Pair<Double, Double>? {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        return providers.asSequence()
+            .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+            .map { it.latitude to it.longitude }
+            .firstOrNull { it.first != 0.0 || it.second != 0.0 }
+    }
+
+    /**
+     * 实时轨迹只会在尾巴上加新点。确认老数据一个没动、后面纯追加，
+     * 就只补最后那几段线：原来的线、用户的拖动缩放、10 秒不抢镜头都留着。
+     * 返回 false 时调用方走整条重画。
+     */
+    private fun appendToRoute(next: List<VideoTrackPoint>): Boolean {
+        val old = points
+        if (old.isEmpty() || next.size <= old.size) return false
+        if (next.size - old.size > ROUTE_APPEND_MAX_POINTS) return false
+        val joined = old.last()
+        if (next[0].timeMs != old[0].timeMs) return false
+        if (next[old.lastIndex].timeMs != joined.timeMs) return false
+        if (next[old.lastIndex].latitude != joined.latitude) return false
+        if (next[old.lastIndex].longitude != joined.longitude) return false
+
+        points = next
+        summary = TrackMetrics.summary(next)
+        convertedPoints = convertedPoints + next.subList(old.size, next.size).map { it.toAmapLatLng() }
+        // 第 index 段连的是点 index-1 和点 index，old.lastIndex 那段之前已经画过了。
+        for (index in old.size until next.size) {
+            val speedKmh = RouteTrackStyle.segmentSpeedKmh(next[index - 1].speedKmh, next[index].speedKmh)
+            routeSegments += aMap.addPolyline(
+                PolylineOptions()
+                    .add(convertedPoints[index - 1], convertedPoints[index])
+                    .width(routeWidthPx(RouteTrackStyle.widthScale(speedKmh)))
+                    .color(ROUTE_COLOR)
+                    .zIndex(20f)
+            )
+        }
+        val addedMaxIndex = (old.size until next.size).maxByOrNull { next[it].speedKmh } ?: -1
+        if (addedMaxIndex >= 0 && next[addedMaxIndex].speedKmh > maxSpeedMarkerSpeedKmh) {
+            maxSpeedMarker?.remove()
+            maxSpeedMarker = null
+            addMaxSpeedMarker(addedMaxIndex)
+        }
+        renderPhotoMarks()
+        renderRadarMarks()
+        // 跨省不用每个点都去查一遍，隔一段看一次就够了。
+        if (next.size % OFFLINE_REGION_PROBE_STEP == 0) ensureNeededOfflineMap()
+        return true
+    }
+
+    /**
+     * 把地图拨到这一帧再截图。高德截的是地图本身，悬浮按钮不在里面。
+     * 回调在主线程，位图是拷贝，调用方负责回收。
+     */
+    fun captureFrame(points: List<VideoTrackPoint>, elapsedMs: Long, onResult: (Bitmap?) -> Unit) {
+        var readyFired = false
+        fun ready() {
+            if (readyFired) return
+            readyFired = true
+            captureReady = null
+            captureSnapshot(onResult)
+        }
+        setRoute(points, elapsedMs)
+        captureReady = { ready() }
+        postDelayed({ ready() }, 60L)
+    }
+
+    private fun captureSnapshot(onResult: (Bitmap?) -> Unit) {
+        val delivered = AtomicBoolean(false)
+        var latest: Bitmap? = null
+        fun keep(bitmap: Bitmap?) {
+            if (bitmap == null || bitmap.isRecycled) return
+            val copy = runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return
+            val turned = turnCapturedBitmap(copy)
+            val previous = latest
+            latest = turned
+            if (previous != null && previous !== turned) previous.recycle()
+        }
+        fun finish() {
+            if (!delivered.compareAndSet(false, true)) return
+            onResult(latest)
+        }
+        aMap.getMapScreenShot(object : AMap.OnMapScreenShotListener {
+            override fun onMapScreenShot(bitmap: Bitmap?) {
+                keep(bitmap)
+            }
+
+            override fun onMapScreenShot(bitmap: Bitmap?, status: Int) {
+                keep(bitmap)
+                if (status == 1) finish()
+            }
+        })
+        postDelayed({ finish() }, 180L)
     }
 
     internal fun setPhotoMarks(marks: List<RoutePhotoMark>) {
@@ -154,12 +323,14 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     fun showWholeRoute() {
+        rememberWholeRoute = true
         setWholeRouteMode(true)
-        userCameraLocked = false
+        clearCameraFollowHold()
         routeCameraInitialized = false
         updateCamera()
         post { if (fitWholeRoute) updateCamera() }
         updateButtons()
+        notifyCameraPreference()
     }
 
     fun revealWholeRoute() {
@@ -167,17 +338,53 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     fun showCurrentViewport() {
+        rememberWholeRoute = false
         setWholeRouteMode(false)
-        userCameraLocked = false
+        clearCameraFollowHold()
         routeCameraInitialized = false
         updateCamera()
         updateButtons()
+        notifyCameraPreference()
+    }
+
+    /** 用户显式点了「当前位置」或「全程」，就不用再等那 10 秒。 */
+    private fun clearCameraFollowHold() {
+        removeCallbacks(resumeCameraFollow)
+        gestureEndedAtMs = 0L
+        userCameraLocked = false
     }
 
     fun toggleMapType() {
         currentMapType = if (currentMapType == AMap.MAP_TYPE_NORMAL) AMap.MAP_TYPE_SATELLITE else AMap.MAP_TYPE_NORMAL
         aMap.mapType = currentMapType
         updateButtons()
+        notifyCameraPreference()
+    }
+
+    fun isSatelliteMap(): Boolean = currentMapType == AMap.MAP_TYPE_SATELLITE
+
+    fun isWholeRoute(): Boolean = rememberWholeRoute
+
+    fun scaleIndex(): Int = viewportScaleIndex
+
+    fun restoreCamera(satellite: Boolean, wholeRoute: Boolean, scaleIndex: Int) {
+        suppressCameraNotify = true
+        try {
+            rememberWholeRoute = wholeRoute
+            val targetType = if (satellite) AMap.MAP_TYPE_SATELLITE else AMap.MAP_TYPE_NORMAL
+            if (currentMapType != targetType) {
+                currentMapType = targetType
+                aMap.mapType = currentMapType
+            }
+            if (wholeRoute) {
+                showWholeRoute()
+            } else {
+                setViewportScaleIndex(scaleIndex)
+            }
+            updateButtons()
+        } finally {
+            suppressCameraNotify = false
+        }
     }
 
     fun openOfflineMap() {
@@ -199,17 +406,34 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN) cancelMapGesture = false
-        val consume = consumeTouch?.invoke(ev) == true
-        if (!consume) return super.dispatchTouchEvent(ev)
-        if (!cancelMapGesture) {
-            val cancel = MotionEvent.obtain(ev)
-            cancel.action = MotionEvent.ACTION_CANCEL
-            super.dispatchTouchEvent(cancel)
-            cancel.recycle()
-            cancelMapGesture = true
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            cancelMapGesture = false
+            // 手指一碰就把待执行的恢复取消，松手后再从头计 10 秒。
+            removeCallbacks(resumeCameraFollow)
         }
-        return true
+        val consume = consumeTouch?.invoke(ev) == true
+        val handled = if (!consume) {
+            super.dispatchTouchEvent(ev)
+        } else {
+            if (!cancelMapGesture) {
+                val cancel = MotionEvent.obtain(ev)
+                cancel.action = MotionEvent.ACTION_CANCEL
+                super.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                cancelMapGesture = true
+            }
+            true
+        }
+        if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+            // 松手后 10 秒内不抢镜头：用户可能在看某一段路的细节。
+            // 到点由 resumeCameraFollow 用地图当前的缩放级别恢复居中。
+            removeCallbacks(resumeCameraFollow)
+            if (userCameraLocked) {
+                gestureEndedAtMs = SystemClock.elapsedRealtime()
+                postDelayed(resumeCameraFollow, MapCameraFollowHold.HOLD_MS + CAMERA_RESUME_AFTER_GESTURE_MS)
+            }
+        }
+        return handled
     }
 
     fun setOverlayControlsVisible(visible: Boolean) {
@@ -235,11 +459,13 @@ class MapRouteView @JvmOverloads constructor(
     fun zoomOutScale() {
         if (fitWholeRoute) return
         if (viewportScaleIndex >= VIEWPORT_SCALE_METERS.lastIndex) {
+            rememberWholeRoute = true
             setWholeRouteMode(true)
-            userCameraLocked = false
+            clearCameraFollowHold()
             routeCameraInitialized = false
             updateCamera()
             updateButtons()
+            notifyCameraPreference()
         } else {
             setViewportScaleIndex(viewportScaleIndex + 1)
         }
@@ -253,12 +479,39 @@ class MapRouteView @JvmOverloads constructor(
         return if (fitWholeRoute) "全程" else formatScaleMeters(VIEWPORT_SCALE_METERS[viewportScaleIndex])
     }
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
+    // 未调用过 onResume 前先当作未恢复，避免 onAttachedToWindow 错过一次 resume 后地图一直停在暂停状态。
+    private var hostResumed = false
+
+    fun onHostResume() {
+        if (hostResumed) return
+        hostResumed = true
         mapView.onResume()
     }
 
+    fun onHostPause() {
+        if (!hostResumed) return
+        hostResumed = false
+        mapView.onPause()
+    }
+
+    fun onHostLowMemory() {
+        mapView.onLowMemory()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (hostResumed) mapView.onResume()
+        mapView.post { updateCamera() }
+    }
+
     override fun onDetachedFromWindow() {
+        removeCallbacks(resumeCameraFollow)
+        gestureEndedAtMs = 0L
+        userCameraLocked = false
+        rotationLayoutListener?.let { mapView.removeOnLayoutChangeListener(it) }
+        rotationLayoutListener = null
+        surfaceNudgeListener?.let { mapView.removeOnLayoutChangeListener(it) }
+        surfaceNudgeListener = null
         offlineManager?.destroy()
         offlineManager = null
         mapView.onPause()
@@ -328,7 +581,7 @@ class MapRouteView @JvmOverloads constructor(
             // 点一下是去全屏，不是拖地图。手指稍微动一下也不要取消全程。
             if (gestureStartedInWholeRoute && gestureMaxMove <= touchSlop * 2) {
                 setWholeRouteMode(true)
-                userCameraLocked = false
+                clearCameraFollowHold()
             }
             onMapTap?.invoke()
         }
@@ -339,6 +592,7 @@ class MapRouteView @JvmOverloads constructor(
 
             override fun onCameraChangeFinish(position: CameraPosition?) {
                 resizeCurrentMarkers()
+                captureReady?.let { pending -> post { pending.invoke() } }
             }
         })
         aMap.setOnMarkerClickListener { marker ->
@@ -391,9 +645,9 @@ class MapRouteView @JvmOverloads constructor(
             styleOverlayButton(button)
             addView(
                 button,
-                LayoutParams(dp(76), dp(44)).apply {
+                LayoutParams(dp(56), dp(30)).apply {
                     gravity = Gravity.TOP or Gravity.END
-                    setMargins(0, dp(12 + index * 52), dp(12), 0)
+                    setMargins(0, dp(8 + index * 36), dp(8), 0)
                 }
             )
         }
@@ -410,6 +664,7 @@ class MapRouteView @JvmOverloads constructor(
         currentCircle = null
         maxSpeedMarker?.remove()
         maxSpeedMarker = null
+        maxSpeedMarkerSpeedKmh = 0f
 
         if (convertedPoints.size < 2) return
         // 必须一段一条线。收成一条长线时，高德在分区和悬浮里都不画。
@@ -419,25 +674,30 @@ class MapRouteView @JvmOverloads constructor(
                 PolylineOptions()
                     .add(convertedPoints[index - 1], convertedPoints[index])
                     .width(routeWidthPx(RouteTrackStyle.widthScale(speedKmh)))
-                    .color(routeColor())
+                    .color(ROUTE_COLOR)
                     .zIndex(20f)
             )
         }
         val maxIndex = points.indices.maxByOrNull { points[it].speedKmh } ?: -1
-        if (maxIndex >= 0 && points[maxIndex].speedKmh > 0f) {
-            val marker = aMap.addMarker(
-                MarkerOptions()
-                    .position(convertedPoints[maxIndex])
-                    .icon(maxSpeedMarkerIcon())
-                    .anchor(0.5f, 0.5f)
-                    .zIndex(42f)
-            )
-            marker?.setObject(MaxSpeedTag(points[maxIndex].speedKmh))
-            marker?.isInfoWindowEnable = false
-            maxSpeedMarker = marker
-        }
+        addMaxSpeedMarker(maxIndex)
         renderPhotoMarks()
         renderRadarMarks()
+    }
+
+    private fun addMaxSpeedMarker(index: Int) {
+        if (index < 0 || index >= points.size || index >= convertedPoints.size) return
+        if (points[index].speedKmh <= 0f) return
+        val marker = aMap.addMarker(
+            MarkerOptions()
+                .position(convertedPoints[index])
+                .icon(maxSpeedMarkerIcon())
+                .anchor(0.5f, 0.5f)
+                .zIndex(42f)
+        ) ?: return
+        marker.setObject(MaxSpeedTag(points[index].speedKmh))
+        marker.isInfoWindowEnable = false
+        maxSpeedMarker = marker
+        maxSpeedMarkerSpeedKmh = points[index].speedKmh
     }
 
     private fun maxSpeedMarkerIcon(): BitmapDescriptor {
@@ -631,10 +891,16 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     private fun updateCamera() {
-        if (convertedPoints.isEmpty() || width == 0 || height == 0) return
+        if (width == 0 || height == 0) return
+        if (convertedPoints.isEmpty()) {
+            // 还没开始画线，但地图已经露出来了，先把镜头放到当前位置。
+            primeCameraIfEmpty()
+            return
+        }
         if (fitWholeRoute && convertedPoints.size > 1) {
-            // 悬浮窗刚改大小时，地图控件还是旧尺寸。等它排完再框，否则路线会落到窗口外面。
-            if (!mapViewMatchesVisibleSize()) {
+            // 只有视野框还没摆对才重新框全程。实时轨迹每秒一个新点，
+            // 每次都重框的话镜头会一直往外拉，用户根本看不了一段路的细节。
+            if (!mapViewMatchesVisibleSize() && !routeCameraInitialized) {
                 if (!wholeRouteAwaitingLayout) {
                     wholeRouteAwaitingLayout = true
                     mapView.post {
@@ -655,39 +921,134 @@ class MapRouteView @JvmOverloads constructor(
             routeCameraInitialized = true
         } else if (userCameraLocked) {
             return
-        } else if (routeCameraInitialized) {
-            val current = VideoTrackSync.pointAt(points, elapsedMs)?.toAmapLatLng() ?: convertedPoints.first()
-            aMap.moveCamera(CameraUpdateFactory.changeLatLng(current))
         } else {
-            val current = VideoTrackSync.pointAt(points, elapsedMs)?.toAmapLatLng() ?: convertedPoints.first()
-            aMap.moveCamera(
-                CameraUpdateFactory.newLatLngZoom(
-                    current,
-                    chooseZoomForScreenWidth(
-                        current.latitude,
-                        width.toFloat(),
-                        VIEWPORT_SCALE_METERS[viewportScaleIndex]
-                    ).toFloat()
-                )
-            )
-            routeCameraInitialized = true
+            followCamera()
         }
         notifyScaleChanged()
+    }
+
+    private fun followCamera() {
+        val current = VideoTrackSync.pointAt(points, elapsedMs)?.toAmapLatLng() ?: convertedPoints.first()
+        val zoom = if (routeCameraInitialized) {
+            aMap.cameraPosition?.zoom?.takeIf { it > 1f }
+        } else {
+            null
+        } ?: chooseZoomForScreenWidth(
+            current.latitude,
+            width.toFloat().coerceAtLeast(1f),
+            VIEWPORT_SCALE_METERS[viewportScaleIndex]
+        ).toFloat()
+        anchorCameraCenter()
+        aMap.moveCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder()
+                    .target(current)
+                    .zoom(zoom)
+                    .bearing(0f)
+                    .tilt(0f)
+                    .build()
+            )
+        )
+        routeCameraInitialized = true
+    }
+
+    private fun anchorCameraCenter() {
+        if (mapView.width > 2 && mapView.height > 2) {
+            aMap.setPointToCenter(mapView.width / 2, mapView.height / 2)
+        }
+    }
+
+    private fun turnCapturedBitmap(bitmap: Bitmap): Bitmap {
+        val turns = VideoReplayRotation.normalize(contentRotationDegrees)
+        if (turns == 0) return bitmap
+        val matrix = Matrix().apply { postRotate(turns.toFloat()) }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated !== bitmap) bitmap.recycle()
+        return rotated
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         applyContentRotation()
+        if (oldw == 0 && oldh == 0 && w > 0 && h > 0) {
+            // 播放页第一次进来时卡片高度是 0，高德按这个空尺寸建了绘制区。
+            // 之后拉到真实大小也不会铺满，半边是白的；再改一次尺寸才会好。这里主动重建一次。
+            refreshMapSurfaceAfterFirstLayout()
+        }
         if (fitWholeRoute && w > 0 && h > 0 && (w != oldw || h != oldh)) {
             mapView.post { if (fitWholeRoute) updateCamera() }
+        } else if (!fitWholeRoute && convertedPoints.isEmpty() && w > 0 && h > 0) {
+            // 实时轨迹页刚露出来时还没有点，先按当前位置把镜头放好。
+            mapView.post { if (convertedPoints.isEmpty()) primeCameraIfEmpty() }
+        }
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        val (targetWidth, targetHeight) = MapRotationAnchor.targetSize(width, height, contentRotationDegrees)
+        if (MapRotationAnchor.readyToAnchor(mapView.width, mapView.height, targetWidth, targetHeight)) {
+            mapView.pivotX = targetWidth / 2f
+            mapView.pivotY = targetHeight / 2f
         }
     }
 
     private fun mapViewMatchesVisibleSize(): Boolean {
-        val quarter = VideoReplayRotation.isQuarterTurn(contentRotationDegrees)
-        val expectWidth = if (quarter) height else width
-        val expectHeight = if (quarter) width else height
-        return expectWidth > 2 && expectHeight > 2 && mapView.width == expectWidth && mapView.height == expectHeight
+        val (expectWidth, expectHeight) = MapRotationAnchor.targetSize(width, height, contentRotationDegrees)
+        return MapRotationAnchor.readyToAnchor(mapView.width, mapView.height, expectWidth, expectHeight)
+    }
+
+    private fun refreshMapSurfaceAfterFirstLayout() {
+        if (firstSurfaceRefreshed || surfaceRefreshTries >= 8) return
+        surfaceRefreshTries += 1
+        mapView.post {
+            if (!isAttachedToWindow || firstSurfaceRefreshed) return@post
+            val (targetWidth, targetHeight) = MapRotationAnchor.targetSize(width, height, contentRotationDegrees)
+            if (!MapRotationAnchor.readyToAnchor(mapView.width, mapView.height, targetWidth, targetHeight)) {
+                refreshMapSurfaceAfterFirstLayout()
+                return@post
+            }
+            firstSurfaceRefreshed = true
+            // 宽高实际变过一次，高德才会按新尺寸重建绘制区。只改回原尺寸，中间那一帧必须先排完。
+            val nudgedHeight = (targetHeight - 1).coerceAtLeast(1)
+            surfaceNudgeListener?.let { mapView.removeOnLayoutChangeListener(it) }
+            val listener = object : View.OnLayoutChangeListener {
+                var sawShort = false
+                override fun onLayoutChange(
+                    v: View,
+                    left: Int,
+                    top: Int,
+                    right: Int,
+                    bottom: Int,
+                    oldLeft: Int,
+                    oldTop: Int,
+                    oldRight: Int,
+                    oldBottom: Int
+                ) {
+                    if (!sawShort && v.width == targetWidth && v.height == nudgedHeight) {
+                        sawShort = true
+                        v.layoutParams = LayoutParams(targetWidth, targetHeight, Gravity.CENTER)
+                        return
+                    }
+                    if (sawShort && v.width == targetWidth && v.height == targetHeight) {
+                        v.removeOnLayoutChangeListener(this)
+                        if (surfaceNudgeListener === this) surfaceNudgeListener = null
+                        anchorMapRotation(targetWidth, targetHeight)
+                    }
+                }
+            }
+            surfaceNudgeListener = listener
+            mapView.addOnLayoutChangeListener(listener)
+            mapView.layoutParams = LayoutParams(targetWidth, nudgedHeight, Gravity.CENTER)
+        }
+    }
+
+    private fun anchorMapRotation(targetWidth: Int, targetHeight: Int) {
+        if (!MapRotationAnchor.readyToAnchor(mapView.width, mapView.height, targetWidth, targetHeight)) return
+        mapView.pivotX = targetWidth / 2f
+        mapView.pivotY = targetHeight / 2f
+        mapView.rotation = contentRotationDegrees.toFloat()
+        anchorCameraCenter()
+        if (!userCameraLocked && convertedPoints.isNotEmpty()) updateCamera()
     }
 
     private fun moveWholeRouteCamera() {
@@ -695,6 +1056,7 @@ class MapRouteView @JvmOverloads constructor(
         convertedPoints.forEach { builder.include(it) }
         val room = minOf(mapView.width, mapView.height) / 4
         val padding = if (room <= 0) 0 else dp(18).coerceAtMost(room)
+        anchorCameraCenter()
         runCatching {
             aMap.moveCamera(
                 CameraUpdateFactory.newLatLngBounds(
@@ -709,16 +1071,26 @@ class MapRouteView @JvmOverloads constructor(
 
     private fun applyContentRotation() {
         if (width <= 0 || height <= 0) return
-        val quarter = VideoReplayRotation.isQuarterTurn(contentRotationDegrees)
-        val viewWidth = if (quarter) height else width
-        val viewHeight = if (quarter) width else height
+        val (viewWidth, viewHeight) = MapRotationAnchor.targetSize(width, height, contentRotationDegrees)
         val params = mapView.layoutParams
         if (params.width != viewWidth || params.height != viewHeight) {
             mapView.layoutParams = LayoutParams(viewWidth, viewHeight, Gravity.CENTER)
         }
-        mapView.pivotX = viewWidth / 2f
-        mapView.pivotY = viewHeight / 2f
         mapView.rotation = contentRotationDegrees.toFloat()
+        rotationLayoutListener?.let { mapView.removeOnLayoutChangeListener(it) }
+        if (MapRotationAnchor.readyToAnchor(mapView.width, mapView.height, viewWidth, viewHeight)) {
+            rotationLayoutListener = null
+            anchorMapRotation(viewWidth, viewHeight)
+            return
+        }
+        val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (!MapRotationAnchor.readyToAnchor(mapView.width, mapView.height, viewWidth, viewHeight)) return@OnLayoutChangeListener
+            rotationLayoutListener?.let { mapView.removeOnLayoutChangeListener(it) }
+            rotationLayoutListener = null
+            anchorMapRotation(viewWidth, viewHeight)
+        }
+        rotationLayoutListener = listener
+        mapView.addOnLayoutChangeListener(listener)
     }
 
     private fun updateStats(extraLine: String? = null) {
@@ -726,12 +1098,9 @@ class MapRouteView @JvmOverloads constructor(
             statsView.text = "高德官方地图"
             return
         }
-        val current = VideoTrackSync.pointAt(points, elapsedMs)
         val currentDistance = TrackMetrics.distanceAt(points, elapsedMs)
         val mapLine = extraLine ?: mapStatusLine()
         statsView.text = listOfNotNull(
-            current?.let { formatTime(it.timeMs) } ?: "时间 --",
-            String.format(Locale.US, "%.1f km/h", current?.speedKmh ?: 0f),
             "里程 ${TrackMetrics.formatDistance(currentDistance)} / ${TrackMetrics.formatDistance(summary.totalDistanceMeters)}",
             mapLine.takeIf { it.isNotBlank() }
         ).joinToString("\n")
@@ -773,7 +1142,7 @@ class MapRouteView @JvmOverloads constructor(
 
     private fun styleOverlayButton(button: Button) {
         button.setTextColor(Color.WHITE)
-        button.textSize = 12f
+        button.textSize = 10f
         button.typeface = android.graphics.Typeface.DEFAULT_BOLD
         button.background = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.map_button_translucent_bg)
         button.minWidth = 0
@@ -792,15 +1161,24 @@ class MapRouteView @JvmOverloads constructor(
             return
         }
         viewportScaleIndex = nextIndex
+        rememberWholeRoute = false
         setWholeRouteMode(false)
-        userCameraLocked = false
+        clearCameraFollowHold()
         routeCameraInitialized = false
         updateCamera()
         updateButtons()
+        notifyCameraPreference()
     }
 
     private fun notifyScaleChanged() {
         onScaleChanged?.invoke()
+    }
+
+    private var suppressCameraNotify = false
+
+    private fun notifyCameraPreference() {
+        if (suppressCameraNotify) return
+        onCameraPreferenceChanged?.invoke()
     }
 
     private fun currentMarkerRadius(): Double = screenRadiusMeters(currentDotDp())
@@ -965,22 +1343,17 @@ class MapRouteView @JvmOverloads constructor(
     }
 
     private data class PlayedRun(val scale: Float, val points: MutableList<LatLng>)
-
-    fun setTrackAlphaPercent(percent: Int) {
-        trackAlphaPercent = percent.coerceIn(0, 100)
-        val route = routeColor()
-        val played = playedColor()
-        routeSegments.forEach { it.color = route }
-        playedPolylines.forEach { it.color = played }
-    }
-
-    private fun routeColor(): Int = RouteTrackStyle.withAlpha(ROUTE_COLOR, trackAlphaPercent)
-
-    private fun playedColor(): Int = RouteTrackStyle.withAlpha(Color.WHITE, trackAlphaPercent)
+    private var lastPlayedIndex = -1
+    private var lastPlayedLatLng: LatLng? = null
 
     private fun routeWidthPx(scale: Float): Float = dp(ROUTE_BASE_WIDTH_DP).toFloat() * scale
 
     private fun renderPlayedRoute(playedIndex: Int, currentLatLng: LatLng) {
+        if (playedIndex == lastPlayedIndex && currentLatLng == lastPlayedLatLng && playedPolylines.isNotEmpty()) {
+            return
+        }
+        lastPlayedIndex = playedIndex
+        lastPlayedLatLng = currentLatLng
         val runs = buildPlayedRuns(playedIndex, currentLatLng)
         val scales = runs.map { it.scale }
         if (scales == playedRunScales && playedPolylines.size == runs.size) {
@@ -993,7 +1366,7 @@ class MapRouteView @JvmOverloads constructor(
                 PolylineOptions()
                     .addAll(run.points)
                     .width(routeWidthPx(RouteTrackStyle.playedWidthScale(run.scale)))
-                    .color(playedColor())
+                    .color(Color.WHITE)
                     .zIndex(30f)
             ) ?: return@forEach
             playedPolylines += line
@@ -1034,13 +1407,11 @@ class MapRouteView @JvmOverloads constructor(
         playedPolylines.forEach { it.remove() }
         playedPolylines.clear()
         playedRunScales = emptyList()
+        lastPlayedIndex = -1
+        lastPlayedLatLng = null
     }
 
     private fun compactAmapName(name: String): String = AmapOfflineMapStore.compactName(name)
-
-    private fun formatTime(timeMs: Long): String {
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(Date(timeMs))
-    }
 
     private fun chooseZoomForScreenWidth(latitude: Double, width: Float, targetScreenWidthMeters: Double): Int {
         val targetMetersPerPixel = targetScreenWidthMeters / width.coerceAtLeast(1f)
@@ -1084,6 +1455,14 @@ class MapRouteView @JvmOverloads constructor(
             100000.0
         )
         private const val DEFAULT_VIEWPORT_SCALE_INDEX = 6
+        /** 还没量出宽高时先用的缩放级别，大概城区尺度。 */
+        private const val PRIME_ZOOM = 16f
+        /** 让高德把最后一次缩放/惯性动画走完，再恢复自动居中。 */
+        private const val CAMERA_RESUME_AFTER_GESTURE_MS = 150L
+        /** 实时轨迹一次最多追补这么多个点；再多说明不是边走边画，整条重画更稳。 */
+        private const val ROUTE_APPEND_MAX_POINTS = 60
+        /** 实时轨迹隔这么多点查一次离线包省份，免得每秒都算一遍平均经纬度。 */
+        private const val OFFLINE_REGION_PROBE_STEP = 60
         private const val CURRENT_DOT_RADIUS_DP = 2f
         private const val CURRENT_PULSE_MIN_DP = 8f / 3f
         private const val CURRENT_PULSE_MAX_DP = 16f / 3f

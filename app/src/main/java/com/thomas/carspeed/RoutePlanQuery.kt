@@ -55,7 +55,11 @@ internal class RoutePlanQuery(context: Context) {
         val id = ++requestId
         this.onSuccess = onSuccess
         this.onError = onError
-        val navi = runCatching { AMapNavi.getInstance(appContext) }.getOrNull()
+        val navi = if (PrivacyConsent.isAgreed(appContext)) {
+            runCatching { AMapNavi.getInstance(appContext) }.getOrNull()
+        } else {
+            null
+        }
         if (navi == null) {
             deliverError(id, RoutePlanError.FAILED)
             return

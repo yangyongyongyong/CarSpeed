@@ -12,10 +12,27 @@ class PcmDownsamplerTest {
     }
 
     @Test
-    fun halves_the_rate_and_keeps_phase_across_buffers() {
+    fun halves_the_rate_by_averaging_and_keeps_phase_across_buffers() {
         val downsampler = PcmDownsampler()
-        assertEquals(listOf(1.toShort(), 3.toShort()), downsampler.accept(pcm16le(1, 2, 3, 4), 8, 2, 1).toList())
-        assertEquals(listOf(5.toShort(), 7.toShort()), downsampler.accept(pcm16le(5, 6, 7, 8), 8, 2, 1).toList())
+        assertEquals(listOf(2.toShort(), 4.toShort()), downsampler.accept(pcm16le(10, -6, 3, 5), 8, 2, 1).toList())
+        assertEquals(listOf(6.toShort(), 8.toShort()), downsampler.accept(pcm16le(5, 7, 7, 9), 8, 2, 1).toList())
+    }
+
+    @Test
+    fun averaging_window_spans_buffer_boundary() {
+        val downsampler = PcmDownsampler()
+        // 3:1，第一个窗口跨两块：(3 + 6 + 9) / 3 = 6
+        assertEquals(emptyList<Short>(), downsampler.accept(pcm16le(3, 6), 4, 3, 1).toList())
+        assertEquals(listOf(6.toShort()), downsampler.accept(pcm16le(9), 2, 3, 1).toList())
+    }
+
+    @Test
+    fun alternating_signal_above_nyquist_is_filtered_out() {
+        val samples = IntArray(4_800) { if (it % 2 == 0) 10_000 else -10_000 }
+        val out = PcmDownsampler().accept(pcm16le(*samples), samples.size * 2, 48_000, 16_000)
+        assertEquals(1_600, out.size)
+        // 3:1 平均后 ±10000 的交替信号只剩 ±3333，而不是原样混叠成 ±10000。
+        assertEquals(true, out.all { kotlin.math.abs(it.toInt()) <= 3_334 })
     }
 
     @Test

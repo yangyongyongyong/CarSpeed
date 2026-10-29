@@ -409,6 +409,32 @@ class SpeedRulesTest {
         assertFalse(result.isEstimated)
     }
 
+    @Test
+    fun tunnel_estimate_never_grows_from_unsigned_accel_magnitude() {
+        var state = SpeedRules.SpeedFilterState(
+            currentSpeedMps = 15f,
+            lastNonZeroSpeedMps = 15f,
+            lastNonZeroTimeMs = 9_000L,
+            lastTrustedSpeedMps = 15f,
+            lastTrustedTimeMs = 9_000L,
+            lastTrustedGpsSpeedMps = 15f,
+            lastTrustedGpsTimeMs = 9_000L,
+            lastEstimateTimeMs = 9_000L
+        )
+        var previous = 15f
+        repeat(10) { idx ->
+            val result = SpeedRules.estimateTunnelSpeed(
+                old = state,
+                nowMs = 10_000L + idx * 1_000L,
+                linearAccelMps2 = 2.5f,
+                gpsSignalLost = true
+            )
+            assertTrue(result.finalSpeedMps <= previous)
+            previous = result.finalSpeedMps
+            state = result.nextFilterState
+        }
+    }
+
     private fun lockStationary(): SpeedRules.SpeedFilterState {
         var state = SpeedRules.SpeedFilterState()
         repeat(2) { idx ->

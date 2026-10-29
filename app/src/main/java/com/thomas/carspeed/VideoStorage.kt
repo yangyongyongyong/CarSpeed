@@ -19,6 +19,7 @@ object VideoStorage {
     private const val TRIP_PREFIX = "carspeed-trip-"
     private const val TRIP_FOLDER_PREFIX = "行车 "
     const val MIN_FREE_BYTES = 1_000L * 1024L * 1024L
+    private const val MAX_SEGMENT_SLICE_MS = 11L * 60L * 1000L
     private val AUTO_VIDEO_NAME = Regex("carspeed-\\d{8}-\\d{6}")
     private val VIDEO_STAMP = Regex("carspeed-(\\d{8})-(\\d{6})")
     private val consolidateLock = Any()
@@ -177,12 +178,17 @@ object VideoStorage {
             val resolver = context.contentResolver
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("Cannot create photo media item")
-            resolver.openOutputStream(uri)?.use { output ->
-                sourceFile.inputStream().use { input -> input.copyTo(output) }
-            } ?: throw IllegalStateException("Cannot open photo media item")
-            values.clear()
-            values.put(MediaStore.Images.Media.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
+            try {
+                resolver.openOutputStream(uri)?.use { output ->
+                    sourceFile.inputStream().use { input -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Cannot open photo media item")
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } catch (error: Exception) {
+                runCatching { resolver.delete(uri, null, null) }
+                throw error
+            }
         } else {
             sourceFile.copyTo(targetFile, overwrite = true)
         }
@@ -228,12 +234,18 @@ object VideoStorage {
             val resolver = context.contentResolver
             val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("Cannot create share video media item")
-            resolver.openOutputStream(uri)?.use { output ->
-                sourceFile.inputStream().use { input -> input.copyTo(output) }
-            } ?: throw IllegalStateException("Cannot open share video media item")
-            values.clear()
-            values.put(MediaStore.Video.Media.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
+            try {
+                resolver.openOutputStream(uri)?.use { output ->
+                    sourceFile.inputStream().use { input -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Cannot open share video media item")
+                values.clear()
+                values.put(MediaStore.Video.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } catch (error: Exception) {
+                // 复制失败时删掉这条还在 IS_PENDING 的记录，免得相册里留下打不开的空条目。
+                runCatching { resolver.delete(uri, null, null) }
+                throw error
+            }
         } else {
             targetFile.parentFile?.mkdirs()
             sourceFile.copyTo(targetFile, overwrite = true)
@@ -304,12 +316,100 @@ object VideoStorage {
         return videoDirs(context).flatMap { videoFiles(it) }.distinctBy { it.absolutePath }
     }
 
+    fun recordingStartTimeMs(file: File): Long? {
+        val match = VIDEO_STAMP.find(file.name) ?: return null
+        return parseCompactDateTime(match.groupValues[1], match.groupValues[2])
+    }
+
     fun recordingDurationMs(file: File): Long {
-        val match = VIDEO_STAMP.find(file.name) ?: return 0L
-        val startMs = parseCompactDateTime(match.groupValues[1], match.groupValues[2]) ?: return 0L
+        val startMs = recordingStartTimeMs(file) ?: return 0L
         val endMs = file.lastModified()
         if (endMs <= 0L) return 0L
         return (endMs - startMs).coerceAtLeast(0L)
+    }
+
+    fun tripDurationMs(
+        segments: List<File>,
+        mediaStoreDurations: Map<String, Long> = emptyMap(),
+        trackDurationMs: Long? = null
+    ): Long {
+        if (segments.isEmpty()) return trackDurationMs?.coerceAtLeast(0L) ?: 0L
+        if (segments.size == 1) {
+            val single = segments.first()
+            mediaStoreDurations[single.absolutePath]?.takeIf { it > 0L }?.let { return it }
+            val raw = recordingDurationMs(single)
+            if (trackDurationMs != null && trackDurationMs > 0L && (raw <= 0L || raw > MAX_SEGMENT_SLICE_MS)) {
+                return trackDurationMs
+            }
+            return raw.takeIf { it > 0L } ?: (trackDurationMs?.coerceAtLeast(0L) ?: 0L)
+        }
+        var total = 0L
+        var hadClobberedMtimeWithoutMediaStore = false
+        for (index in segments.indices) {
+            val file = segments[index]
+            val fromStore = mediaStoreDurations[file.absolutePath]?.takeIf { it > 0L }
+            if (fromStore != null) {
+                total += fromStore
+                continue
+            }
+            val start = recordingStartTimeMs(file)
+            val raw = recordingDurationMs(file)
+            val slice = if (index < segments.lastIndex) {
+                val nextStart = recordingStartTimeMs(segments[index + 1])
+                val gap = if (start != null && nextStart != null && nextStart > start) nextStart - start else 0L
+                if (gap > 0L && (raw <= 0L || raw > gap + 5_000L || raw > MAX_SEGMENT_SLICE_MS)) {
+                    hadClobberedMtimeWithoutMediaStore = true
+                    gap.coerceAtMost(MAX_SEGMENT_SLICE_MS)
+                } else {
+                    raw.coerceAtMost(MAX_SEGMENT_SLICE_MS)
+                }
+            } else {
+                if (raw in 1L..MAX_SEGMENT_SLICE_MS) {
+                    raw
+                } else {
+                    hadClobberedMtimeWithoutMediaStore = true
+                    val prevStart = recordingStartTimeMs(segments[index - 1])
+                    if (start != null && prevStart != null && start > prevStart) {
+                        (start - prevStart).coerceAtMost(MAX_SEGMENT_SLICE_MS)
+                    } else {
+                        0L
+                    }
+                }
+            }
+            total += slice.coerceAtLeast(0L)
+        }
+        if (hadClobberedMtimeWithoutMediaStore && trackDurationMs != null && trackDurationMs > 0L) {
+            return trackDurationMs
+        }
+        return total.takeIf { it > 0L } ?: (trackDurationMs?.coerceAtLeast(0L) ?: 0L)
+    }
+
+    fun mediaStoreVideoDurations(context: Context): Map<String, Long> {
+        return runCatching {
+            val map = HashMap<String, Long>()
+            val projection = arrayOf(
+                MediaStore.MediaColumns.DATA,
+                MediaStore.Video.Media.DURATION
+            )
+            context.contentResolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                "${MediaStore.Video.Media.DURATION} > 0",
+                null,
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val durCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
+                if (dataCol >= 0 && durCol >= 0) {
+                    while (cursor.moveToNext()) {
+                        val path = cursor.getString(dataCol) ?: continue
+                        val duration = cursor.getLong(durCol)
+                        if (duration > 0L) map[path] = duration
+                    }
+                }
+            }
+            map
+        }.getOrDefault(emptyMap())
     }
 
     fun latestVideoFile(context: Context): File? {
@@ -724,7 +824,13 @@ object VideoStorage {
         return isAppVideoFile(file) && AUTO_VIDEO_NAME.matches(gallerySegmentBase(file.nameWithoutExtension))
     }
 
-    fun cleanupLoopStorage(context: Context, limitGb: Int, requiredFreeBytes: Long = 0L): Boolean {
+    /** [protectedFiles] 是正在写入的分段及字幕：它们永远不删，所在行程只按分段从旧到新清理。 */
+    fun cleanupLoopStorage(
+        context: Context,
+        limitGb: Int,
+        requiredFreeBytes: Long = 0L,
+        protectedFiles: Collection<File> = emptyList()
+    ): Boolean {
         val dir = videoDir(context)
         val dirs = videoDirs(context)
         val limitBytes = limitGb.coerceIn(
@@ -735,7 +841,8 @@ object VideoStorage {
             files = dirs.flatMap { managedVideoFiles(context, it) }.distinctBy { it.absolutePath },
             limitBytes = limitBytes,
             usableSpaceBytes = dir.usableSpace,
-            requiredFreeBytes = requiredFreeBytes
+            requiredFreeBytes = requiredFreeBytes,
+            protectedFiles = protectedFiles
         )
         plan.filesToDelete.filter { isAppVideoFile(it) }.forEach { deleteVideoGroup(context, it) }
         plan.filesToDelete.filterNot { isAppVideoFile(it) }.forEach { deleteIfExists(it) }
@@ -748,37 +855,53 @@ object VideoStorage {
         limitBytes: Long,
         usableSpaceBytes: Long,
         requiredFreeBytes: Long,
-        minFreeBytes: Long = MIN_FREE_BYTES
+        minFreeBytes: Long = MIN_FREE_BYTES,
+        protectedFiles: Collection<File> = emptyList()
     ): CleanupPlan {
-        val remaining = files.toMutableList()
+        val protectedPaths = protectedFiles.map { it.absolutePath }.toSet()
+        val protectedKeys = protectedFiles.map { cleanupGroupKey(it) }.toSet()
+        val entries = files.map { file -> CleanupEntry(file, cleanupGroupKey(file), file.length(), file.lastModified()) }
+        // 正在录的行程不能整组删：只按分段从最旧的删起，正在写的那一段永远保留。
+        val groups = entries
+            .filterNot { it.file.absolutePath in protectedPaths }
+            .groupBy { entry ->
+                if (entry.groupKey in protectedKeys) {
+                    SEGMENT_GROUP_PREFIX + File(entry.file.parentFile, companionBaseName(entry.file)).absolutePath
+                } else {
+                    entry.groupKey
+                }
+            }
+            .values
+            .sortedBy { group -> group.minOf { it.lastModified } }
         val deleted = mutableListOf<File>()
         var projectedFreeBytes = usableSpaceBytes
+        var managedBytes = entries.sumOf { it.sizeBytes }
         val targetFreeBytes = minFreeBytes + requiredFreeBytes.coerceAtLeast(0L)
 
-        fun totalBytes(): Long = remaining.sumOf { it.length() }
-        fun deleteOldest(): Boolean {
-            val oldest = remaining.minByOrNull { it.lastModified() } ?: return false
-            val groupKey = cleanupGroupKey(oldest)
-            val companions = remaining.filter { cleanupGroupKey(it) == groupKey }
-            companions.forEach { file ->
-                projectedFreeBytes += file.length()
-                deleted += file
-                remaining.remove(file)
-            }
-            return true
-        }
-
-        while (remaining.isNotEmpty() && (totalBytes() > limitBytes || projectedFreeBytes < targetFreeBytes)) {
-            if (!deleteOldest()) break
+        for (group in groups) {
+            if (managedBytes <= limitBytes && projectedFreeBytes >= targetFreeBytes) break
+            val groupBytes = group.sumOf { it.sizeBytes }
+            group.forEach { deleted += it.file }
+            projectedFreeBytes += groupBytes
+            managedBytes -= groupBytes
         }
 
         return CleanupPlan(
             filesToDelete = deleted,
             hasEnoughSpaceAfterCleanup = projectedFreeBytes >= targetFreeBytes,
             projectedFreeBytes = projectedFreeBytes,
-            projectedManagedBytes = totalBytes()
+            projectedManagedBytes = managedBytes
         )
     }
+
+    private const val SEGMENT_GROUP_PREFIX = "segment:"
+
+    private class CleanupEntry(
+        val file: File,
+        val groupKey: String,
+        val sizeBytes: Long,
+        val lastModified: Long
+    )
 
     fun estimateSegmentBytes(mode: VideoMode, durationMs: Long): Long {
         val seconds = (durationMs / 1000L).coerceAtLeast(1L)
@@ -809,10 +932,11 @@ object VideoStorage {
     }
 
     fun managedVideoFiles(context: Context, dir: File): List<File> {
+        val tripProtectedCache = HashMap<String, Boolean>()
         return dir.walkTopDown()
             .filter { file ->
                 file.isFile &&
-                    isAutoGeneratedCompanionFile(context, file) &&
+                    isAutoGeneratedCompanionFile(context, file, tripProtectedCache) &&
                     (
                         file.extension.equals("mp4", ignoreCase = true) ||
                             file.extension.equals("srt", ignoreCase = true) ||
@@ -939,12 +1063,19 @@ object VideoStorage {
         return AUTO_VIDEO_NAME.matches(gallerySegmentBase(baseName)) && !favorite.exists() && !isTripProtected(file)
     }
 
-    private fun isAutoGeneratedCompanionFile(context: Context, file: File): Boolean {
+    private fun isAutoGeneratedCompanionFile(
+        context: Context,
+        file: File,
+        tripProtectedCache: MutableMap<String, Boolean>
+    ): Boolean {
         val baseName = companionBaseName(file)
+        if (!AUTO_VIDEO_NAME.matches(gallerySegmentBase(baseName))) return false
         val videoFile = File(file.parentFile, "$baseName.mp4")
-        return AUTO_VIDEO_NAME.matches(gallerySegmentBase(baseName)) &&
-            !favoriteFilesFor(context, videoFile).any { it.exists() } &&
-            !isTripProtected(context, file)
+        if (favoriteFilesFor(context, videoFile).any { it.exists() }) return false
+        // 同一文件夹、同一行程的收藏标记只查一次，避免每个文件都去探测几十个旧目录。
+        val cacheKey = "${file.parentFile?.absolutePath}|${galleryTripToken(file.name)}"
+        val tripProtected = tripProtectedCache.getOrPut(cacheKey) { isTripProtected(context, file) }
+        return !tripProtected
     }
 
     private fun isTripProtected(context: Context, file: File): Boolean {

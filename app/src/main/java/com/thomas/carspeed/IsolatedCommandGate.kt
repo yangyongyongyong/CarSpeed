@@ -191,6 +191,23 @@ internal class IsolatedCommandGate(
 
 internal data class TimedWord(val word: String, val startMs: Long, val endMs: Long)
 
+internal class VoiceCommandCooldown(
+    private val cooldownMs: Long = 3_000L
+) {
+    private var lastCommand: VoiceCommand? = null
+    private var lastAtMs: Long = 0L
+
+    fun tryAcquire(command: VoiceCommand, nowMs: Long): Boolean {
+        val prior = lastCommand
+        if (prior == command && lastAtMs > 0L && nowMs - lastAtMs <= cooldownMs) {
+            return false
+        }
+        lastCommand = command
+        lastAtMs = nowMs
+        return true
+    }
+}
+
 internal object VoiceCommandWords {
     fun parse(hypothesis: String?): List<TimedWord> {
         if (hypothesis.isNullOrBlank()) return emptyList()

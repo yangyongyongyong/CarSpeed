@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -44,6 +45,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.sqrt
+import org.json.JSONObject
 
 class OverlayService : Service(), SensorEventListener, LocationListener {
 
@@ -80,17 +82,11 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     private var rowSpeedCards: LinearLayout? = null
 
     private lateinit var sensorManager: SensorManager
-    private var accelerometer: Sensor? = null
-    private var magnetometer: Sensor? = null
     private var linearAccelerometer: Sensor? = null
 
     private var locationManager: LocationManager? = null
 
-    private val gravityValues = FloatArray(3)
-    private val geomagneticValues = FloatArray(3)
-
     private var accelDisplayMps2 = 0f
-    private var headingDegrees: Float? = null
     private var speedMps = 0f
     private var speedFilterState = SpeedRules.SpeedFilterState()
     private var reacquireWarmupRemaining = 0
@@ -124,6 +120,30 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     private var maxSpeedAccuracyMeters: Float? = null
     private var lastRoutePointLocation: Location? = null
     private var lastRoutePointTimeMs: Long = 0L
+    private var routePointIntervalMs = ROUTE_POINT_INTERVAL_MS
+    private var routePointDistanceMeters = ROUTE_POINT_DISTANCE_METERS
+    private var lastSpeedHistoryAtMs = 0L
+    private var lastCheckpointAtMs = 0L
+
+    private var displayUnit = SpeedDisplay.UNIT_KMH
+    private var warningThresholdKmh = SpeedDisplay.DEFAULT_WARNING_KMH
+    private var trendYMaxKmh = 300f
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val refreshTicker = object : Runnable {
+        override fun run() {
+            refreshOverlay()
+            maybeSaveCheckpoint()
+            uiHandler.postDelayed(this, REFRESH_TICK_MS)
+        }
+    }
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == MainActivity.PREF_SPEED_UNIT ||
+            key == MainActivity.PREF_SPEED_WARNING_KMH ||
+            key == MainActivity.PREF_Y_AXIS_MAX_KMH
+        ) {
+            loadDisplayPrefs()
+        }
+    }
 
     private val maxSpeedTimeFormatter = SimpleDateFormat("yyyyMMdd HH:mm:ss", Locale.getDefault())
     private var transparentTextMode = false
@@ -133,6 +153,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
     override fun onCreate() {
         super.onCreate()
+        isAlive = true
         OverlayController.setRunning(this, true)
         CarSpeedWidgetProvider.updateAll(this)
         CarSpeedTileService.requestListeningState(this)
@@ -140,17 +161,33 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         linearAccelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
 
+        // 上次进程被杀时没来得及保存的行程，先存成一条驾驶记录。
+        DriveCheckpointStore.recoverAsRecordAsync(this, DriveCheckpointStore.OVERLAY_TRIP)
+
+        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        loadDisplayPrefs()
+
         createOverlay()
         registerSensors()
         requestLocationUpdates()
         registerGnssStatusUpdates()
+        uiHandler.postDelayed(refreshTicker, REFRESH_TICK_MS)
+    }
+
+    private fun loadDisplayPrefs() {
+        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
+        displayUnit = SpeedDisplay.normalizeUnit(prefs.getString(MainActivity.PREF_SPEED_UNIT, SpeedDisplay.UNIT_KMH))
+        warningThresholdKmh = prefs.getInt(
+            MainActivity.PREF_SPEED_WARNING_KMH,
+            SpeedDisplay.DEFAULT_WARNING_KMH
+        ).coerceIn(30, 240)
+        trendYMaxKmh = prefs.getInt(MainActivity.PREF_Y_AXIS_MAX_KMH, 300).coerceIn(30, 2000).toFloat()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -162,6 +199,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             }
 
             ACTION_UPDATE_STYLE -> {
+                loadDisplayPrefs()
                 applyOverlayStyle()
                 refreshOverlay()
                 return START_STICKY
@@ -174,14 +212,28 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     }
 
     override fun onDestroy() {
+        finishTripIfNeededAndSave()
         super.onDestroy()
+        isAlive = false
         OverlayController.setRunning(this, false)
         CarSpeedWidgetProvider.updateAll(this)
         CarSpeedTileService.requestListeningState(this)
+        uiHandler.removeCallbacks(refreshTicker)
+        getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener)
         sensorManager.unregisterListener(this)
-        locationManager?.removeUpdates(this)
+        try {
+            locationManager?.removeUpdates(this)
+        } catch (_: RuntimeException) {
+            // ignore teardown exception
+        }
         unregisterGnssStatusUpdates()
-        overlayView?.let { windowManager.removeView(it) }
+        overlayView?.let { view ->
+            try {
+                windowManager.removeView(view)
+            } catch (_: RuntimeException) {
+                // 窗口可能已被系统移除。
+            }
+        }
         overlayView = null
     }
 
@@ -274,35 +326,60 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
                 ),
                 waitNowMs
             )
-            DriveRecordStore.addRecord(
+            DriveRecordStore.addRecordAsync(
                 this,
-                DriveRecord(
-                    startTimeMs = start,
-                    endTimeMs = end,
-                    durationMs = end - start,
-                    maxSpeedKmh = maxSpeedKmh,
-                    waitDurationMs = waitDurationMs,
-                    distanceMeters = tripDistanceMeters,
-                    averageSpeedKmh = DriveRecordStore.averageSpeedKmh(
-                        distanceMeters = tripDistanceMeters,
-                        durationMs = end - start,
-                        waitDurationMs = waitDurationMs
-                    ),
-                    maxSpeedLatitude = maxSpeedLatitude,
-                    maxSpeedLongitude = maxSpeedLongitude,
-                    maxSpeedAccuracyMeters = maxSpeedAccuracyMeters,
-                    averageAccuracyMeters = averageTripAccuracyMeters(),
-                    goodFixRatio = goodFixRatio(),
-                    source = DriveRecordStore.SOURCE_OVERLAY,
-                    routePoints = tripRoutePoints.toList()
-                )
+                buildTripRecord(start, end, waitDurationMs)
             )
         }
+        DriveCheckpointStore.clearAsync(this, DriveCheckpointStore.OVERLAY_TRIP)
+        lastCheckpointAtMs = 0L
         tripStarted = false
         tripStartTimeMs = 0L
         waitAtZeroAccumMs = 0L
         waitAtZeroStartMs = 0L
         resetTripData()
+    }
+
+    private fun buildTripRecord(start: Long, end: Long, waitDurationMs: Long): DriveRecord {
+        return DriveRecord(
+            startTimeMs = start,
+            endTimeMs = end,
+            durationMs = end - start,
+            maxSpeedKmh = maxSpeedKmh,
+            waitDurationMs = waitDurationMs,
+            distanceMeters = tripDistanceMeters,
+            averageSpeedKmh = DriveRecordStore.averageSpeedKmh(
+                distanceMeters = tripDistanceMeters,
+                durationMs = end - start,
+                waitDurationMs = waitDurationMs
+            ),
+            maxSpeedLatitude = maxSpeedLatitude,
+            maxSpeedLongitude = maxSpeedLongitude,
+            maxSpeedAccuracyMeters = maxSpeedAccuracyMeters,
+            averageAccuracyMeters = averageTripAccuracyMeters(),
+            goodFixRatio = goodFixRatio(),
+            source = DriveRecordStore.SOURCE_OVERLAY,
+            routePoints = tripRoutePoints.toList()
+        )
+    }
+
+    private fun maybeSaveCheckpoint() {
+        if (!tripStarted || tripStartTimeMs <= 0L) return
+        val now = System.currentTimeMillis()
+        if (now - lastCheckpointAtMs < CHECKPOINT_INTERVAL_MS) return
+        lastCheckpointAtMs = now
+        val waitNowMs = SpeedRules.resolveWaitClockNowMs(gpsSignalLost, lastGpsFixWallTimeMs, now)
+        val waitDurationMs = SpeedRules.currentWaitDurationMs(
+            SpeedRules.WaitState(tripStarted, tripStartTimeMs, waitAtZeroAccumMs, waitAtZeroStartMs),
+            waitNowMs
+        )
+        val end = lastGpsFixWallTimeMs.takeIf { it > tripStartTimeMs } ?: now
+        DriveCheckpointStore.saveAsync(
+            this,
+            DriveCheckpointStore.OVERLAY_TRIP,
+            buildTripRecord(tripStartTimeMs, end, waitDurationMs),
+            JSONObject()
+        )
     }
 
     private fun applyOverlayStyle() {
@@ -538,8 +615,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     }
 
     private fun registerSensors() {
-        accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
-        magnetometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+        // 只用线性加速度判断"车是否在动"；以前注册的磁力计算出的朝向从没显示过，白白耗电。
         linearAccelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
     }
 
@@ -551,13 +627,17 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
 
         if (!hasPermission) return
 
-        locationManager?.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            500L,
-            0f,
-            this,
-            Looper.getMainLooper()
-        )
+        try {
+            locationManager?.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                500L,
+                0f,
+                this,
+                Looper.getMainLooper()
+            )
+        } catch (_: RuntimeException) {
+            // 定位不可用时悬浮窗显示"无 GPS"。
+        }
     }
 
     private fun registerGnssStatusUpdates() {
@@ -571,12 +651,12 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         val callback = object : GnssStatus.Callback() {
             override fun onSatelliteStatusChanged(status: GnssStatus) {
                 gpsUsedSatelliteCount = GnssSatelliteCount.usedInFix(status.satelliteCount, status::usedInFix)
-                refreshOverlay()
+                updateSatelliteText()
             }
 
             override fun onStopped() {
                 gpsUsedSatelliteCount = null
-                refreshOverlay()
+                updateSatelliteText()
             }
         }
 
@@ -606,35 +686,14 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
-        when (event.sensor.type) {
-            Sensor.TYPE_ACCELEROMETER -> {
-                System.arraycopy(event.values, 0, gravityValues, 0, 3)
-            }
-
-            Sensor.TYPE_LINEAR_ACCELERATION -> {
-                accelDisplayMps2 = sqrt(
-                    event.values[0] * event.values[0] +
-                        event.values[1] * event.values[1] +
-                        event.values[2] * event.values[2]
-                )
-            }
-
-            Sensor.TYPE_MAGNETIC_FIELD -> {
-                System.arraycopy(event.values, 0, geomagneticValues, 0, 3)
-            }
+        // 传感器每秒回调几十次，这里只记录数值；界面由定位回调和 1 秒一次的定时刷新驱动。
+        if (event.sensor.type == Sensor.TYPE_LINEAR_ACCELERATION) {
+            accelDisplayMps2 = sqrt(
+                event.values[0] * event.values[0] +
+                    event.values[1] * event.values[1] +
+                    event.values[2] * event.values[2]
+            )
         }
-
-        val r = FloatArray(9)
-        val i = FloatArray(9)
-        if (SensorManager.getRotationMatrix(r, i, gravityValues, geomagneticValues)) {
-            val orientation = FloatArray(3)
-            SensorManager.getOrientation(r, orientation)
-            headingDegrees = ((Math.toDegrees(orientation[0].toDouble()) + 360) % 360).toFloat()
-        } else {
-            headingDegrees = null
-        }
-
-        refreshOverlay()
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -737,10 +796,6 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         lastElapsedRealtimeNs = location.elapsedRealtimeNanos.takeIf { it > 0L } ?: 0L
         lastReceiveRealtimeNs = receiveRealtimeNs
 
-        if (location.hasBearing()) {
-            headingDegrees = ((location.bearing + 360f) % 360f)
-        }
-
         val speedKmh = SpeedRules.toKmhClamped(speedMps)
         val nowMs = System.currentTimeMillis()
 
@@ -818,6 +873,8 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         val distance = metrics.distanceMeters
         val saneDistance = !startedNow &&
             filterResult.isSampleTrusted &&
+            !filterResult.isStationaryLocked &&
+            speedKmh >= TrackMetrics.STATIONARY_SPEED_FLOOR_KMH &&
             !distance.isNaN() &&
             distance in 0.5f..MAX_TRIP_SAMPLE_DISTANCE_METERS &&
             (!location.hasAccuracy() || location.accuracy <= MAX_TRIP_ACCURACY_METERS)
@@ -831,14 +888,23 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
     }
 
     private fun shouldAppendRoutePoint(location: Location, nowMs: Long, force: Boolean): Boolean {
-        if (tripRoutePoints.size >= MAX_ROUTE_POINTS) return false
         if (force || tripRoutePoints.isEmpty()) return true
         val last = lastRoutePointLocation ?: return true
-        if (nowMs - lastRoutePointTimeMs >= ROUTE_POINT_INTERVAL_MS) return true
-        return last.distanceTo(location) >= ROUTE_POINT_DISTANCE_METERS
+        if (nowMs - lastRoutePointTimeMs >= routePointIntervalMs) return true
+        return last.distanceTo(location) >= routePointDistanceMeters
     }
 
     private fun appendRoutePoint(location: Location, speedKmh: Float, nowMs: Long) {
+        if (tripRoutePoints.size >= MAX_ROUTE_POINTS) {
+            // 点数满了就隔一个丢一个、采样间隔翻倍，整段路线都保留，只是变稀。
+            val thinned = tripRoutePoints.filterIndexed { index, _ ->
+                index % 2 == 0 || index == tripRoutePoints.lastIndex
+            }
+            tripRoutePoints.clear()
+            tripRoutePoints.addAll(thinned)
+            routePointIntervalMs *= 2
+            routePointDistanceMeters *= 2f
+        }
         tripRoutePoints += DriveRoutePoint(
             timeMs = location.time.takeIf { it > 0L } ?: nowMs,
             latitude = location.latitude,
@@ -862,6 +928,8 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         maxSpeedAccuracyMeters = null
         lastRoutePointLocation = null
         lastRoutePointTimeMs = 0L
+        routePointIntervalMs = ROUTE_POINT_INTERVAL_MS
+        routePointDistanceMeters = ROUTE_POINT_DISTANCE_METERS
     }
 
     private fun averageTripAccuracyMeters(): Float? {
@@ -893,12 +961,8 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             currentEstimateActive = false
         }
 
-        val prefs = getSharedPreferences(MainActivity.PREF_NAME, MODE_PRIVATE)
-        val unit = SpeedDisplay.normalizeUnit(prefs.getString(MainActivity.PREF_SPEED_UNIT, SpeedDisplay.UNIT_KMH))
-        val warningThresholdKmh = prefs.getInt(
-            MainActivity.PREF_SPEED_WARNING_KMH,
-            SpeedDisplay.DEFAULT_WARNING_KMH
-        ).coerceIn(30, 240)
+        val unit = displayUnit
+        val warningThresholdKmh = this.warningThresholdKmh
         val speedKmh = SpeedRules.toKmhClamped(speedMps)
         val displaySpeed = SpeedDisplay.toDisplaySpeed(speedKmh, unit)
         val displayMaxSpeed = SpeedDisplay.toDisplaySpeed(maxSpeedKmh, unit)
@@ -925,9 +989,7 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             String.format("%.1f", displaySpeed)
         }
         tvCurrentSpeedUnit?.text = unitLabel
-        tvGpsSatelliteCount?.text = gpsUsedSatelliteCount?.let {
-            getString(R.string.gps_satellite_label_fmt, it)
-        } ?: getString(R.string.gps_satellite_unknown)
+        updateSatelliteText()
         applyCurrentSpeedTextStyle(gpsSignalLost)
         tvDragHandle?.text = when {
             warningActive -> getString(R.string.speed_warning_active, warningThresholdKmh)
@@ -957,17 +1019,14 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         tvHeadingValue?.text = formatDuration(elapsedMs)
 
         val now = System.currentTimeMillis()
-        speedHistory.addLast(SpeedTrendView.SpeedPoint(now, speedKmh))
-        while (speedHistory.isNotEmpty() && now - speedHistory.first().timestampMs > historyWindowMs) {
-            speedHistory.removeFirst()
+        if (now - lastSpeedHistoryAtMs >= SPEED_HISTORY_INTERVAL_MS || now < lastSpeedHistoryAtMs) {
+            lastSpeedHistoryAtMs = now
+            speedHistory.addLast(SpeedTrendView.SpeedPoint(now, speedKmh))
+            while (speedHistory.isNotEmpty() && now - speedHistory.first().timestampMs > historyWindowMs) {
+                speedHistory.removeFirst()
+            }
+            speedTrendView?.updateData(speedHistory.toList(), trendYMaxKmh, historyWindowMs)
         }
-
-        val yMax = prefs
-            .getInt(MainActivity.PREF_Y_AXIS_MAX_KMH, 300)
-            .coerceIn(30, 2000)
-            .toFloat()
-
-        speedTrendView?.updateData(speedHistory.toList(), yMax, historyWindowMs)
 
         overlayBubble?.text = when {
             currentEstimateActive -> String.format("%.0f", displaySpeed)
@@ -975,6 +1034,12 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
             else -> String.format("%.0f", displaySpeed)
         }
         applySpeedWarningStyle(warningActive)
+    }
+
+    private fun updateSatelliteText() {
+        tvGpsSatelliteCount?.text = gpsUsedSatelliteCount?.let {
+            getString(R.string.gps_satellite_label_fmt, it)
+        } ?: getString(R.string.gps_satellite_unknown)
     }
 
     private fun formatDuration(ms: Long): String {
@@ -1156,8 +1221,14 @@ class OverlayService : Service(), SensorEventListener, LocationListener {
         private const val MAX_TRIP_SAMPLE_DISTANCE_METERS = 1_000f
         private const val MAX_TRIP_ACCURACY_METERS = 80f
         private const val GOOD_FIX_ACCURACY_METERS = 20f
-        private const val MAX_ROUTE_POINTS = 180
+        private const val MAX_ROUTE_POINTS = 1_440
         private const val ROUTE_POINT_INTERVAL_MS = 5_000L
         private const val ROUTE_POINT_DISTANCE_METERS = 25f
+        private const val REFRESH_TICK_MS = 1_000L
+        private const val SPEED_HISTORY_INTERVAL_MS = 500L
+        private const val CHECKPOINT_INTERVAL_MS = 30_000L
+
+        @Volatile var isAlive: Boolean = false
+            private set
     }
 }

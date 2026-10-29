@@ -651,7 +651,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
                 startOnBluetoothConnectedAndSpeed = cbAutoTriggerStartOnBluetoothSpeed.isChecked,
                 stopOnPowerDisconnected = cbAutoTriggerStopOnPowerDisconnected.isChecked,
                 stopOnBluetoothDisconnected = cbAutoTriggerStopOnBluetoothDisconnected.isChecked,
-                stopOnBluetoothDisconnectedAndStationary = cbAutoTriggerStopOnBluetoothStationary.isChecked
+                stopOnBluetoothDisconnectedAndStationary = cbAutoTriggerStopOnBluetoothStationary.isChecked,
+                // 这页没有阈值控件，沿用已保存的值，别每次保存都重置成默认 10km/h。
+                speedThresholdKmh = TriggerSettings.load(this).speedThresholdKmh
             )
         )
         AutoTriggerController.sync(this, stopUnavailable = true)
