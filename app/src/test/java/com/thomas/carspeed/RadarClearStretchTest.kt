@@ -158,4 +158,26 @@ class RadarClearStretchTest {
         assertTrue(RadarClearStretch.shouldStart(nextRadarMeters = null, settings = tooSmall))
         assertTrue(RadarClearStretch.shouldStart(nextRadarMeters = 5000, settings = tooSmall))
     }
+
+    @Test
+    fun empty_road_remaining_never_overshoots_the_next_camera() {
+        // 只按时间推剩余时会出现「说还有 4 公里没测速，实际 800 米后就有摄像头」。
+        assertEquals(800, RadarClearStretch.clampRemaining(4000, 800))
+        // 前方还没查到摄像头时保持原值。
+        assertEquals(4000, RadarClearStretch.clampRemaining(4000, null))
+        // 摄像头比扣减出来的剩余更远，不该把空路人为延长。
+        assertEquals(1200, RadarClearStretch.clampRemaining(1200, 5000))
+    }
+
+    @Test
+    fun a_camera_appearing_mid_loop_stops_further_empty_road_speech() {
+        // 循环进行到剩余 3.2 公里时，前方 300 米出现摄像头：不能再说还有 3 公里没测速。
+        val active = session(span = 5000, lastSpokenAtMs = 1_000L, lastSpokenMeters = 3200, startedAtMs = 0L)
+        val clamped = RadarClearStretch.clampRemaining(active.lastSpokenMeters, 300)
+        assertEquals(300, clamped)
+        // 摄像头逼近到 100 米以内就结束，不再播「无测速」。
+        assertTrue(RadarClearStretch.shouldStop(active, 80, nowMs = 62_000L))
+        // 还没到 100 米以内时继续按真实距离收敛，而不是沿用原来的 3.2 公里。
+        assertFalse(RadarClearStretch.shouldStop(active, 300, nowMs = 62_000L))
+    }
 }

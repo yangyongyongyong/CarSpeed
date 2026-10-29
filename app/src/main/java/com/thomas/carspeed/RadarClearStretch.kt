@@ -84,6 +84,15 @@ internal object RadarClearStretch {
         return nowMs - session.startedAtMs > MAX_SESSION_MS
     }
 
+    /**
+     * 空路的真实尽头是前方最近的一部摄像头。
+     * 按时间扣出来的剩余不能越过它，否则就会出现「刚说还有 4 公里没测速，下一秒却开始报摄像头」。
+     */
+    fun clampRemaining(remainingMeters: Int, nextRadarMeters: Int?): Int {
+        if (nextRadarMeters == null) return remainingMeters
+        return minOf(remainingMeters, nextRadarMeters)
+    }
+
     /** 一场循环最长播 30 分钟，防止导航卡住时空路段无限播下去。 */
     private const val MAX_SESSION_MS = 30 * 60 * 1000L
 

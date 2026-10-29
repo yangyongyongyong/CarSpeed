@@ -49,6 +49,8 @@ data class RadarAlertState(
 object RadarAlertController {
     private const val SPEAK_MIN_GAP_MS = 2_500L
     private const val ROUTE_CAMERA_FRESH_MS = 3_000L
+    /** 空路循环播报里，剩余距离变化不到这个值就不重复出声。 */
+    private const val CLEAR_STRETCH_MIN_DELTA_METERS = 50
     /** 空路播报的检查节拍。间隔本来是秒级，1 秒足够准，又不至于太费电。 */
     private const val CLEAR_STRETCH_TICK_MS = 1_000L
 
@@ -126,10 +128,13 @@ object RadarAlertController {
     private val clearStretchTick = object : Runnable {
         override fun run() {
             val context = appContext ?: return
+            val now = System.currentTimeMillis()
             advanceClearStretch(
                 settings = RadarAlertSettingsStore.load(context),
-                nowMs = System.currentTimeMillis(),
-                camerasAhead = 0
+                nowMs = now,
+                // 之前这里写死 0，等于认定前方永远没有摄像头；空路播报启动后
+                // 即使后面真的出现了雷达也不会停，和实际播报对不上。
+                nextCameraMeters = nearestCameraAheadMeters(now)
             )
             mainHandler.postDelayed(this, CLEAR_STRETCH_TICK_MS)
         }
@@ -615,15 +620,22 @@ object RadarAlertController {
             // 刚过去的那部要从候选里排除，看真正的「下一个」有多远。
             // 有规划路线时优先用路线上的下一个雷达：它算的是沿路距离，
             // 而且知道整条路上有几个，比只看巡航回调这一个准。
+            // 巡航回调只覆盖当前判定路层，高架/地面重叠时会漏掉另一层的雷达；
+            // 路线雷达和已缓存的导航摄像头都不分层，合并后再兜底。
             val nextOnRoute = routeTracker.nextRadarMeters()
-            val nextRadarMeters = nextOnRoute ?: cameras
+            val nextFromCruise = cameras
                 .filter { it.key != passedKey }
                 .minOfOrNull { it.distanceMeters }
+            val nextFromRouteCache = freshRouteCameras(now)
+                .filter { it.distanceMeters > 0 }
+                .minOfOrNull { it.distanceMeters }
+            val nextRadarMeters = listOfNotNull(nextOnRoute, nextFromCruise, nextFromRouteCache).minOrNull()
             startClearStretch(settings, now, nextRadarMeters)
             return
         }
         // 前方又冒出一部测速雷达：不管是不是刚锁上的，空路都到头了，循环播报停掉。
-        if (cameras.isNotEmpty()) clearStretch = null
+        // 只看当前巡航回调会漏掉另一路层或规划路线上的雷达，用合并后的最近距离判断。
+        if (nearestCameraAheadMeters(now) != null) clearStretch = null
         val nearest = selection.camera ?: return
 
         val distance = nearest.distanceMeters
@@ -789,7 +801,7 @@ object RadarAlertController {
     private fun advanceClearStretch(
         settings: RadarAlertSettings,
         nowMs: Long,
-        camerasAhead: Int
+        nextCameraMeters: Int?
     ) {
         val session = clearStretch ?: return
         val config = RadarClearStretch.Settings(
@@ -798,7 +810,7 @@ object RadarAlertController {
             intervalSeconds = settings.clearStretchIntervalSeconds,
             referenceSpeedKmh = settings.clearStretchReferenceSpeedKmh
         )
-        if (!config.enabled || camerasAhead > 0) {
+        if (!config.enabled) {
             clearStretch = null
             return
         }
@@ -807,12 +819,24 @@ object RadarAlertController {
         val travelled = clearStretchSpeedKmh / 3.6f * (elapsedMs / 1000f)
         clearStretchUpdatedAtMs = nowMs
         clearStretchSpeedKmh = latestSpeedKmh
-        val remaining = (session.lastSpokenMeters - travelled.toInt()).coerceAtLeast(0)
+        var remaining = (session.lastSpokenMeters - travelled.toInt()).coerceAtLeast(0)
+        // 前方真实摄像头的距离就是这段空路的尽头：播报值不能超过它，到了也立刻收尾。
+        if (nextCameraMeters != null && nextCameraMeters < RadarClearStretch.STOP_BELOW_METERS) {
+            clearStretch = null
+            return
+        }
+        remaining = RadarClearStretch.clampRemaining(remaining, nextCameraMeters)
         if (RadarClearStretch.shouldStop(session, remaining, nowMs)) {
             clearStretch = null
             return
         }
         if (!RadarClearStretch.shouldSpeakNow(session, remaining, nowMs, config)) return
+        // 剩余距离被前方雷达裁剪后可能长时间不变，避免每次都念同一个数字。
+        if (session.lastSpokenAtMs > 0L &&
+            kotlin.math.abs(remaining - session.lastSpokenMeters) < CLEAR_STRETCH_MIN_DELTA_METERS
+        ) {
+            return
+        }
         speak(RadarClearStretch.text(remaining), nowMs)
         clearStretch = session.copy(lastSpokenAtMs = nowMs, lastSpokenMeters = remaining)
     }
@@ -1193,6 +1217,20 @@ object RadarAlertController {
         if (nowMs - shownRouteCamerasAtMs in 0..ROUTE_CAMERA_FRESH_MS) cameras += shownRouteCameras
         if (nowMs - intervalRouteCamerasAtMs in 0..ROUTE_CAMERA_FRESH_MS) cameras += intervalRouteCameras
         return cameras
+    }
+
+    /**
+     * 前方最近的摄像头还有多远。用于判断「无测速路段」是否已经到头。
+     *
+     * 优先用规划路线上的雷达：高德巡航回调只返回当前判定路层的摄像头，
+     * 高架和地面重叠时另一层的雷达会完全缺席，拿回调结果判断会误报「前方无测速」。
+     * 路线雷达不区分路层，先按最高层（高架）兜底，和默认路层策略一致。
+     */
+    private fun nearestCameraAheadMeters(nowMs: Long): Int? {
+        routeTracker.nextRadarMeters()?.let { return it }
+        return freshRouteCameras(nowMs)
+            .filter { it.distanceMeters > 0 }
+            .minOfOrNull { it.distanceMeters }
     }
 
     private fun routeStyleCameras(cameras: List<AMapNaviCameraInfo?>): List<RadarBroadcastFix.Candidate> {

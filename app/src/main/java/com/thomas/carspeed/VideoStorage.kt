@@ -44,6 +44,17 @@ object VideoStorage {
         val projectedManagedBytes: Long
     )
 
+    /** 循环录像空间占用情况，用于设置页的用量条。 */
+    data class StorageUsage(
+        val usedBytes: Long,
+        val limitBytes: Long
+    ) {
+        val percent: Int
+            get() = if (limitBytes <= 0L) 0 else ((usedBytes.coerceAtLeast(0L) * 100.0) / limitBytes)
+                .toInt()
+                .coerceIn(0, 100)
+    }
+
     fun fileNameFor(startTimeMs: Long): String {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(startTimeMs))
         return "carspeed-$stamp.mp4"
@@ -848,6 +859,23 @@ object VideoStorage {
         plan.filesToDelete.filterNot { isAppVideoFile(it) }.forEach { deleteIfExists(it) }
 
         return dir.usableSpace >= requiredFreeTarget(requiredFreeBytes)
+    }
+
+    /**
+     * 统计循环录像当前占用了多少空间，以及配额是多少。
+     * 只看应用自己管理、会被循环清理的文件（视频、字幕、轨迹、车牌、收藏标记），
+     * 和 cleanupLoopStorage 的计数口径保持一致，避免显示的数字和实际清理行为对不上。
+     */
+    fun storageUsage(context: Context, limitGb: Int): StorageUsage {
+        val limitBytes = limitGb.coerceIn(
+            DashcamSettings.MIN_LOOP_STORAGE_GB,
+            DashcamSettings.MAX_LOOP_STORAGE_GB
+        ) * 1024L * 1024L * 1024L
+        val usedBytes = videoDirs(context)
+            .flatMap { managedVideoFiles(context, it) }
+            .distinctBy { it.absolutePath }
+            .sumOf { it.length().coerceAtLeast(0L) }
+        return StorageUsage(usedBytes = usedBytes, limitBytes = limitBytes)
     }
 
     fun planCleanup(
