@@ -757,6 +757,23 @@
         '</div>' +
         '</div>'
       );
+      const caption = layout.config.caption || { enabled: true, font: 'PingFang SC', size: 28, color: '#ffffff', backgroundColor: '#000000b3', outline: 1, outlineColor: '#000000', margin: 0.30 };
+      layout.config.caption = caption;
+      rows.push(
+        '<div class="field-row"><header><h3>字幕轨</h3>' +
+        `<label class="switch"><input type="checkbox" id="caption-enabled" ${caption.enabled ? 'checked' : ''} aria-label="启用字幕轨"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('caption-size', '字号', caption.size, 10, 96, 1) +
+        rangeControl('caption-margin', '距底部(%)', Math.round(caption.margin * 100), 0, 45, 1) +
+        rangeControl('caption-outline', '描边', caption.outline, 0, 8, 1) +
+        colorControl('caption-color', '文字色', caption.color) +
+        colorControl('caption-outline-color', '描边色', caption.outlineColor) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '字幕轨只放「时间 + 速度」：地址、坐标由独立字段和地图图层显示，重复放进字幕会挤占画面。' +
+        '<br>字幕是 FilmCraft 的元数据轨，导出时必须勾选烧录字幕才会进入成片。' +
+        '</div></div>'
+      );
       layout.config.fields.forEach((field, index) => {
         rows.push(
           `<div class="field-row${field.enabled ? '' : ' off'}" data-key="${escapeHtml(field.key)}"><header><h3>${escapeHtml(field.label)}</h3>` +
@@ -864,6 +881,16 @@
       if (mapLabel) mapLabel.addEventListener('change', () => { map.showSpeedLabel = mapLabel.checked; markDirty(); });
       const mapCoords = $('map-coords');
       if (mapCoords) mapCoords.addEventListener('change', () => { map.showCoordinates = mapCoords.checked; markDirty(); });
+
+      const caption = config.caption;
+      bindRange('caption-size', (value) => { caption.size = value; });
+      // UI 用百分比，配置和 CLI 用 0..1 的小数。
+      bindRange('caption-margin', (value) => { caption.margin = value / 100; });
+      bindRange('caption-outline', (value) => { caption.outline = value; });
+      bindColor('caption-color', (value) => { caption.color = value; });
+      bindColor('caption-outline-color', (value) => { caption.outlineColor = value; });
+      const captionEnabled = $('caption-enabled');
+      if (captionEnabled) captionEnabled.addEventListener('change', () => { caption.enabled = captionEnabled.checked; markDirty(); });
 
       config.fields.forEach((field, index) => {
         bindRange(`size-${index}`, (value) => { field.size = value; });
@@ -1041,6 +1068,8 @@
         $('tripGrid').innerHTML = `<div class="error-panel">${escapeHtml(error.message)}</div>`;
         $('tripMeta').textContent = '读取失败';
         updateSelection();
+        // 排版设置存在 layout.json 里，跟手机连没连无关：读不到行程也要让用户能改排版。
+        await loadLayout().catch(() => {});
       } finally {
         button.disabled = false;
       }

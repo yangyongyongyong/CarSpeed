@@ -229,5 +229,15 @@
     "progressBarHeight": 8,
     "progressBarTrackColor": "#ffffff",
     "showDistance": true
+  },
+  "caption": {
+    "enabled": true,
+    "font": "PingFang SC",
+    "size": 28,
+    "color": "#ffffff",
+    "backgroundColor": "#000000b3",
+    "outline": 1,
+    "outlineColor": "#000000",
+    "margin": 0.3
   }
 }
