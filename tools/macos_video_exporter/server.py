@@ -30,12 +30,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
 except ImportError:  # pragma: no cover - 运行时通过 /api/health 暴露
     Image = None
     ImageDraw = None
+    ImageFilter = None
     ImageFont = None
 
 
@@ -1886,7 +1888,11 @@ def keep_subtitle_line(line: str, options: ExportOptions) -> bool:
 def subtitle_category(text: str) -> str:
     if re.search(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}", text):
         return "time"
-    if "km/h" in text.lower() or "mph" in text.lower():
+    # 雷达提示形如「测速 80kph×10」「区间测速 100kph×4」，必须排在速度之前判断，
+    # 否则会被当成普通速度行，地址栏最终显示成一串雷达提示。
+    if "测速" in text or "雷达" in text:
+        return "radar"
+    if "km/h" in text.lower() or "kph" in text.lower() or "mph" in text.lower():
         return "speed"
     if "静止等待" in text:
         return "waitTime"
@@ -2312,7 +2318,11 @@ def cue_field_values(text: str) -> dict[str, str]:
             values["focus"] = stripped
         elif category == "video":
             values["videoMode"] = stripped
+        elif category == "radar":
+            values["radar"] = stripped
         else:
+            # 地址只取第一段非结构化的内容；雷达提示等已知字段已经在上面各归各位，
+            # 早先它们会落到这个 else 里把真正的地址挤掉。
             values.setdefault("address", stripped)
     return values
 
@@ -2336,7 +2346,7 @@ def render_overlay_frame(
         draw_hud(draw, layout.hud, values, elapsed_ms, track_points or [], width, height)
     gauge = layout.gauge
     if gauge.enabled:
-        draw_gauge(draw, gauge, speed_kmh, width, height)
+        draw_gauge(draw, gauge, speed_kmh, width, height, layer)
     bar = layout.info_bar
     if bar is not None and bar.enabled:
         draw_info_bar(draw, layout.info_bar, values, speed_kmh, width, height)
@@ -2576,10 +2586,11 @@ def draw_gauge(
     speed_kmh: float,
     width: int,
     height: int,
+    layer: Any = None,
 ) -> None:
     """按配置选择圆形表盘或横向速度条。"""
     if gauge.style == "bar":
-        draw_gauge_bar(draw, gauge, speed_kmh, width, height)
+        draw_gauge_bar(draw, gauge, speed_kmh, width, height, layer)
         return
     radius = gauge.radius_percent * min(width, height)
     center_x = gauge.x * width
@@ -2630,75 +2641,106 @@ def draw_gauge_bar(
     speed_kmh: float,
     width: int,
     height: int,
+    layer: Any = None,
 ) -> None:
-    """地平线风格横向速度条：分段填充 + 左侧大号数字 + 右侧单位。"""
-    bar_w = max(120, gauge.bar_width)
-    bar_h = max(8, gauge.bar_height)
-    gap = max(2, bar_h // 6)
-    segments = max(4, gauge.bar_segments)
-    seg_w = max(2.0, (bar_w - gap * (segments - 1)) / segments)
+    """速度表盘：参考《极限竞速：地平线》的 HUD 语言。
+
+    地平线的速度表不是进度条，而是一圈带渐变的弧：左侧起弧、随速度点亮，
+    弧尾有一小段高亮描边，中间是极粗的无衬线数字，单位压在数字下沿。
+    这里按同样的层次来画：半透明底盘 → 底弧 → 渐变主弧 → 尾端高光 →
+    外沿刻度 → 大号数字 → 单位。
+    """
+    assert Image is not None
+    radius = max(56.0, gauge.radius_percent * min(width, height) * 1.15)
     center_x = gauge.x * width
     center_y = gauge.y * height
-    left = center_x - bar_w / 2
-    top = center_y - bar_h / 2
+    opacity = max(0, min(100, gauge.opacity))
+    accent = hex_to_rgb(gauge.arc_color, (228, 107, 46))
+    track = hex_to_rgb(gauge.unit_color, (150, 168, 160))
 
-    value_font = load_font(max(12, int(bar_h * 1.55)))
-    unit_font = load_font(max(9, int(bar_h * 0.66)))
-    value_text = f"{speed_kmh:.0f}"
-    unit_text = "km/h"
-    value_box = draw.textbbox((0, 0), value_text, font=value_font)
-    unit_box = draw.textbbox((0, 0), unit_text, font=unit_font)
-    value_w = value_box[2] - value_box[0]
-    unit_w = unit_box[2] - unit_box[0]
-    label_gap = max(6, bar_h // 4)
-    label_w = value_w + label_gap + unit_w
-    padding = max(10, bar_h // 2)
-
-    track_rgb = hex_to_rgb(gauge.background_color, (11, 20, 16))
-    draw.rounded_rectangle(
-        (
-            left - padding,
-            top - padding,
-            left + bar_w + padding,
-            top + bar_h + padding,
-        ),
-        radius=int(bar_h * 0.9),
-        fill=(track_rgb[0], track_rgb[1], track_rgb[2], int(255 * gauge.opacity / 100 * 0.55)),
-    )
+    # 起止角：地平线的表盘从左下扫到右下，留出正下方给单位。
+    start_angle, sweep = 145.0, 250.0
     ratio = max(0.0, min(1.0, speed_kmh / max(1.0, float(gauge.max_speed))))
-    lit_segments = ratio * segments
-    arc_rgb = hex_to_rgb(gauge.arc_color, (228, 107, 46))
-    empty_rgb = hex_to_rgb(gauge.unit_color, (159, 179, 171))
-    for index in range(segments):
-        x0 = left + index * (seg_w + gap)
-        x1 = x0 + seg_w
-        fill_amount = max(0.0, min(1.0, lit_segments - index))
-        draw.rounded_rectangle(
-            (x0, top, x1, top + bar_h),
-            radius=max(1, bar_h // 3),
-            fill=with_alpha(empty_rgb, int(gauge.opacity * 0.22)),
+
+    # 底盘：径向渐变不好用 PIL 画，用三层同心圆近似出「玻璃底」的深度。
+    dish = Image.new("RGBA", (int(radius * 2.4), int(radius * 2.4)), (0, 0, 0, 0))
+    dish_draw = ImageDraw.Draw(dish)
+    dc = dish.width / 2
+    for step in range(14, 0, -1):
+        rr = radius * (0.78 + step * 0.030)
+        alpha = int(opacity * 0.14 * (15 - step) / 14 * 3)
+        dish_draw.ellipse((dc - rr, dc - rr, dc + rr, dc + rr), fill=(4, 8, 14, min(210, alpha)))
+    if layer is not None:
+        layer.alpha_composite(dish, (int(center_x - dc), int(center_y - dc)))
+
+    arc_width = max(8, int(radius * 0.115))
+    box = (center_x - radius, center_y - radius, center_x + radius, center_y + radius)
+    # 底弧
+    draw.arc(box, start=start_angle, end=start_angle + sweep,
+             fill=with_alpha(track, int(opacity * 0.20)), width=arc_width)
+    # 主弧：分小段逐段点亮，末端用更亮的颜色，形成地平线那种「燃起来」的过渡。
+    steps = 72
+    lit = int(steps * ratio)
+    for index in range(lit):
+        frac = index / max(1, steps - 1)
+        angle = start_angle + sweep * (index / max(1, steps))
+        nxt = start_angle + sweep * ((index + 1.02) / max(1, steps))
+        # 越接近末端越亮、越偏暖。
+        blend = frac ** 1.4
+        rgb = (
+            int(accent[0] * (0.55 + 0.45 * blend)),
+            int(accent[1] * (0.35 + 0.65 * blend)),
+            int(accent[2] * (0.25 + 0.75 * blend)),
         )
-        if fill_amount > 0:
-            draw.rounded_rectangle(
-                (x0, top, x0 + (x1 - x0) * fill_amount, top + bar_h),
-                radius=max(1, bar_h // 3),
-                fill=with_alpha(arc_rgb, gauge.opacity),
+        draw.arc(box, start=angle, end=nxt, fill=with_alpha(rgb, opacity), width=arc_width)
+
+    # 尾端光点
+    if lit > 0:
+        tip = math.radians(start_angle + sweep * ratio)
+        tip_x = center_x + radius * math.cos(tip)
+        tip_y = center_y + radius * math.sin(tip)
+        glow_r = arc_width * 1.15
+        for shrink in range(3):
+            rr = glow_r * (1 - shrink * 0.28)
+            draw.ellipse(
+                (tip_x - rr, tip_y - rr, tip_x + rr, tip_y + rr),
+                fill=with_alpha(accent, int(opacity * (0.25 + shrink * 0.25))),
             )
 
-    label_x = left - padding - label_w
-    value_y = center_y - (value_box[3] - value_box[1]) / 2 - value_box[1]
+    # 外沿刻度：每 1/10 一格，,主刻度更长。
+    tick_outer = radius + arc_width * 0.95
+    for index in range(11):
+        angle = math.radians(start_angle + sweep * index / 10)
+        major = index % 5 == 0
+        inner = tick_outer - arc_width * (0.85 if major else 0.5)
+        draw.line(
+            (
+                center_x + inner * math.cos(angle), center_y + inner * math.sin(angle),
+                center_x + tick_outer * math.cos(angle), center_y + tick_outer * math.sin(angle),
+            ),
+            fill=with_alpha(track, int(opacity * (0.55 if major else 0.28))),
+            width=max(2, int(arc_width * (0.16 if major else 0.10))),
+        )
+
+    # 大号速度数字：倾斜体感靠更粗的字重和更紧的字距，PIL 没有字距参数，
+    # 用足够大的字号撑满表盘中心即可。
+    value_font = load_font(max(20, int(radius * 0.62)))
+    unit_font = load_font(max(9, int(radius * 0.15)))
+    value_text = f"{speed_kmh:.0f}"
+    v_left, v_top, v_right, v_bottom = draw.textbbox((0, 0), value_text, font=value_font)
     draw.text(
-        (label_x - value_box[0], value_y),
+        (center_x - (v_right - v_left) / 2 - v_left, center_y - (v_bottom - v_top) / 2 - v_top - radius * 0.10),
         value_text,
         font=value_font,
-        fill=with_alpha(hex_to_rgb(gauge.value_color), gauge.opacity),
+        fill=with_alpha(hex_to_rgb(gauge.value_color, (255, 255, 255)), opacity),
     )
-    unit_y = value_y + (value_box[3] - value_box[1]) + label_gap / 2 - unit_box[1]
+    unit_text = "KM/H"
+    u_left, u_top, u_right, u_bottom = draw.textbbox((0, 0), unit_text, font=unit_font)
     draw.text(
-        (label_x - unit_box[0], unit_y),
+        (center_x - (u_right - u_left) / 2 - u_left, center_y + radius * 0.34 - u_top),
         unit_text,
         font=unit_font,
-        fill=with_alpha(hex_to_rgb(gauge.unit_color), gauge.opacity),
+        fill=with_alpha(track, int(opacity * 0.85)),
     )
 
 
@@ -2786,7 +2828,7 @@ def render_map_layer_frame(
 
     # 圆形内的地图画布：底图 + 轨迹 + 箭头，最后统一用圆形蒙版贴回整帧。
     circle = Image.new("RGBA", (diameter, diameter), (0, 0, 0, 0))
-    draw_map_satellite_background(circle, config, points, elapsed_ms)
+    draw_map_satellite_background(circle, config, points, elapsed_ms, route_heading_at(points, elapsed_ms))
     draw_map_circle_content(circle, config, points, elapsed_ms, diameter)
 
     circle_mask = Image.new("L", (diameter, diameter), 0)
@@ -2900,14 +2942,139 @@ def route_heading_at(points: list[TrackPoint], elapsed_ms: int) -> float | None:
     return math.degrees(math.atan2(east, north))
 
 
-def draw_map_satellite_background(circle: Any, config: MapLayerLayout, points: list[TrackPoint], elapsed_ms: int) -> None:
-    """离线卫星风底图：基于轨迹包围盒生成一张固定纹理，再贴进圆盘。
+def amap_tile_xy(latitude: float, longitude: float, zoom: int) -> tuple[float, float]:
+    """经纬度 -> 高德/Google 同源的 Web 墨卡托瓦片坐标（可能带小数）。"""
+    lat_rad = math.radians(latitude)
+    n = 2 ** zoom
+    x = (longitude + 180.0) / 360.0 * n
+    y = (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n
+    return x, y
 
-    没有网络时无法拉真实瓦片，这里用 NumPy 一次性生成地形纹理（深色植被、
-    细碎地块、道路带），整趟行程复用同一张底图，既稳定又快。
+
+@lru_cache(maxsize=512)
+def _download_amap_tile(zoom: int, x: int, y: int) -> bytes:
+    """拉一张高德瓦片；带缓存，同一块瓦片整趟行程只下一次。"""
+    url = f"https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={zoom}"
+    request = Request(url, headers={"User-Agent": "CarSpeedStudio/1.0", "Referer": "https://www.amap.com/"})
+    with urlopen(request, timeout=15) as response:
+        return response.read()
+
+
+def amap_base_map(config: MapLayerLayout, points: list[TrackPoint], diameter: int) -> Any | None:
+    """按轨迹范围拼一张真实高德底图，返回直径见方的 RGBA 图。
+
+    直接用高德瓦片而不是自造纹理：假纹理无论怎么调都只是噪点，
+    看不出路网走向，导航观感完全出不来。瓦片按 Web 墨卡托拼好后
+    再按米制比例裁切，才能和 map_projection 的轨迹对齐。
     """
-    tile = satellite_base_tile(config, points, circle.width)
-    circle.alpha_composite(tile)
+    assert Image is not None
+    if diameter <= 0:
+        return None
+    lat = sum(p.latitude for p in points) / len(points)
+    lon = sum(p.longitude for p in points) / len(points)
+    # 选一个瓦片分辨率合适的层级：目标是一块瓦片覆盖的地面距离
+    # 大约等于圆盘半径，再往高层级就只是放大噪点。
+    scale_m = max(60, config.scale_meters)
+    diameter = max(64, diameter)
+    # 标准 Web 墨卡托：zoom z 下 156543.03392*cos(lat)/2^z 就是每像素米数。
+    # 目标是让圆盘直径刚好覆盖 2*scale_m，地图细节和视野才匹配。
+    meters_per_px_full = 156543.03392 * math.cos(math.radians(lat))
+    target_mpp = (2 * scale_m) / diameter
+    zoom = int(round(math.log2(meters_per_px_full / max(1e-9, target_mpp))))
+    zoom = max(12, min(18, zoom))
+
+    meters_per_px = meters_per_px_full / (2 ** zoom)
+    # 多拼一圈，随航向旋转时圆盘边缘不露底。
+    radius_px = scale_m / meters_per_px
+    need = int(radius_px * 2 * 1.4) + 256
+    # 限制单次拼接的瓦片数，避免 zoom 或比例尺异常时拉爆网络。
+    need = min(need, 256 + 256 * 9)
+    center_x, center_y = amap_tile_xy(lat, lon, zoom)
+    center_px = (center_x * 256.0, center_y * 256.0)
+    origin_px = (center_px[0] - need / 2, center_px[1] - need / 2)
+
+    canvas = Image.new("RGB", (need, need), (238, 240, 235))
+    first_x = int(math.floor(origin_px[0] / 256))
+    first_y = int(math.floor(origin_px[1] / 256))
+    last_x = int(math.floor((origin_px[0] + need) / 256))
+    last_y = int(math.floor((origin_px[1] + need) / 256))
+    limit = 2 ** zoom
+    fetched = 0
+    for tile_x in range(first_x, last_x + 1):
+        for tile_y in range(first_y, last_y + 1):
+            if tile_y < 0 or tile_y >= limit:
+                continue
+            wrapped_x = tile_x % limit
+            try:
+                raw = _download_amap_tile(zoom, wrapped_x, tile_y)
+                with Image.open(io.BytesIO(raw)) as handle:
+                    tile = handle.convert("RGB")
+            except Exception:  # noqa: BLE001 - 单块失败就留底色，不影响整体
+                continue
+            canvas.paste(tile, (int(tile_x * 256 - origin_px[0]), int(tile_y * 256 - origin_px[1])))
+            fetched += 1
+    if fetched == 0:
+        return None
+
+    # 圆盘中心落在 need 画布的正中，裁出直径见方即可。
+    center_in_canvas = (center_px[0] - origin_px[0], center_px[1] - origin_px[1])
+    box = (
+        int(center_in_canvas[0] - diameter / 2),
+        int(center_in_canvas[1] - diameter / 2),
+        int(center_in_canvas[0] + diameter / 2),
+        int(center_in_canvas[1] + diameter / 2),
+    )
+    cropped = canvas.crop(box)
+    if cropped.size != (diameter, diameter):
+        cropped = cropped.resize((diameter, diameter), Image.LANCZOS)
+    return cropped.convert("RGBA")
+
+
+_AMAP_TILE_CACHE: dict[tuple[Any, ...], Any] = {}
+
+
+def draw_map_satellite_background(
+    circle: Any,
+    config: MapLayerLayout,
+    points: list[TrackPoint],
+    elapsed_ms: int,
+    heading_deg: float | None = None,
+) -> None:
+    """圆盘底图：优先用真实高德地图瓦片，无网络时退回本地纹理。
+
+    随航向旋转开启时，轨迹已经在 map_projection 里转过 -heading，
+    底图必须同角度反向旋转才能对得上；否则路网和车辆位置会错开。
+    """
+    diameter = circle.width
+    key = (
+        round(sum(p.latitude for p in points) / max(1, len(points)), 4),
+        round(sum(p.longitude for p in points) / max(1, len(points)), 4),
+        diameter,
+        config.scale_meters,
+    )
+    cached = _AMAP_TILE_CACHE.get(key)
+    if cached is None:
+        cached = amap_base_map(config, points, diameter)
+        if cached is None:
+            # 拉不到瓦片时才用本地纹理兜底，保证离线也能出片。
+            tile = satellite_base_tile(config, points, circle.width)
+            circle.alpha_composite(tile)
+            return
+        if len(_AMAP_TILE_CACHE) > 8:
+            _AMAP_TILE_CACHE.clear()
+        _AMAP_TILE_CACHE[key] = cached
+    base = cached
+    if config.rotate_with_heading and heading_deg:
+        # 底图要按 -heading 旋转，和 map_projection 里对轨迹做的是同一个变换；
+        # 放大到 √2 倍再转，避免旋转后四角露出空白。
+        big = int(diameter * 1.45)
+        scaled = cached.resize((big, big), Image.LANCZOS)
+        rotated = scaled.rotate(heading_deg, resample=Image.BICUBIC, expand=False)
+        offset = (big - diameter) // 2
+        base = rotated.crop((offset, offset, offset + diameter, offset + diameter))
+    circle.alpha_composite(base)
+    # 压暗一层，让轨迹和白字在浅色底图上依然清晰。
+    circle.alpha_composite(Image.new("RGBA", circle.size, (10, 16, 22, 46)))
 
 
 _SAT_TILE_CACHE: dict[tuple[Any, ...], Any] = {}
@@ -2962,38 +3129,84 @@ def draw_map_circle_content(circle: Any, config: MapLayerLayout, points: list[Tr
     heading = route_heading_at(points, elapsed_ms)
     project = map_projection(config, current, diameter, heading)
     route_xy = [project(point) for point in points]
-    draw.line(route_xy, fill=with_alpha(hex_to_rgb(config.route_color, (127, 183, 255)), 235), width=max(3, diameter // 70), joint="curve")
+    # 高德底图是浅色的：先铺一条深色描边再画亮色轨迹，
+    # 否则浅蓝线压在白底道路上几乎看不见。
+    route_width = max(3, diameter // 70)
+    draw.line(route_xy, fill=(20, 30, 42, 190), width=route_width + max(2, diameter // 110), joint="curve")
+    draw.line(route_xy, fill=with_alpha(hex_to_rgb(config.route_color, (59, 130, 246)), 240), width=route_width, joint="curve")
     played = max(1, min(len(points) - 1, last_played_index(points, elapsed_ms)))
-    draw.line(route_xy[: played + 1], fill=with_alpha(hex_to_rgb(config.played_color, (255, 255, 255)), 250), width=max(2, diameter // 90), joint="curve")
-    draw_heading_arrow(draw, diameter / 2, diameter / 2, diameter, config.marker_color)
+    draw.line(route_xy[: played + 1], fill=(20, 30, 42, 200), width=max(2, diameter // 90) + max(2, diameter // 120), joint="curve")
+    draw.line(route_xy[: played + 1], fill=with_alpha(hex_to_rgb(config.played_color, (255, 255, 255)), 255), width=max(2, diameter // 90), joint="curve")
+    draw_heading_arrow(
+        circle,
+        diameter / 2,
+        diameter / 2,
+        diameter,
+        config.marker_color,
+        # 地图不跟航向旋转时，车头方向得由箭头自己表达，否则永远指北。
+        0.0 if config.rotate_with_heading else (heading or 0.0),
+    )
 
 
-def draw_heading_arrow(draw: Any, center_x: float, center_y: float, diameter: int, color_hex: str) -> None:
-    """车头箭头：始终画在圆心并朝上，因为地图已经按航向旋转。"""
-    size = max(8.0, diameter * 0.06)
-    color = with_alpha(hex_to_rgb(color_hex, (255, 176, 32)), 255)
-    outline = (18, 18, 18, 235)
-    # 箭身 + 尖头分两笔画，保证在实际分辨率下仍是清晰的箭头轮廓。
-    shaft_half = size * 0.42
-    draw.polygon(
+def draw_heading_arrow(
+    target: Any,
+    center_x: float,
+    center_y: float,
+    diameter: int,
+    color_hex: str,
+    heading_deg: float = 0.0,
+) -> None:
+    """车头箭头，heading_deg 是相对屏幕正上方的旋转角（顺时针）。
+
+    造型参考主流导航 App：钝角三角箭头 + 尾部凹口，白色描边加一层柔和投影。
+    之前用「三角形叠一个矩形」拼出来，接缝处轮廓发硬，缩到几十像素像一块色块。
+    """
+    assert Image is not None
+    size = max(10.0, diameter * 0.085)
+    color = with_alpha(hex_to_rgb(color_hex, (59, 130, 246)), 255)
+
+    pad = int(size * 1.6)
+    canvas_size = int(size * 4 + pad)
+    sprite = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    sprite_draw = ImageDraw.Draw(sprite)
+    mid = canvas_size / 2
+
+    # 箭头轮廓（朝上）：顶点、两翼、尾部凹口，整体是一个七边形。
+    def arrow_polygon(scale: float, dy: float = 0.0) -> list[tuple[float, float]]:
+        return [
+            (mid, mid - size * 1.55 * scale + dy),
+            (mid + size * 0.95 * scale, mid + size * 0.35 * scale + dy),
+            (mid + size * 0.55 * scale, mid + size * 0.28 * scale + dy),
+            (mid + size * 0.42 * scale, mid + size * 1.20 * scale + dy),
+            (mid - size * 0.42 * scale, mid + size * 1.20 * scale + dy),
+            (mid - size * 0.55 * scale, mid + size * 0.28 * scale + dy),
+            (mid - size * 0.95 * scale, mid + size * 0.35 * scale + dy),
+        ]
+
+    shadow = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).polygon(arrow_polygon(1.06, size * 0.16), fill=(0, 0, 0, 110))
+    sprite.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(size * 0.22)))
+
+    # 白色描边：先画大一号的白底，再叠彩色内芯。
+    sprite_draw.polygon(arrow_polygon(1.0), fill=(255, 255, 255, 245))
+    sprite_draw.polygon(arrow_polygon(0.78), fill=color)
+
+    # 中心高光，让箭头有立体感而不是一块塑料色。
+    highlight = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    ImageDraw.Draw(highlight).polygon(
         [
-            (center_x, center_y - size * 1.35),
-            (center_x - size * 0.85, center_y - size * 0.10),
-            (center_x + size * 0.85, center_y - size * 0.10),
+            (mid, mid - size * 1.05),
+            (mid + size * 0.34, mid - size * 0.05),
+            (mid - size * 0.34, mid - size * 0.05),
         ],
-        fill=color,
-        outline=outline,
+        fill=(255, 255, 255, 90),
     )
-    draw.rectangle(
-        (
-            center_x - shaft_half,
-            center_y - size * 0.20,
-            center_x + shaft_half,
-            center_y + size * 1.05,
-        ),
-        fill=color,
-        outline=outline,
-    )
+    sprite.alpha_composite(highlight)
+
+    if heading_deg:
+        # PIL 的 rotate 是逆时针，航向角是顺时针，所以要取负。
+        sprite = sprite.rotate(-heading_deg, resample=Image.BICUBIC, expand=False)
+    target.alpha_composite(sprite, (int(center_x - canvas_size / 2), int(center_y - canvas_size / 2)))
 
 
 def draw_map_scale_bar(draw: Any, config: MapLayerLayout, left: int, top: int, diameter: int) -> None:

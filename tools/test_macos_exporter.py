@@ -39,6 +39,22 @@ SRT_LINE = (
 )
 
 
+RADAR_LINE = (
+    "2026-10-29 20:01:56  |  87.0 km/h  |  静止等待：00:01:34  |  "
+    "30.31879°N 119.96840°E  |  GPS卫星：36  |  测速 80kph×10  |  "
+    "杭州市余杭区202县道  |  对焦 0.07D(14m) · MF  |  4K 3840x2160 · 30fps"
+)
+
+
+def test_radar_line_keeps_address(server) -> None:
+    # 雷达提示曾经落进 else 分支，把真正的地址挤掉，地址栏最后显示成一串测速提示。
+    values = server.cue_field_values(RADAR_LINE)
+    check("雷达行地址", values.get("address"), "杭州市余杭区202县道")
+    check("雷达行雷达字段", values.get("radar"), "测速 80kph×10")
+    check("雷达行速度", values.get("speed"), "87.0 km/h")
+    check("雷达行坐标", values.get("coordinates"), "30.31879°N 119.96840°E")
+
+
 def test_caption_text(server) -> None:
     # 只保留时间和速度：地址、坐标、对焦、录像规格在画面上各有归属，不该再挤进字幕。
     text = server.caption_text(SRT_LINE)
@@ -108,6 +124,7 @@ def test_captions_disabled(server) -> None:
 def main() -> int:
     server = load_server()
     test_caption_text(server)
+    test_radar_line_keeps_address(server)
     test_timeline_cues(server)
     test_parse_cli_json(server)
     test_layout_roundtrip(server)
