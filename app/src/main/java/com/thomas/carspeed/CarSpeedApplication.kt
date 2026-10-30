@@ -11,6 +11,7 @@ class CarSpeedApplication : Application() {
         super.onCreate()
         PrivacyConsent.applyToSdk(this)
         OfflineMapUpdateWorker.enqueue(this)
+        TripThumbnailGenerator.enqueueMissing(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
                 keepScreenOnIfDriving(activity)

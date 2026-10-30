@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>CarSpeed Studio</title>
+  <style>
+    :root {
+      --paper: #f2efe8;
+      --paper-strong: #e5dfd4;
+      --ink: #17201e;
+      --muted: #65706c;
+      --line: rgba(23, 32, 30, .13);
+      --card: rgba(255, 253, 248, .84);
+      --orange: #e46b2e;
+      --orange-dark: #b94718;
+      --teal: #1e706b;
+      --teal-soft: #d8ebe7;
+      --danger: #a6402d;
+      --shadow: 0 18px 55px rgba(46, 38, 25, .10);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 92% 6%, rgba(228, 107, 46, .16), transparent 28rem),
+        radial-gradient(circle at 4% 36%, rgba(30, 112, 107, .12), transparent 30rem),
+        linear-gradient(145deg, #f8f5ef 0%, var(--paper) 58%, #ece6db 100%);
+      font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      opacity: .28;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.12'/%3E%3C/svg%3E");
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .shell { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 120px; }
+
+    .masthead {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 28px;
+      margin-bottom: 34px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 15px; }
+    .brand-mark {
+      display: grid;
+      width: 52px;
+      height: 52px;
+      place-items: center;
+      color: #fffaf2;
+      border-radius: 15px 22px 15px 22px;
+      background: var(--ink);
+      box-shadow: 8px 8px 0 rgba(228, 107, 46, .92);
+      transform: rotate(-2deg);
+    }
+    .brand-mark svg { width: 31px; height: 31px; }
+    h1 {
+      margin: 0;
+      font-family: "Iowan Old Style", "Songti SC", serif;
+      font-size: clamp(2.25rem, 5vw, 4.4rem);
+      font-weight: 600;
+      line-height: .9;
+      letter-spacing: -.055em;
+    }
+    .brand p { margin: 9px 0 0; color: var(--muted); font-size: .9rem; letter-spacing: .07em; }
+
+    .system-state {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: 350px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 253, 248, .68);
+      color: var(--muted);
+      font-size: .82rem;
+      backdrop-filter: blur(16px);
+    }
+    .signal {
+      width: 9px;
+      height: 9px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--orange);
+      box-shadow: 0 0 0 5px rgba(228, 107, 46, .12);
+    }
+    .system-state.ready .signal { background: var(--teal); box-shadow: 0 0 0 5px rgba(30, 112, 107, .12); }
+    .system-state.error .signal { background: var(--danger); box-shadow: 0 0 0 5px rgba(166, 64, 45, .12); }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(240px, .6fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .intro-copy, .workflow {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .intro-copy { padding: 25px 28px; }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--orange-dark);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .intro-copy h2 { max-width: 670px; margin: 0; font-size: clamp(1.25rem, 2.4vw, 1.8rem); line-height: 1.36; }
+    .intro-copy p:last-child { max-width: 680px; margin: 12px 0 0; color: var(--muted); line-height: 1.6; }
+    .workflow { display: grid; align-content: center; gap: 13px; padding: 22px; }
+    .workflow-step { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center; color: var(--muted); font-size: .85rem; }
+    .workflow-step b {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--ink);
+      background: var(--paper-strong);
+      font-size: .72rem;
+    }
+    .workflow-step.active { color: var(--ink); font-weight: 700; }
+    .workflow-step.active b { color: white; background: var(--teal); }
+
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 30px 0 14px; }
+    .toolbar h2 { margin: 0; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.65rem; font-weight: 600; }
+    .toolbar-meta { color: var(--muted); font-size: .82rem; }
+    .icon-button, .primary-button, .ghost-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform .16s ease, background .16s ease, opacity .16s ease;
+    }
+    .icon-button:active, .primary-button:active, .ghost-button:active { transform: translateY(1px); }
+    .icon-button { padding: 9px 13px; border: 1px solid var(--line); background: rgba(255, 253, 248, .68); font-size: .82rem; }
+    .icon-button:hover { background: #fffdf8; }
+    .icon-button svg, .primary-button svg { width: 16px; height: 16px; }
+
+    .trip-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .trip-card {
+      position: relative;
+      min-height: 348px;
+      overflow: hidden;
+      padding: 0 19px 19px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--card);
+      box-shadow: 0 6px 24px rgba(46, 38, 25, .055);
+      cursor: pointer;
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+      animation: reveal .44s both;
+      animation-delay: calc(var(--index) * 35ms);
+    }
+    .trip-card:hover { transform: translateY(-3px); box-shadow: 0 16px 35px rgba(46, 38, 25, .09); }
+    .trip-card.selected { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(30, 112, 107, .16), 0 17px 38px rgba(46, 38, 25, .09); }
+    .trip-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .trip-cover {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      margin: 0 -19px 17px;
+      overflow: hidden;
+      color: rgba(255, 250, 242, .9);
+      background:
+        radial-gradient(circle at 75% 22%, rgba(228, 107, 46, .45), transparent 38%),
+        linear-gradient(135deg, #25332f, #111917 70%);
+    }
+    .trip-cover img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .trip-cover::after {
+      position: absolute;
+      inset: 0;
+      content: "";
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(10, 16, 14, .02) 48%, rgba(10, 16, 14, .52));
+    }
+    .trip-cover-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .cover-gauge {
+      display: grid;
+      gap: 4px;
+      justify-items: center;
+      width: 92px;
+      height: 92px;
+      align-content: center;
+      border: 1px solid rgba(255, 255, 255, .3);
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 8px rgba(255, 255, 255, .035), 0 12px 35px rgba(0, 0, 0, .18);
+    }
+    .cover-gauge strong { font-family: "Iowan Old Style", serif; font-size: 1.75rem; line-height: .9; }
+    .cover-gauge span { color: rgba(255, 255, 255, .58); font-size: .58rem; font-weight: 800; letter-spacing: .16em; }
+    .cover-duration {
+      position: absolute;
+      z-index: 1;
+      right: 10px;
+      bottom: 9px;
+      padding: 4px 7px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      border-radius: 6px;
+      color: #fffaf2;
+      background: rgba(12, 18, 16, .68);
+      font-family: "SFMono-Regular", Menlo, monospace;
+      font-size: .65rem;
+      font-weight: 700;
+      backdrop-filter: blur(8px);
+    }
+    .trip-cover .check {
+      position: absolute;
+      z-index: 2;
+      top: 12px;
+      right: 12px;
+      color: #fffaf2;
+      border-color: rgba(255, 255, 255, .5);
+      background: rgba(15, 23, 20, .58);
+      backdrop-filter: blur(8px);
+    }
+    .trip-card.selected .trip-cover .check { color: white; border-color: var(--teal); background: var(--teal); }
+    .trip-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .trip-date { margin: 0; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.32rem; font-weight: 600; letter-spacing: -.02em; }
+    .trip-time { margin: 4px 0 0; color: var(--muted); font-size: .77rem; }
+    .check { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(23, 32, 30, .22); border-radius: 8px; background: rgba(255, 255, 255, .52); }
+    .check svg { width: 14px; height: 14px; opacity: 0; transform: scale(.6); transition: .16s ease; }
+    .trip-card.selected .check svg { opacity: 1; transform: scale(1); }
+    .trip-facts { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0; }
+    .pill { padding: 5px 8px; border-radius: 7px; color: #43504b; background: #ece9e1; font-size: .7rem; font-weight: 700; }
+    .pill.good { color: #145954; background: var(--teal-soft); }
+    .pill.warn { color: #934412; background: #f7e3d4; }
+    .coverage { display: grid; gap: 8px; margin-top: auto; }
+    .coverage-row { display: grid; grid-template-columns: 68px 1fr 34px; gap: 8px; align-items: center; color: var(--muted); font-size: .7rem; }
+    .coverage-track { height: 5px; overflow: hidden; border-radius: 999px; background: #e4dfd5; }
+    .coverage-fill { height: 100%; border-radius: inherit; background: var(--teal); }
+    .coverage-fill.subtitle { background: var(--orange); }
+    .empty, .error-panel {
+      grid-column: 1 / -1;
+      padding: 54px 24px;
+      border: 1px dashed rgba(23, 32, 30, .22);
+      border-radius: 22px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(255, 253, 248, .48);
+    }
+    .error-panel { color: var(--danger); border-color: rgba(166, 64, 45, .3); }
+
+    .layout-panel {
+      margin: 26px 0 30px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .layout-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 26px 16px; }
+    .layout-head h2 { margin: 0; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.5rem; }
+    .layout-head p { margin: 6px 0 0; color: var(--muted); font-size: .82rem; }
+    .layout-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 20px; padding: 0 26px 24px; }
+    .preview-stage {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #0e1512;
+    }
+    .preview-stage img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .preview-stage .drop-layer { position: absolute; inset: 0; }
+    .chip {
+      position: absolute;
+      padding: 4px 9px;
+      border: 1px solid rgba(255, 255, 255, .5);
+      border-radius: 999px;
+      color: #fffaf2;
+      background: rgba(12, 18, 16, .58);
+      font-size: .68rem;
+      font-weight: 700;
+      white-space: nowrap;
+      transform: translate(-50%, -50%);
+      cursor: grab;
+      user-select: none;
+    }
+    .chip.gauge { border-color: var(--orange); background: rgba(228, 107, 46, .28); }
+    .chip.disabled { opacity: .38; }
+    .chip:active { cursor: grabbing; }
+    .timeline-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+    .timeline-row input[type=range] { flex: 1; }
+    .field-list { display: grid; gap: 10px; }
+    .field-row {
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 253, 248, .66);
+    }
+    .field-row header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .field-row h3 { margin: 0; font-size: .88rem; }
+    .field-row.off { opacity: .5; }
+    .field-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 9px; }
+    .field-controls label { display: grid; gap: 3px; color: var(--muted); font-size: .68rem; }
+    .field-controls input[type=range] { width: 100%; }
+    .field-controls input[type=color] { width: 100%; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 7px; }
+    .layout-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+    .switch { position: relative; display: inline-flex; width: 38px; height: 21px; flex: 0 0 auto; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch span { position: absolute; inset: 0; border-radius: 999px; background: rgba(23, 32, 30, .18); transition: .18s ease; }
+    .switch span::after {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 15px;
+      height: 15px;
+      content: "";
+      border-radius: 50%;
+      background: #fffdf8;
+      transition: .18s ease;
+    }
+    .switch input:checked + span { background: var(--teal); }
+    .switch input:checked + span::after { transform: translateX(17px); }
+
+    .selection-bar {
+      position: fixed;
+      z-index: 10;
+      right: 20px;
+      bottom: 20px;
+      left: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      width: min(1144px, calc(100% - 40px));
+      margin: auto;
+      padding: 13px 14px 13px 20px;
+      color: #fffaf2;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 18px;
+      background: rgba(23, 32, 30, .94);
+      box-shadow: 0 20px 55px rgba(22, 24, 20, .3);
+      backdrop-filter: blur(20px);
+    }
+    .selection-summary { display: flex; gap: 18px; align-items: center; }
+    .selection-count { font-weight: 800; }
+    .selection-size { color: rgba(255, 250, 242, .62); font-size: .8rem; }
+    .primary-button { min-height: 44px; padding: 0 19px; color: white; background: var(--orange); font-weight: 800; }
+    .primary-button:hover { background: #d35d25; }
+    .primary-button:disabled { opacity: .42; cursor: not-allowed; }
+    .ghost-button { min-height: 42px; padding: 0 16px; border: 1px solid rgba(255, 255, 255, .18); color: white; background: transparent; }
+
+    .job-panel {
+      display: none;
+      margin-top: 32px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .job-panel.visible { display: block; animation: reveal .35s both; }
+    .job-head { display: flex; justify-content: space-between; gap: 20px; padding: 24px 26px 19px; }
+    .job-head h2 { margin: 0 0 6px; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.55rem; }
+    .job-message { margin: 0; color: var(--muted); font-size: .86rem; }
+    .job-percent { font-family: "Iowan Old Style", serif; font-size: 2.25rem; line-height: 1; }
+    .progress-track { height: 4px; margin: 0 26px 12px; overflow: hidden; border-radius: 999px; background: #e4dfd5; }
+    .progress-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--orange), #ee9b48); transition: width .35s ease; }
+    .job-items { display: grid; gap: 1px; background: var(--line); }
+    .job-item { display: grid; grid-template-columns: 1fr auto; gap: 10px 20px; padding: 16px 26px; background: #fffdf8; }
+    .job-item-title { font-weight: 800; }
+    .job-item-status { align-self: center; color: var(--muted); font-size: .76rem; }
+    .job-item-status.done { color: var(--teal); }
+    .job-item-status.failed { color: var(--danger); }
+    .job-item-message { grid-column: 1 / -1; color: var(--muted); font-size: .77rem; overflow-wrap: anywhere; }
+    .job-item-path { grid-column: 1 / -1; padding: 8px 10px; border-radius: 8px; color: #34423d; background: #f0eee7; font-family: "SFMono-Regular", Menlo, monospace; font-size: .72rem; overflow-wrap: anywhere; }
+    .job-footer { display: flex; justify-content: flex-end; padding: 16px 26px 22px; }
+    .job-footer .ghost-button { color: var(--ink); border-color: var(--line); }
+
+    .toast {
+      position: fixed;
+      z-index: 20;
+      top: 18px;
+      left: 50%;
+      max-width: min(520px, calc(100% - 36px));
+      padding: 11px 16px;
+      color: white;
+      border-radius: 12px;
+      background: var(--ink);
+      box-shadow: 0 12px 35px rgba(23, 32, 30, .22);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -12px);
+      transition: .2s ease;
+    }
+    .toast.visible { opacity: 1; transform: translate(-50%, 0); }
+    .toast.error { background: var(--danger); }
+
+    @keyframes reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 880px) {
+      .masthead, .intro { grid-template-columns: 1fr; }
+      .masthead { align-items: stretch; flex-direction: column; }
+      .system-state { max-width: none; }
+      .trip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 610px) {
+      .shell { width: min(100% - 24px, 1180px); padding-top: 24px; }
+      .brand-mark { width: 45px; height: 45px; }
+      h1 { font-size: 2.8rem; }
+      .intro-copy { padding: 21px; }
+      .trip-grid { grid-template-columns: 1fr; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+      .selection-bar { right: 10px; bottom: 10px; left: 10px; width: calc(100% - 20px); padding: 12px; }
+      .selection-summary { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .primary-button { min-width: 120px; }
+      .job-head { padding: 20px; }
+      .progress-track { margin-right: 20px; margin-left: 20px; }
+      .job-item { padding-right: 20px; padding-left: 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 18a9 9 0 1 1 14 0"/><path d="m12 13 3-4"/><path d="M7 18h10"/>
+          </svg>
+        </div>
+        <div>
+          <h1>CarSpeed Studio</h1>
+          <p>手机行车素材 → 可编辑电影项目</p>
+        </div>
+      </div>
+      <div id="systemState" class="system-state">
+        <span class="signal" aria-hidden="true"></span>
+        <span id="systemText">正在检查 ADB、FilmCraft 和手机连接</span>
+      </div>
+    </header>
+
+    <section class="intro" aria-label="工作流程">
+      <div class="intro-copy">
+        <p class="eyebrow">Trip-first editing</p>
+        <h2>选择完整行程，其余交给本机。<br>每趟行程会生成一个独立的 FilmCraft 项目。</h2>
+        <p>视频、GPS 轨迹、CarSpeed 字幕和车牌数据会从手机拉取；多段录像按时间顺序拼接，字幕按片长偏移合并，然后自动打开 FilmCraft。</p>
+      </div>
+      <div class="workflow" aria-label="处理阶段">
+        <div class="workflow-step active"><b>01</b><span>从手机读取整趟行程</span></div>
+        <div class="workflow-step"><b>02</b><span>拉取并校验全部素材</span></div>
+        <div class="workflow-step"><b>03</b><span>生成项目、时间轴与字幕</span></div>
+        <div class="workflow-step"><b>04</b><span>在本机 FilmCraft 中打开</span></div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div>
+        <h2>历史行程</h2>
+        <div id="tripMeta" class="toolbar-meta">等待读取手机</div>
+      </div>
+      <button id="refreshButton" class="icon-button" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/>
+        </svg>
+        刷新
+      </button>
+    </div>
+
+    <section id="tripGrid" class="trip-grid" aria-live="polite">
+      <div class="empty">正在扫描手机中的 CarSpeed 行程…</div>
+    </section>
+
+    <section class="layout-panel" aria-label="排版编辑器">
+      <div class="layout-head">
+        <div>
+          <h2>排版编辑器</h2>
+          <p>拖动预览图上的标签调整位置，右侧改字号、透明度与颜色。排版会渲染成透明图层，在 FilmCraft 里叠加到原视频之上。</p>
+        </div>
+        <button id="layoutRefreshButton" class="icon-button" type="button">重新载入</button>
+      </div>
+      <div class="layout-body">
+        <div>
+          <div id="layoutStage" class="preview-stage">
+            <img id="layoutImage" alt="排版预览">
+            <div id="layoutChips" class="drop-layer"></div>
+          </div>
+          <div class="timeline-row">
+            <label for="layoutTime" style="color: var(--muted); font-size: .78rem;">取样时间</label>
+            <input id="layoutTime" type="range" min="0" max="120" step="1" value="5">
+            <span id="layoutTimeLabel" style="color: var(--muted); font-size: .78rem; min-width: 62px;">5.0s</span>
+          </div>
+        </div>
+        <div>
+          <div id="fieldList" class="field-list"></div>
+          <div class="layout-actions">
+            <button id="layoutSaveButton" class="primary-button" type="button">保存排版</button>
+            <button id="layoutResetButton" class="ghost-button" type="button" style="color: var(--ink); border-color: var(--line);">恢复默认</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="jobPanel" class="job-panel" aria-live="polite">
+      <div class="job-head">
+        <div>
+          <p class="eyebrow">Studio job</p>
+          <h2 id="jobTitle">准备生成项目</h2>
+          <p id="jobMessage" class="job-message">等待任务开始</p>
+        </div>
+        <div id="jobPercent" class="job-percent">0%</div>
+      </div>
+      <div class="progress-track"><div id="jobProgress" class="progress-fill"></div></div>
+      <div id="jobItems" class="job-items"></div>
+      <div class="job-footer"><button id="revealButton" class="ghost-button" type="button">在 Finder 中显示项目</button></div>
+    </section>
+  </main>
+
+  <aside class="selection-bar" aria-label="已选择行程">
+    <div class="selection-summary">
+      <span id="selectionCount" class="selection-count">尚未选择行程</span>
+      <span id="selectionSize" class="selection-size">选择后将显示拉取大小</span>
+    </div>
+    <button id="startButton" class="primary-button" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m9 5 11 7-11 7V5Z"/>
+      </svg>
+      生成并打开
+    </button>
+  </aside>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script>
+    if (location.protocol === 'file:') {
+      location.replace('http://127.0.0.1:8765/');
+    }
+    const state = { trips: [], selected: new Set(), jobId: null, pollTimer: null };
+    const $ = (id) => document.getElementById(id);
+
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    })[char]);
+    const formatBytes = (bytes) => {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+      const value = bytes / 1024 ** index;
+      return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+    };
+    const formatPercent = (value) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
+    const splitTitle = (title) => {
+      const [date, time = ''] = String(title).split(' ');
+      return { date, time };
+    };
+    const selectedTrips = () => state.trips.filter((trip) => state.selected.has(trip.id));
+
+    function showToast(message, isError = false) {
+      const toast = $('toast');
+      toast.textContent = message;
+      toast.className = `toast visible${isError ? ' error' : ''}`;
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => { toast.className = 'toast'; }, 3600);
+    }
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      let payload;
+      try { payload = await response.json(); }
+      catch { throw new Error(`服务返回了无效响应（HTTP ${response.status}）`); }
+      if (!response.ok || payload.error) throw new Error(payload.error || `请求失败（HTTP ${response.status}）`);
+      return payload;
+    }
+
+    function setSystemState(kind, text) {
+      $('systemState').className = `system-state ${kind}`;
+      $('systemText').textContent = text;
+    }
+
+    function renderTrips() {
+      const grid = $('tripGrid');
+      if (!state.trips.length) {
+        grid.innerHTML = '<div class="empty">手机中没有找到 CarSpeed 历史行程</div>';
+        $('tripMeta').textContent = '0 趟行程';
+        updateSelection();
+        return;
+      }
+      grid.innerHTML = state.trips.map((trip, index) => {
+        const title = splitTitle(trip.title);
+        const selected = state.selected.has(trip.id);
+        const trackClass = trip.trackCoverage >= 1 ? 'good' : trip.trackCoverage > 0 ? 'warn' : '';
+        const subtitleClass = trip.subtitleCoverage >= 1 ? 'good' : trip.subtitleCoverage > 0 ? 'warn' : '';
+        const thumbnailUrl = trip.thumbnailUrl ? `${trip.thumbnailUrl}?v=${encodeURIComponent(trip.id)}` : null;
+        return `
+          <article class="trip-card${selected ? ' selected' : ''}" data-trip-id="${escapeHtml(trip.id)}" role="checkbox" tabindex="0" aria-checked="${selected}" style="--index:${index}">
+            <input type="checkbox" ${selected ? 'checked' : ''} aria-label="选择 ${escapeHtml(trip.title)}">
+            <div class="trip-cover">
+              ${thumbnailUrl
+                ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(title.date)} ${escapeHtml(title.time)} 行车画面" loading="lazy">`
+                : `<div class="trip-cover-placeholder" aria-hidden="true"><span class="cover-gauge"><strong>GPS</strong><span>CARSPEED</span></span></div>`}
+              <span class="cover-duration">${trip.segments} × VIDEO</span>
+              <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg></span>
+            </div>
+            <div class="trip-top">
+              <div><p class="trip-date">${escapeHtml(title.date)}</p><p class="trip-time">${escapeHtml(title.time)} · ${escapeHtml(trip.id)}</p></div>
+            </div>
+            <div class="trip-facts">
+              <span class="pill">${trip.segments} 段视频</span>
+              <span class="pill">${formatBytes(trip.pullBytes)}</span>
+              <span class="pill ${trackClass}">轨迹 ${trip.tracks}/${trip.segments}</span>
+              <span class="pill ${subtitleClass}">字幕 ${trip.subtitles}/${trip.segments}</span>
+            </div>
+            <div class="coverage">
+              <div class="coverage-row"><span>GPS 轨迹</span><span class="coverage-track"><span class="coverage-fill" style="width:${formatPercent(trip.trackCoverage)}"></span></span><span>${formatPercent(trip.trackCoverage)}</span></div>
+              <div class="coverage-row"><span>GPS 字幕</span><span class="coverage-track"><span class="coverage-fill subtitle" style="width:${formatPercent(trip.subtitleCoverage)}"></span></span><span>${formatPercent(trip.subtitleCoverage)}</span></div>
+            </div>
+          </article>`;
+      }).join('');
+      installThumbnailFallbacks();
+    }
+
+    function installThumbnailFallbacks() {
+      document.querySelectorAll('.trip-cover img').forEach((image) => {
+        image.addEventListener('error', () => image.remove(), { once: true });
+      });
+    }
+
+    const layout = { tripId: null, config: null, dirty: false };
+    let layoutPreviewTimer = null;
+
+    const ORDERED_FIELDS = ['time', 'speed', 'coordinates', 'address', 'satellites', 'focus', 'videoMode', 'waitTime'];
+
+    function fieldLabel(key) {
+      const match = (layout.config.fields || []).find((item) => item.key === key);
+      return match ? match.label : key;
+    }
+
+    function selectedTripId() {
+      const first = state.trips.find((trip) => state.selected.has(trip.id));
+      return first ? first.id : (state.trips[0] ? state.trips[0].id : null);
+    }
+
+    async function loadLayout() {
+      const payload = await requestJson('/api/layout');
+      layout.config = payload.layout;
+      layout.tripId = selectedTripId();
+      renderFieldEditor();
+      refreshLayoutPreview();
+    }
+
+    function renderFieldEditor() {
+      const list = $('fieldList');
+      const gauge = layout.config.gauge;
+      const bar = layout.config.infoBar || { enabled: false, fields: [], textSize: 30, padding: 14, opacity: 100, backgroundColor: '#ffffff', textColor: '#17201e' };
+      layout.config.infoBar = bar;
+      const barChecks = bar.fields.map((key) => `<label style="display:flex; gap:6px; align-items:center; color: var(--ink); font-size:.72rem;"><input type="checkbox" data-bar-field="${escapeHtml(key)}" checked> ${escapeHtml(fieldLabel(key))}</label>`).join('');
+      const allFieldChecks = (layout.config.fields || []).map((f) => {
+        const on = bar.fields.includes(f.key);
+        return `<label style="display:flex; gap:6px; align-items:center; color: var(--ink); font-size:.72rem;"><input type="checkbox" data-bar-field="${escapeHtml(f.key)}" ${on ? 'checked' : ''}> ${escapeHtml(f.label)}</label>`;
+      }).join('');
+      const rows = [
+        '<div class="field-row"><header><h3>底部信息栏</h3>' +
+        `<label class="switch"><input type="checkbox" id="bar-enabled" ${bar.enabled ? 'checked' : ''} aria-label="启用底部信息栏"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('bar-size', '字号', bar.textSize, 10, 120, 1) +
+        rangeControl('bar-opacity', '不透明度', bar.opacity, 0, 100, 1) +
+        rangeControl('bar-padding', '内边距', bar.padding, 0, 80, 1) +
+        colorControl('bar-bg', '底色', bar.backgroundColor) +
+        colorControl('bar-text', '文字色', bar.textColor) +
+        '</div>' +
+        `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">${allFieldChecks}</div>` +
+        '</div>',
+        '<div class="field-row"><header><h3>速度显示</h3>' +
+        `<label class="switch"><input type="checkbox" id="gauge-enabled" ${gauge.enabled ? 'checked' : ''} aria-label="启用速度仪表盘"><span></span></label></header>` +
+        `<div style="display:flex; gap:8px; margin-top:8px;">` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.74rem;"><input type="radio" name="gauge-style" value="bar" ${gauge.style === 'bar' ? 'checked' : ''}> 横向速度条</label>` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.74rem;"><input type="radio" name="gauge-style" value="circular" ${gauge.style === 'circular' ? 'checked' : ''}> 圆形表盘</label>` +
+        `</div>` +
+        '<div class="field-controls">' +
+        rangeControl('gauge-size', '圆形大小', gauge.radiusPercent * 100, 5, 45, 1) +
+        rangeControl('gauge-bar-width', '速度条宽', gauge.barWidth, 120, 1200, 10) +
+        rangeControl('gauge-bar-height', '速度条高', gauge.barHeight, 8, 120, 1) +
+        rangeControl('gauge-segments', '分段数', gauge.barSegments, 4, 60, 1) +
+        rangeControl('gauge-opacity', '透明度', gauge.opacity, 0, 100, 1) +
+        rangeControl('gauge-max', '表盘上限', gauge.maxSpeed, 20, 400, 10) +
+        colorControl('gauge-bg', '底色', gauge.backgroundColor) +
+        colorControl('gauge-arc', '弧线色', gauge.arcColor) +
+        colorControl('gauge-value', '数字色', gauge.valueColor) +
+        '</div></div>'];
+      const map = layout.config.mapLayer || { enabled: true, sizePercent: 0.22, x: 0.15, y: 0.72, opacity: 100, backgroundColor: '#1d2a24', backgroundOpacity: 100, routeColor: '#7fb7ff', playedColor: '#ffffff', markerColor: '#ffb020', scaleMeters: 220, showScaleBar: true, scaleBarColor: '#ffffff', mapStyle: 'satellite', rotateWithHeading: true, showSpeedLabel: true, labelColor: '#ffffff', showCoordinates: true, coordinateSize: 26, coordinateColor: '#ffffff' };
+      layout.config.mapLayer = map;
+      const hud = layout.config.hud || { enabled: true, x: 0.055, y: 0.075, opacity: 100, timeSize: 38, durationSize: 30, progressSize: 30, timeFormat24h: true, showDate: true, showDuration: true, textColor: '#ffffff', progressColor: '#ffb020', background: true, backgroundColor: '#0b1410', backgroundOpacity: 55, progressBar: true, progressBarWidth: 260, progressBarHeight: 8, progressBarTrackColor: '#ffffff', showDistance: true };
+      layout.config.hud = hud;
+      rows.push(
+        '<div class="field-row"><header><h3>左上角时间 / 里程 HUD</h3>' +
+        `<label class="switch"><input type="checkbox" id="hud-enabled" ${hud.enabled ? 'checked' : ''} aria-label="启用时间里程 HUD"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('hud-time-size', '时刻字号', hud.timeSize, 12, 120, 1) +
+        rangeControl('hud-duration-size', '时长字号', hud.durationSize, 10, 100, 1) +
+        rangeControl('hud-progress-size', '进度字号', hud.progressSize, 10, 100, 1) +
+        rangeControl('hud-opacity', '不透明度', hud.opacity, 0, 100, 1) +
+        colorControl('hud-text', '时间颜色', hud.textColor) +
+        colorControl('hud-progress', '进度颜色', hud.progressColor) +
+        colorControl('hud-bg', '背板色', hud.backgroundColor) +
+        '</div>' +
+        `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-24h" ${hud.timeFormat24h ? 'checked' : ''}> 24 小时制</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-date" ${hud.showDate ? 'checked' : ''}> 显示年月日</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-duration" ${hud.showDuration ? 'checked' : ''}> 显示驾驶时长</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-bg-on" ${hud.background ? 'checked' : ''}> 显示背板</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-bar" ${hud.progressBar ? 'checked' : ''}> 显示进度条</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-distance" ${hud.showDistance ? 'checked' : ''}> 显示里程</label>` +
+        '</div></div>'
+      );
+      rows.push(
+        '<div class="field-row"><header><h3>圆形小地图</h3>' +
+        `<label class="switch"><input type="checkbox" id="map-enabled" ${map.enabled ? 'checked' : ''} aria-label="启用轨迹地图图层"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('map-size', '直径占比', map.sizePercent * 100, 8, 60, 1) +
+        rangeControl('map-scale', '比例半径(m)', map.scaleMeters, 40, 2000, 10) +
+        rangeControl('map-coord-size', '经纬度字号', map.coordinateSize, 10, 80, 1) +
+        rangeControl('map-opacity', '不透明度', map.opacity, 0, 100, 1) +
+        colorControl('map-bg', '卫星底色', map.backgroundColor) +
+        colorControl('map-route', '全程色', map.routeColor) +
+        colorControl('map-played', '已行驶色', map.playedColor) +
+        colorControl('map-marker', '箭头色', map.markerColor) +
+        '</div>' +
+        `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-rotate" ${map.rotateWithHeading ? 'checked' : ''}> 随车头旋转</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-scale-bar" ${map.showScaleBar ? 'checked' : ''}> 显示比例尺</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-label" ${map.showSpeedLabel ? 'checked' : ''}> 显示速度</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-coords" ${map.showCoordinates ? 'checked' : ''}> 显示经纬度</label>` +
+        '</div>' +
+        '</div>'
+      );
+      const caption = layout.config.caption || { enabled: true, font: 'PingFang SC', size: 28, color: '#ffffff', backgroundColor: '#000000b3', outline: 1, outlineColor: '#000000', margin: 0.30 };
+      layout.config.caption = caption;
+      rows.push(
+        '<div class="field-row"><header><h3>字幕轨</h3>' +
+        `<label class="switch"><input type="checkbox" id="caption-enabled" ${caption.enabled ? 'checked' : ''} aria-label="启用字幕轨"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('caption-size', '字号', caption.size, 10, 96, 1) +
+        rangeControl('caption-margin', '距底部(%)', Math.round(caption.margin * 100), 0, 45, 1) +
+        rangeControl('caption-outline', '描边', caption.outline, 0, 8, 1) +
+        colorControl('caption-color', '文字色', caption.color) +
+        colorControl('caption-outline-color', '描边色', caption.outlineColor) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '字幕轨只放「时间 + 速度」：地址、坐标由独立字段和地图图层显示，重复放进字幕会挤占画面。' +
+        '<br>字幕是 FilmCraft 的元数据轨，导出时必须勾选烧录字幕才会进入成片。' +
+        '</div></div>'
+      );
+      layout.config.fields.forEach((field, index) => {
+        rows.push(
+          `<div class="field-row${field.enabled ? '' : ' off'}" data-key="${escapeHtml(field.key)}"><header><h3>${escapeHtml(field.label)}</h3>` +
+          `<label class="switch"><input type="checkbox" data-field-enabled="${index}" ${field.enabled ? 'checked' : ''} aria-label="显示${escapeHtml(field.label)}"><span></span></label></header>` +
+          '<div class="field-controls">' +
+          rangeControl(`size-${index}`, '字号', field.size, 12, 160, 1) +
+          rangeControl(`opacity-${index}`, '透明度', field.opacity, 0, 100, 1) +
+          rangeControl(`bgop-${index}`, '底色透明', field.backgroundOpacity, 0, 100, 1) +
+          colorControl(`color-${index}`, '文字', field.color) +
+          colorControl(`bgcolor-${index}`, '底板', field.backgroundColor) +
+          `<label>底板<input type="checkbox" data-field-bg="${index}" ${field.background ? 'checked' : ''}></label>` +
+          '</div></div>'
+        );
+      });
+      list.innerHTML = rows.join('');
+      bindFieldControls();
+      renderChips();
+    }
+
+    function rangeControl(id, label, value, min, max, step) {
+      return `<label>${label}<input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
+    }
+
+    function colorControl(id, label, value) {
+      return `<label>${label}<input type="color" id="${id}" value="${value}"></label>`;
+    }
+
+    function bindFieldControls() {
+      const config = layout.config;
+      const gauge = config.gauge;
+      const bar = config.infoBar;
+      bindRange('bar-size', (value) => { bar.textSize = value; });
+      bindRange('bar-opacity', (value) => { bar.opacity = value; });
+      bindRange('bar-padding', (value) => { bar.padding = value; });
+      bindColor('bar-bg', (value) => { bar.backgroundColor = value; });
+      bindColor('bar-text', (value) => { bar.textColor = value; });
+      const barEnabled = $('bar-enabled');
+      if (barEnabled) barEnabled.addEventListener('change', () => { bar.enabled = barEnabled.checked; markDirty(); });
+      document.querySelectorAll('[data-bar-field]').forEach((box) => {
+        box.addEventListener('change', () => {
+          const key = box.dataset.barField;
+          const next = new Set(bar.fields);
+          if (box.checked) next.add(key); else next.delete(key);
+          bar.fields = ORDERED_FIELDS.filter((name) => next.has(name));
+          markDirty();
+        });
+      });
+      bindRange('gauge-size', (value) => { gauge.radiusPercent = value / 100; });
+      bindRange('gauge-bar-width', (value) => { gauge.barWidth = value; });
+      bindRange('gauge-bar-height', (value) => { gauge.barHeight = value; });
+      bindRange('gauge-segments', (value) => { gauge.barSegments = value; });
+      bindRange('gauge-opacity', (value) => { gauge.opacity = value; });
+      bindRange('gauge-max', (value) => { gauge.maxSpeed = value; });
+      bindColor('gauge-bg', (value) => { gauge.backgroundColor = value; });
+      bindColor('gauge-arc', (value) => { gauge.arcColor = value; });
+      bindColor('gauge-value', (value) => { gauge.valueColor = value; });
+      const enabled = $('gauge-enabled');
+      if (enabled) enabled.addEventListener('change', () => { gauge.enabled = enabled.checked; markDirty(); });
+      document.querySelectorAll('input[name="gauge-style"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          gauge.style = radio.value;
+          markDirty();
+        });
+      });
+
+      const map = config.mapLayer;
+      const hud = config.hud;
+      bindRange('hud-time-size', (value) => { hud.timeSize = value; });
+      bindRange('hud-duration-size', (value) => { hud.durationSize = value; });
+      bindRange('hud-progress-size', (value) => { hud.progressSize = value; });
+      bindRange('hud-opacity', (value) => { hud.opacity = value; });
+      bindColor('hud-text', (value) => { hud.textColor = value; });
+      bindColor('hud-progress', (value) => { hud.progressColor = value; });
+      bindColor('hud-bg', (value) => { hud.backgroundColor = value; });
+      const hudEnabled = $('hud-enabled');
+      if (hudEnabled) hudEnabled.addEventListener('change', () => { hud.enabled = hudEnabled.checked; markDirty(); });
+      const hud24 = $('hud-24h');
+      if (hud24) hud24.addEventListener('change', () => { hud.timeFormat24h = hud24.checked; markDirty(); });
+      const hudDate = $('hud-date');
+      if (hudDate) hudDate.addEventListener('change', () => { hud.showDate = hudDate.checked; markDirty(); });
+      const hudDuration = $('hud-duration');
+      if (hudDuration) hudDuration.addEventListener('change', () => { hud.showDuration = hudDuration.checked; markDirty(); });
+      const hudBg = $('hud-bg-on');
+      if (hudBg) hudBg.addEventListener('change', () => { hud.background = hudBg.checked; markDirty(); });
+      const hudBar = $('hud-bar');
+      if (hudBar) hudBar.addEventListener('change', () => { hud.progressBar = hudBar.checked; markDirty(); });
+      const hudDistance = $('hud-distance');
+      if (hudDistance) hudDistance.addEventListener('change', () => { hud.showDistance = hudDistance.checked; markDirty(); });
+      bindRange('map-size', (value) => { map.sizePercent = value / 100; });
+      bindRange('map-scale', (value) => { map.scaleMeters = value; });
+      bindRange('map-coord-size', (value) => { map.coordinateSize = value; });
+      bindRange('map-opacity', (value) => { map.opacity = value; });
+      bindColor('map-bg', (value) => { map.backgroundColor = value; });
+      bindColor('map-route', (value) => { map.routeColor = value; });
+      bindColor('map-played', (value) => { map.playedColor = value; });
+      bindColor('map-marker', (value) => { map.markerColor = value; });
+      const mapEnabled = $('map-enabled');
+      if (mapEnabled) mapEnabled.addEventListener('change', () => { map.enabled = mapEnabled.checked; markDirty(); });
+      const mapRotate = $('map-rotate');
+      if (mapRotate) mapRotate.addEventListener('change', () => { map.rotateWithHeading = mapRotate.checked; markDirty(); });
+      const mapScaleBar = $('map-scale-bar');
+      if (mapScaleBar) mapScaleBar.addEventListener('change', () => { map.showScaleBar = mapScaleBar.checked; markDirty(); });
+      const mapLabel = $('map-label');
+      if (mapLabel) mapLabel.addEventListener('change', () => { map.showSpeedLabel = mapLabel.checked; markDirty(); });
+      const mapCoords = $('map-coords');
+      if (mapCoords) mapCoords.addEventListener('change', () => { map.showCoordinates = mapCoords.checked; markDirty(); });
+
+      const caption = config.caption;
+      bindRange('caption-size', (value) => { caption.size = value; });
+      // UI 用百分比，配置和 CLI 用 0..1 的小数。
+      bindRange('caption-margin', (value) => { caption.margin = value / 100; });
+      bindRange('caption-outline', (value) => { caption.outline = value; });
+      bindColor('caption-color', (value) => { caption.color = value; });
+      bindColor('caption-outline-color', (value) => { caption.outlineColor = value; });
+      const captionEnabled = $('caption-enabled');
+      if (captionEnabled) captionEnabled.addEventListener('change', () => { caption.enabled = captionEnabled.checked; markDirty(); });
+
+      config.fields.forEach((field, index) => {
+        bindRange(`size-${index}`, (value) => { field.size = value; });
+        bindRange(`opacity-${index}`, (value) => { field.opacity = value; });
+        bindRange(`bgop-${index}`, (value) => { field.backgroundOpacity = value; });
+        bindColor(`color-${index}`, (value) => { field.color = value; });
+        bindColor(`bgcolor-${index}`, (value) => { field.backgroundColor = value; });
+        document.querySelectorAll(`[data-field-enabled="${index}"]`).forEach((box) => {
+          box.addEventListener('change', () => {
+            field.enabled = box.checked;
+            box.closest('.field-row').classList.toggle('off', !field.enabled);
+            markDirty();
+          });
+        });
+        document.querySelectorAll(`[data-field-bg="${index}"]`).forEach((box) => {
+          box.addEventListener('change', () => { field.background = box.checked; markDirty(); });
+        });
+      });
+    }
+
+    function bindRange(id, apply) {
+      const input = $(id);
+      if (input) input.addEventListener('input', () => { apply(Number(input.value)); markDirty(); });
+    }
+
+    function bindColor(id, apply) {
+      const input = $(id);
+      if (input) input.addEventListener('input', () => { apply(input.value); markDirty(); });
+    }
+
+    function markDirty() {
+      layout.dirty = true;
+      window.clearTimeout(layoutPreviewTimer);
+      layoutPreviewTimer = window.setTimeout(refreshLayoutPreview, 260);
+    }
+
+    function renderChips() {
+      const stage = $('layoutChips');
+      const gauge = layout.config.gauge;
+      const parts = [];
+      const hud = layout.config.hud;
+      if (hud && hud.enabled) {
+        parts.push(`<span class="chip" data-drag="hud" style="left:${(hud.x * 100).toFixed(2)}%;top:${(hud.y * 100).toFixed(2)}%">HUD</span>`);
+      }
+      const map = layout.config.mapLayer;
+      if (map && map.enabled) {
+        parts.push(`<span class="chip" data-drag="map" style="left:${(map.x * 100).toFixed(2)}%;top:${(map.y * 100).toFixed(2)}%">地图</span>`);
+      }
+      if (gauge.enabled) {
+        parts.push(`<span class="chip gauge" data-drag="gauge" style="left:${(gauge.x * 100).toFixed(2)}%;top:${(gauge.y * 100).toFixed(2)}%">仪表盘</span>`);
+      }
+      layout.config.fields.forEach((field, index) => {
+        if (!field.enabled) return;
+        parts.push(`<span class="chip" data-drag="field-${index}" style="left:${(field.x * 100).toFixed(2)}%;top:${(field.y * 100).toFixed(2)}%">${escapeHtml(field.label)}</span>`);
+      });
+      stage.innerHTML = parts.join('');
+      stage.querySelectorAll('.chip').forEach((chip) => { chip.addEventListener('pointerdown', startDrag); });
+    }
+
+    function startDrag(event) {
+      const chip = event.currentTarget;
+      const stage = $('layoutStage');
+      const rect = stage.getBoundingClientRect();
+      chip.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => {
+        const x = Math.min(1, Math.max(0, (moveEvent.clientX - rect.left) / rect.width));
+        const y = Math.min(1, Math.max(0, (moveEvent.clientY - rect.top) / rect.height));
+        chip.style.left = `${(x * 100).toFixed(2)}%`;
+        chip.style.top = `${(y * 100).toFixed(2)}%`;
+        applyChipPosition(chip.dataset.drag, x, y);
+      };
+      const stop = () => {
+        chip.removeEventListener('pointermove', move);
+        chip.removeEventListener('pointerup', stop);
+        markDirty();
+      };
+      chip.addEventListener('pointermove', move);
+      chip.addEventListener('pointerup', stop);
+    }
+
+    function applyChipPosition(key, x, y) {
+      if (key === 'hud') {
+        layout.config.hud.x = x;
+        layout.config.hud.y = y;
+        return;
+      }
+      if (key === 'map') {
+        layout.config.mapLayer.x = x;
+        layout.config.mapLayer.y = y;
+        return;
+      }
+      if (key === 'gauge') {
+        layout.config.gauge.x = x;
+        layout.config.gauge.y = y;
+        return;
+      }
+      const index = Number(key.replace('field-', ''));
+      const field = layout.config.fields[index];
+      if (field) {
+        field.x = x;
+        field.y = y;
+      }
+    }
+
+    function refreshLayoutPreview() {
+      if (!layout.config) return;
+      const tripId = layout.tripId || selectedTripId();
+      layout.tripId = tripId;
+      if (!tripId) return;
+      const seconds = Number($('layoutTime').value || 0);
+      $('layoutTimeLabel').textContent = `${seconds.toFixed(1)}s`;
+      const url = `/api/trips/${encodeURIComponent(tripId)}/overlay-preview?t=${seconds}&v=${Date.now()}`;
+      $('layoutImage').src = url;
+    }
+
+    async function saveLayout() {
+      const button = $('layoutSaveButton');
+      button.disabled = true;
+      try {
+        const payload = await requestJson('/api/layout', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ layout: layout.config })
+        });
+        layout.config = payload.layout;
+        layout.dirty = false;
+        renderFieldEditor();
+        refreshLayoutPreview();
+        showToast('排版已保存，生成项目时会用这套排版');
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function updateSelection() {
+      const selected = selectedTrips();
+      const bytes = selected.reduce((total, trip) => total + Number(trip.pullBytes || 0), 0);
+      $('selectionCount').textContent = selected.length ? `已选 ${selected.length} 趟完整行程` : '尚未选择行程';
+      $('selectionSize').textContent = selected.length ? `预计从手机拉取 ${formatBytes(bytes)}` : '选择后将显示拉取大小';
+      $('startButton').disabled = !selected.length || Boolean(state.jobId && state.pollTimer);
+      document.querySelectorAll('.trip-card').forEach((card) => {
+        const checked = state.selected.has(card.dataset.tripId);
+        card.classList.toggle('selected', checked);
+        const input = card.querySelector('input');
+        if (input) input.checked = checked;
+      });
+    }
+
+    async function refreshAll() {
+      const button = $('refreshButton');
+      button.disabled = true;
+      setSystemState('', '正在读取设备与历史行程');
+      try {
+        const [health, data] = await Promise.all([
+          requestJson('/api/health'),
+          requestJson('/api/trips')
+        ]);
+        const tools = health.tools || {};
+        const missing = Object.entries(tools).filter(([, value]) => value === 'missing').map(([name]) => name);
+        if (!health.devices?.length) throw new Error('没有检测到已连接的 Android 手机');
+        if (missing.length) throw new Error(`缺少依赖：${missing.join(', ')}`);
+        const device = health.devices[0];
+        setSystemState('ready', `${device} 已连接 · FilmCraft CLI ${tools['filmcraft-cli'] ? '就绪' : '异常'}`);
+        state.trips = data.trips || [];
+        const available = new Set(state.trips.map((trip) => trip.id));
+        state.selected = new Set([...state.selected].filter((id) => available.has(id)));
+        $('tripMeta').textContent = `${state.trips.length} 趟行程 · 按整趟行程生成独立项目`;
+        renderTrips();
+        await loadLayout();
+      } catch (error) {
+        state.trips = [];
+        setSystemState('error', error.message);
+        $('tripGrid').innerHTML = `<div class="error-panel">${escapeHtml(error.message)}</div>`;
+        $('tripMeta').textContent = '读取失败';
+        updateSelection();
+        // 排版设置存在 layout.json 里，跟手机连没连无关：读不到行程也要让用户能改排版。
+        await loadLayout().catch(() => {});
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function renderJob(job) {
+      $('jobPanel').classList.add('visible');
+      $('jobTitle').textContent = job.status === 'done' ? '项目生成完成' : job.status === 'partial' ? '部分项目已生成' : job.status === 'failed' ? '任务失败' : 'FilmCraft 项目生成中';
+      $('jobMessage').textContent = job.error && job.status === 'failed' ? job.error : job.message;
+      $('jobPercent').textContent = `${Math.round(job.progress || 0)}%`;
+      $('jobProgress').style.width = `${Math.max(0, Math.min(100, job.progress || 0))}%`;
+      $('jobItems').innerHTML = (job.items || []).map((item) => `
+        <div class="job-item">
+          <div class="job-item-title">${escapeHtml(item.tripId)}</div>
+          <div class="job-item-status ${escapeHtml(item.status)}">${item.status === 'done' ? '已完成' : item.status === 'failed' ? '失败' : item.status === 'running' ? '处理中' : '等待中'}</div>
+          <div class="job-item-message">${escapeHtml(item.error || item.message || '')}</div>
+          ${item.project ? `<div class="job-item-path">${escapeHtml(item.project)}</div>` : ''}
+        </div>`).join('');
+      $('revealButton').hidden = !(job.outputs || []).length;
+      $('revealButton').dataset.path = (job.outputs || [])[0] || '';
+    }
+
+    async function pollJob() {
+      if (!state.jobId) return;
+      state.pollTimer = window.setTimeout(async () => {
+        try {
+          const job = await requestJson(`/api/jobs/${encodeURIComponent(state.jobId)}`);
+          renderJob(job);
+          if (['queued', 'running'].includes(job.status)) {
+            pollJob();
+          } else {
+            state.pollTimer = null;
+            updateSelection();
+            showToast(job.status === 'failed' ? job.error || '任务失败' : job.message, job.status === 'failed');
+          }
+        } catch (error) {
+          state.pollTimer = null;
+          updateSelection();
+          showToast(error.message, true);
+        }
+      }, 900);
+    }
+
+    async function startStudio() {
+      const trips = selectedTrips().map((trip) => trip.id);
+      if (!trips.length) return;
+      $('startButton').disabled = true;
+      try {
+        const job = await requestJson('/api/studio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ trips, open: true })
+        });
+        state.jobId = job.id;
+        renderJob(job);
+        $('jobPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pollJob();
+      } catch (error) {
+        showToast(error.message, true);
+        updateSelection();
+      }
+    }
+
+    $('tripGrid').addEventListener('click', (event) => {
+      if (state.jobId && state.pollTimer) return;
+      const card = event.target.closest('.trip-card');
+      if (!card) return;
+      const id = card.dataset.tripId;
+      if (state.selected.has(id)) state.selected.delete(id);
+      else state.selected.add(id);
+      updateSelection();
+      layout.tripId = id;
+      refreshLayoutPreview();
+    });
+    $('tripGrid').addEventListener('keydown', (event) => {
+      if (!['Enter', ' '].includes(event.key)) return;
+      const card = event.target.closest('.trip-card');
+      if (!card) return;
+      event.preventDefault();
+      card.click();
+    });
+    $('refreshButton').addEventListener('click', refreshAll);
+    $('layoutTime').addEventListener('input', () => refreshLayoutPreview());
+    $('layoutRefreshButton').addEventListener('click', () => { loadLayout().catch((error) => showToast(error.message, true)); });
+    $('layoutSaveButton').addEventListener('click', saveLayout);
+    $('layoutResetButton').addEventListener('click', async () => {
+      try {
+        await requestJson('/api/layout', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ layout: {} })
+        });
+        await loadLayout();
+        showToast('已恢复默认排版');
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    $('startButton').addEventListener('click', startStudio);
+    $('revealButton').addEventListener('click', async () => {
+      const path = $('revealButton').dataset.path;
+      if (!path) return;
+      try {
+        await requestJson('/api/reveal', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path })
+        });
+      } catch (error) { showToast(error.message, true); }
+    });
+    refreshAll();
+  </script>
+</body>
+</html>

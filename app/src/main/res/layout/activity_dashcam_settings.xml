@@ -154,6 +154,43 @@
                         android:text="@string/loop_storage_helper"
                         android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
 
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.thomas.carspeed.StorageUsageView
+                            android:id="@+id/storageUsageChart"
+                            android:layout_width="132dp"
+                            android:layout_height="132dp"
+                            android:contentDescription="@string/storage_usage_chart_caption" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvStorageUsageSummary"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/storage_usage_summary_default"
+                                android:textAppearance="@style/TextAppearance.CarSpeed.SectionTitle" />
+
+                            <TextView
+                                android:id="@+id/tvStorageUsageDetail"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/storage_usage_detail_default"
+                                android:textAppearance="@style/TextAppearance.CarSpeed.Body" />
+                        </LinearLayout>
+                    </LinearLayout>
+
                     <TextView
                         android:id="@+id/tvSegmentLabel"
                         android:layout_width="match_parent"
