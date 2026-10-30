@@ -23,6 +23,7 @@ import threading
 import uuid
 import dataclasses
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -903,25 +904,124 @@ def remote_thumbnail(trip_id: str, workspace: Path, remote: RemoteTrip | None = 
             temporary.unlink(missing_ok=True)
 
 
-def overlay_preview_image(trip_id: str, workspace: Path, query: dict[str, str]) -> Any:
-    """渲染“缩略图 + 排版叠加层”的预览，尺寸与排版画布一致。"""
+def cached_trip_video(trip_id: str, workspace: Path) -> Path | None:
+    """在已拉取的工作区里找这趟行程缓存下来的第一段视频。
+
+    Studio 的排版预览需要一帧真实画面当底图。手机缩略图只有新版 App 才会生成，
+    而只要用户之前导出过这趟行程，完整录像就已经在本机了，直接抽帧比再要一张缩略图可靠。
+    """
+    # workspace 下可能留着多条历史 job 的同名副本，其中有些是中途失败留下的半截文件。
+    # 按体积挑最大的那段，别让一个空壳目录挡住真正能用的素材。
+    best: Path | None = None
+    best_size = 0
+    for candidate in workspace.glob(f"*/{safe_name(trip_id)}/*/raw/*.mp4"):
+        try:
+            size = candidate.stat().st_size
+        except OSError:
+            continue
+        # 小于 1MB 基本是半截文件或占位，抽帧多半失败。
+        if size < 1_000_000:
+            continue
+        if size > best_size:
+            best, best_size = candidate, size
+    return best
+
+
+@lru_cache(maxsize=64)
+def _extract_frame_png(video: str, offset_ms: int, mtime_ns: int) -> bytes:
+    """抽一帧并缓存：拖动预览时间轴时同一时刻会被反复请求。"""
+    command = [
+        "ffmpeg", "-v", "error", "-hide_banner",
+        # -ss 放在 -i 之前是关键帧对齐的快速定位，4K 长片也能在几十毫秒内出帧；
+        # 放在后面就要从头解码到该时刻，拖动时间轴会明显卡顿。
+        "-ss", f"{max(0, offset_ms) / 1000.0:.3f}",
+        "-i", video,
+        "-frames:v", "1",
+        "-vf", "scale=1280:-2",
+        "-f", "image2pipe", "-vcodec", "png",
+        "pipe:1",
+    ]
+    return subprocess.run(command, capture_output=True, check=False).stdout
+
+
+def video_frame(video: Path, offset_ms: int, width: int, height: int) -> Any:
+    """按时间点从本地视频抽一帧，缩放并居中裁切到画布尺寸。"""
     assert Image is not None
+    raw = _extract_frame_png(str(video), max(0, offset_ms), video.stat().st_mtime_ns)
+    if not raw:
+        raise RuntimeError("抽取预览帧失败")
+    with Image.open(io.BytesIO(raw)) as handle:
+        frame = handle.convert("RGB")
+    # 等比放大到铺满画布，再居中裁切，避免拉伸变形；和 FilmCraft 的 fitToFrame 观感一致。
+    scale = max(width / frame.width, height / frame.height)
+    resized = frame.resize(
+        (max(width, round(frame.width * scale)), max(height, round(frame.height * scale))),
+        Image.LANCZOS,
+    )
+    left = (resized.width - width) // 2
+    top = (resized.height - height) // 2
+    return resized.crop((left, top, left + width, top + height))
+
+
+def preview_background(
+    trip_id: str,
+    workspace: Path,
+    remote: RemoteTrip,
+    sample_ms: int,
+    width: int,
+    height: int,
+) -> Any:
+    """预览底图：本地缓存的录像 > 手机缩略图 > 纯色兜底。"""
+    assert Image is not None
+    video = cached_trip_video(trip_id, workspace)
+    if video is not None:
+        try:
+            return video_frame(video, sample_ms, width, height)
+        except Exception:  # noqa: BLE001 - 抽帧失败就继续往下退回
+            pass
+    thumbnail = remote_thumbnail(trip_id, workspace, remote)
+    if thumbnail is not None:
+        try:
+            with Image.open(thumbnail) as handle:
+                return handle.convert("RGB").resize((width, height))
+        except Exception:  # noqa: BLE001 - 缩略图损坏时退回纯色底
+            pass
+    return Image.new("RGB", (width, height), (14, 20, 18))
+
+
+def preview_duration_ms(trip_id: str, workspace: Path) -> int:
+    """该行程可供预览的总时长：优先用已缓存录像的真实时长，退回轨迹末点。"""
+    video = cached_trip_video(trip_id, workspace)
+    if video is not None:
+        try:
+            return max(1, probe_duration_ms(video))
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        points = preview_track_points(scan_remote_trip(trip_id), workspace)
+    except Exception:  # noqa: BLE001
+        return 0
+    return max((point.elapsed_ms for point in points), default=0)
+
+
+def overlay_preview_image(trip_id: str, workspace: Path, query: dict[str, str]) -> Any:
+    """渲染“真实画面 + 排版叠加层”的预览，尺寸与排版画布一致。"""
+    assert Image is not None
+    # 前端会把正在编辑、还没保存的排版传给 layout 参数。
+    # 只读磁盘上的 layout.json 的话，用户拖了滑块却要等保存后才看到效果。
     layout = load_layout()
+    draft = query.get("layout")
+    if draft:
+        try:
+            layout = layout_from_dict(json.loads(draft))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
     remote = scan_remote_trip(trip_id)
     sample_ms = max(0, int(float(query.get("t") or 0) * 1000))
     values, speed_kmh = sample_trip_values(remote, workspace, sample_ms)
     width, height = layout.width, layout.height
 
-    thumbnail = remote_thumbnail(trip_id, workspace, remote)
-    if thumbnail is not None:
-        try:
-            with Image.open(thumbnail) as handle:
-                background = handle.convert("RGB").resize((width, height))
-        except Exception:  # noqa: BLE001 - 缩略图损坏时退回纯色底
-            background = Image.new("RGB", (width, height), (14, 20, 18))
-    else:
-        background = Image.new("RGB", (width, height), (14, 20, 18))
-
+    background = preview_background(trip_id, workspace, remote, sample_ms, width, height)
     map_points = preview_track_points(remote, workspace)
     overlay = render_overlay_frame(layout, values, speed_kmh, width, height, sample_ms, map_points)
     composed = Image.alpha_composite(background.convert("RGBA"), overlay)
@@ -1036,7 +1136,10 @@ def segment_offset_ms(remote: RemoteTrip, segment: RemoteSegment, stem: str) -> 
 def adb_pull_cached(remote_path: str, workspace: Path) -> Path | None:
     cache_dir = workspace / "srt-cache"
     digest = hashlib.sha1(remote_path.encode("utf-8")).hexdigest()[:20]
-    local = cache_dir / f"{digest}.srt"
+    # 后缀必须跟远端一致：调用方靠 .json / .srt 区分轨迹和字幕，
+    # 早先统一写死 .srt，导致 .track.json 被当成字幕后解析不出任何轨迹点。
+    suffix = Path(remote_path).suffix or ".bin"
+    local = cache_dir / f"{digest}{suffix}"
     if local.is_file() and local.stat().st_size > 0:
         return local
     with LAYOUT_CACHE_LOCK:
@@ -2837,9 +2940,10 @@ def satellite_base_tile(config: MapLayerLayout, points: list[TrackPoint], diamet
     )
     grain = (field * 26.0)[..., None]
     rgb = np.clip(base + grain + np.array([0.0, 5.0, 1.0], dtype=np.float32), 0, 255)
-    # 叠两条暗一些的道路带，让卫星图有可读的道路结构。
-    road = (np.abs(np.sin((u * 1.8 + v * 0.6) * math.pi)) < 0.035)
-    rgb[road] = np.clip(rgb[road] * 0.72 + 34, 0, 255)
+    # 再压一层低频明暗，像卫星图里的地块与树丛；不用直线纹理——
+    # 之前的等距斜纹在 237px 的圆盘上像渲染故障，而不是地图。
+    patch = np.sin((u * 3.7 + seed) * math.tau) * np.cos((v * 2.9 - seed) * math.tau) * 12.0
+    rgb = np.clip(rgb + patch[..., None], 0, 255)
     alpha = np.full((diameter, diameter, 1), 255, dtype=np.uint8)
     array = np.concatenate([rgb.astype(np.uint8), alpha], axis=2)
     tile = Image.fromarray(array, mode="RGBA")
@@ -3292,10 +3396,16 @@ class Handler(BaseHTTPRequestHandler):
             trip_id = parsed.path.removeprefix("/api/trips/").removesuffix("/thumbnail").strip("/")
             try:
                 thumbnail = remote_thumbnail(trip_id, self.workspace)
-                if thumbnail is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                else:
+                if thumbnail is not None:
                     self.send_file(thumbnail, attachment=False)
+                else:
+                    # 手机端还没生成缩略图（旧版 App）时，用本机已缓存录像抽一帧顶上，
+                    # 别让列表只剩一张「GPS CarSpeed」占位图。
+                    video = cached_trip_video(trip_id, self.workspace)
+                    if video is None:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                    else:
+                        self.send_image(video_frame(video, 60_000, 640, 360))
             except Exception as error:  # noqa: BLE001
                 self.send_json({"error": str(error)}, status=HTTPStatus.SERVICE_UNAVAILABLE)
         elif parsed.path == "/api/layout":
@@ -3315,7 +3425,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        if parsed.path in {"/api/studio", "/api/export", "/api/reveal", "/api/layout"}:
+        if parsed.path in {"/api/studio", "/api/export", "/api/reveal", "/api/layout", "/api/preview"}:
             length = int(self.headers.get("content-length") or 0)
             try:
                 data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
@@ -3324,6 +3434,20 @@ class Handler(BaseHTTPRequestHandler):
                         raise RuntimeError("layout 必须是对象")
                     save_layout(layout_from_dict(data["layout"]))
                     self.send_json({"layout": layout_to_dict(load_layout())})
+                elif parsed.path == "/api/preview":
+                    # 用 POST 而不是 GET 参数：排版 JSON 有 4KB 上下，塞进 URL 会被浏览器截断。
+                    trip_id = str(data.get("trip") or "")
+                    if not trip_id:
+                        raise RuntimeError("trip 不能为空")
+                    query = {
+                        "t": str(data.get("t") or 0),
+                        "layout": json.dumps(data["layout"]) if isinstance(data.get("layout"), dict) else "",
+                    }
+                    image = overlay_preview_image(trip_id, self.workspace, query)
+                    # 把行程总时长回给前端，排版编辑器据此设置预览时间轴的上限；
+                    # 之前写死在 120 秒，一小时的行程只能预览开头两分钟。
+                    duration_ms = preview_duration_ms(trip_id, self.workspace)
+                    self.send_image(image, {"x-trip-duration-ms": str(duration_ms)})
                 elif parsed.path == "/api/studio":
                     trip_ids = data.get("trips")
                     if not isinstance(trip_ids, list):
@@ -3398,7 +3522,7 @@ class Handler(BaseHTTPRequestHandler):
         with path.open("rb") as handle:
             shutil.copyfileobj(handle, self.wfile)
 
-    def send_image(self, image: Any) -> None:
+    def send_image(self, image: Any, extra_headers: dict[str, str] | None = None) -> None:
         assert Image is not None
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
@@ -3407,6 +3531,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("content-type", "image/png")
         self.send_header("content-length", str(len(body)))
         self.send_header("cache-control", "no-store")
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 

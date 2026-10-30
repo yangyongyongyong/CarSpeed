@@ -188,7 +188,9 @@
         radial-gradient(circle at 75% 22%, rgba(228, 107, 46, .45), transparent 38%),
         linear-gradient(135deg, #25332f, #111917 70%);
     }
-    .trip-cover img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .trip-cover img { width: 100%; height: 100%; display: block; object-fit: cover; position: relative; z-index: 1; }
+    /* 有真实封面时不需要占位标识 */
+    .trip-cover.has-shot .trip-cover-placeholder { display: none; }
     .trip-cover::after {
       position: absolute;
       inset: 0;
@@ -514,6 +516,7 @@
             <label for="layoutTime" style="color: var(--muted); font-size: .78rem;">取样时间</label>
             <input id="layoutTime" type="range" min="0" max="120" step="1" value="5">
             <span id="layoutTimeLabel" style="color: var(--muted); font-size: .78rem; min-width: 62px;">5.0s</span>
+            <button id="layoutPlayButton" class="ghost-button" type="button" style="color: var(--ink); border-color: var(--line);">▶ 播放 10 秒</button>
           </div>
         </div>
         <div>
@@ -614,14 +617,15 @@
         const selected = state.selected.has(trip.id);
         const trackClass = trip.trackCoverage >= 1 ? 'good' : trip.trackCoverage > 0 ? 'warn' : '';
         const subtitleClass = trip.subtitleCoverage >= 1 ? 'good' : trip.subtitleCoverage > 0 ? 'warn' : '';
-        const thumbnailUrl = trip.thumbnailUrl ? `${trip.thumbnailUrl}?v=${encodeURIComponent(trip.id)}` : null;
+        // 这个接口在手机没缩略图时会用本机缓存的录像抽一帧，所以永远可以尝试；
+        // 真取不到时 <img> 的 onerror 会把它移除，退回下面的占位样式。
+        const thumbnailUrl = `/api/trips/${encodeURIComponent(trip.id)}/thumbnail?v=${encodeURIComponent(trip.id)}`;
         return `
           <article class="trip-card${selected ? ' selected' : ''}" data-trip-id="${escapeHtml(trip.id)}" role="checkbox" tabindex="0" aria-checked="${selected}" style="--index:${index}">
             <input type="checkbox" ${selected ? 'checked' : ''} aria-label="选择 ${escapeHtml(trip.title)}">
             <div class="trip-cover">
-              ${thumbnailUrl
-                ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(title.date)} ${escapeHtml(title.time)} 行车画面" loading="lazy">`
-                : `<div class="trip-cover-placeholder" aria-hidden="true"><span class="cover-gauge"><strong>GPS</strong><span>CARSPEED</span></span></div>`}
+              <div class="trip-cover-placeholder" aria-hidden="true"><span class="cover-gauge"><strong>GPS</strong><span>CARSPEED</span></span></div>
+              <img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(title.date)} ${escapeHtml(title.time)} 行车画面" loading="lazy">
               <span class="cover-duration">${trip.segments} × VIDEO</span>
               <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg></span>
             </div>
@@ -645,6 +649,10 @@
 
     function installThumbnailFallbacks() {
       document.querySelectorAll('.trip-cover img').forEach((image) => {
+        // 真实封面到位后把「GPS CARSPEED」占位标识藏掉，别压在画面上。
+        const reveal = () => image.closest('.trip-cover')?.classList.add('has-shot');
+        if (image.complete && image.naturalWidth > 0) reveal();
+        else image.addEventListener('load', reveal, { once: true });
         image.addEventListener('error', () => image.remove(), { once: true });
       });
     }
@@ -677,7 +685,6 @@
       const gauge = layout.config.gauge;
       const bar = layout.config.infoBar || { enabled: false, fields: [], textSize: 30, padding: 14, opacity: 100, backgroundColor: '#ffffff', textColor: '#17201e' };
       layout.config.infoBar = bar;
-      const barChecks = bar.fields.map((key) => `<label style="display:flex; gap:6px; align-items:center; color: var(--ink); font-size:.72rem;"><input type="checkbox" data-bar-field="${escapeHtml(key)}" checked> ${escapeHtml(fieldLabel(key))}</label>`).join('');
       const allFieldChecks = (layout.config.fields || []).map((f) => {
         const on = bar.fields.includes(f.key);
         return `<label style="display:flex; gap:6px; align-items:center; color: var(--ink); font-size:.72rem;"><input type="checkbox" data-bar-field="${escapeHtml(f.key)}" ${on ? 'checked' : ''}> ${escapeHtml(f.label)}</label>`;
@@ -818,6 +825,13 @@
           const next = new Set(bar.fields);
           if (box.checked) next.add(key); else next.delete(key);
           bar.fields = ORDERED_FIELDS.filter((name) => next.has(name));
+          // 勾了字段却没打开信息栏是最容易踩的坑：勾选框看着有反应，
+          // 画面却一点变化都没有。勾第一个字段时顺手把信息栏打开。
+          if (bar.fields.length && !bar.enabled) {
+            bar.enabled = true;
+            const toggle = $('bar-enabled');
+            if (toggle) toggle.checked = true;
+          }
           markDirty();
         });
       });
@@ -995,15 +1009,105 @@
       }
     }
 
-    function refreshLayoutPreview() {
+    async function refreshLayoutPreview() {
       if (!layout.config) return;
       const tripId = layout.tripId || selectedTripId();
       layout.tripId = tripId;
       if (!tripId) return;
       const seconds = Number($('layoutTime').value || 0);
       $('layoutTimeLabel').textContent = `${seconds.toFixed(1)}s`;
-      const url = `/api/trips/${encodeURIComponent(tripId)}/overlay-preview?t=${seconds}&v=${Date.now()}`;
-      $('layoutImage').src = url;
+      // 用 POST 把正在编辑的排版一起发过去：GET 参数放不下 4KB 的排版 JSON，
+      // 而且不带上草稿的话，用户拖完滑块要等「保存」才能看到效果。
+      try {
+        const response = await fetch('/api/preview', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ trip: tripId, t: seconds, layout: layout.config })
+        });
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({}));
+          throw new Error(detail.error || '预览渲染失败');
+        }
+        // 用行程真实时长校准时间轴：之前写死 120 秒，长行程只能看到开头两分钟。
+        const totalMs = Number(response.headers.get('x-trip-duration-ms') || 0);
+        if (totalMs > 0) {
+          layout.durationMs = totalMs;
+          const slider = $('layoutTime');
+          const maxSeconds = Math.max(1, Math.floor(totalMs / 1000));
+          if (Number(slider.max) !== maxSeconds) {
+            slider.max = String(maxSeconds);
+            if (Number(slider.value) > maxSeconds) slider.value = String(maxSeconds);
+          }
+        }
+        const blob = await response.blob();
+        const previous = layout.previewUrl;
+        layout.previewUrl = URL.createObjectURL(blob);
+        $('layoutImage').src = layout.previewUrl;
+        if (previous) URL.revokeObjectURL(previous);
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    }
+
+    // 逐帧请求太慢，10 秒预播放按 2fps 取 20 帧，先全部取回再连续播放，
+    // 这样播放过程不会因为等待渲染而卡顿。
+    let playTimer = null;
+
+    async function playLayoutPreview() {
+      if (!layout.config) return;
+      const button = $('layoutPlayButton');
+      if (playTimer) {
+        window.clearInterval(playTimer);
+        playTimer = null;
+        button.textContent = '▶ 播放 10 秒';
+        return;
+      }
+      const tripId = layout.tripId || selectedTripId();
+      if (!tripId) return;
+      const start = Number($('layoutTime').value || 0);
+      const total = layout.durationMs ? layout.durationMs / 1000 : start + 10;
+      const span = Math.max(1, Math.min(10, total - start));
+      const fps = 2;
+      const count = Math.max(2, Math.round(span * fps));
+
+      button.disabled = true;
+      button.textContent = '渲染中…';
+      const frames = [];
+      try {
+        for (let index = 0; index < count; index += 1) {
+          const seconds = start + (span * index) / (count - 1);
+          const response = await fetch('/api/preview', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ trip: tripId, t: seconds, layout: layout.config })
+          });
+          if (!response.ok) throw new Error('预览渲染失败');
+          frames.push(URL.createObjectURL(await response.blob()));
+        }
+      } catch (error) {
+        frames.forEach((url) => URL.revokeObjectURL(url));
+        button.disabled = false;
+        button.textContent = '▶ 播放 10 秒';
+        throw error;
+      }
+
+      button.disabled = false;
+      button.textContent = '■ 停止';
+      let cursor = 0;
+      playTimer = window.setInterval(() => {
+        if (cursor >= frames.length) {
+          window.clearInterval(playTimer);
+          playTimer = null;
+          button.textContent = '▶ 播放 10 秒';
+          // 播放结束回到起点那一帧，避免停在最后一帧让人以为跳走了。
+          $('layoutTime').value = String(start);
+          refreshLayoutPreview();
+          return;
+        }
+        $('layoutImage').src = frames[cursor];
+        $('layoutTimeLabel').textContent = `${(start + (span * cursor) / (count - 1)).toFixed(1)}s`;
+        cursor += 1;
+      }, 1000 / fps);
     }
 
     async function saveLayout() {
@@ -1153,6 +1257,7 @@
     });
     $('refreshButton').addEventListener('click', refreshAll);
     $('layoutTime').addEventListener('input', () => refreshLayoutPreview());
+    $('layoutPlayButton').addEventListener('click', () => playLayoutPreview().catch((error) => showToast(error.message, true)));
     $('layoutRefreshButton').addEventListener('click', () => { loadLayout().catch((error) => showToast(error.message, true)); });
     $('layoutSaveButton').addEventListener('click', saveLayout);
     $('layoutResetButton').addEventListener('click', async () => {
