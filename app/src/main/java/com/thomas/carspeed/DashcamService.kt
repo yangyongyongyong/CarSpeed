@@ -396,6 +396,7 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun onSeamlessSegmentFinalized(file: File) {
         // 正常收完一段说明相机已稳定，重连次数从头算。
         reconnectAttempts = 0
+        val isFirstSegment = activeVideoStartWallMs > 0L && activeVideoStartWallMs == activeTripStartWallMs
         val plateSession = activePlateSession
         activePlateSession = null
         val subtitleFile = activeSubtitleFile
@@ -409,6 +410,10 @@ class DashcamService : LifecycleService(), LocationListener {
         runInBackground(ioExecutor) {
             scanFile(file, "video/mp4")
             subtitleFile?.takeIf { it.exists() }?.let { scanFile(it, "application/x-subrip") }
+            if (isFirstSegment) {
+                TripThumbnailGenerator.generate(file)
+                    ?.let { thumbnail -> scanFile(thumbnail, "image/jpeg") }
+            }
             if (track != null) {
                 runCatching { VideoTrackStorage.writeTrack(context = this, videoFile = file, track = track) }
             }

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.text.format.Formatter
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -20,6 +21,8 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 
 class DashcamSettingsActivity : AppCompatActivity() {
+    private val storageUsageExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private var storageUsageRequestId = 0
     private lateinit var toolbar: MaterialToolbar
     private lateinit var spVideoResolution: Spinner
     private lateinit var spVideoFps: Spinner
@@ -30,6 +33,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
     private lateinit var sbHdrEndHour: SeekBar
     private lateinit var tvLoopStorageLabel: TextView
     private lateinit var sbLoopStorage: SeekBar
+    private lateinit var storageUsageChart: StorageUsageView
+    private lateinit var tvStorageUsageSummary: TextView
+    private lateinit var tvStorageUsageDetail: TextView
     private lateinit var tvSegmentLabel: TextView
     private lateinit var sbSegmentMinutes: SeekBar
     private lateinit var cbParkingStop: CheckBox
@@ -112,6 +118,9 @@ class DashcamSettingsActivity : AppCompatActivity() {
         sbHdrEndHour = findViewById(R.id.sbHdrEndHour)
         tvLoopStorageLabel = findViewById(R.id.tvLoopStorageLabel)
         sbLoopStorage = findViewById(R.id.sbLoopStorage)
+        storageUsageChart = findViewById(R.id.storageUsageChart)
+        tvStorageUsageSummary = findViewById(R.id.tvStorageUsageSummary)
+        tvStorageUsageDetail = findViewById(R.id.tvStorageUsageDetail)
         tvSegmentLabel = findViewById(R.id.tvSegmentLabel)
         sbSegmentMinutes = findViewById(R.id.sbSegmentMinutes)
         cbParkingStop = findViewById(R.id.cbParkingStop)
@@ -462,6 +471,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
         sbLoopStorage.max = DashcamSettings.MAX_LOOP_STORAGE_GB
         sbLoopStorage.progress = storageGb
         tvLoopStorageLabel.text = getString(R.string.loop_storage_label, storageGb)
+        refreshStorageUsage(storageGb)
 
         val segmentMinutes = prefs.getInt(
             DashcamSettings.PREF_SEGMENT_MINUTES,
@@ -515,6 +525,7 @@ class DashcamSettingsActivity : AppCompatActivity() {
                 val fixed = progress.coerceIn(DashcamSettings.MIN_LOOP_STORAGE_GB, DashcamSettings.MAX_LOOP_STORAGE_GB)
                 tvLoopStorageLabel.text = getString(R.string.loop_storage_label, fixed)
                 prefs.edit().putInt(DashcamSettings.PREF_LOOP_STORAGE_GB, fixed).apply()
+                refreshStorageUsage(fixed)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
@@ -594,9 +605,35 @@ class DashcamSettingsActivity : AppCompatActivity() {
         btnAmapWatchGrant.setText(if (ready) R.string.amap_watch_ready else R.string.amap_watch_grant)
     }
 
+    /**
+     * 统计循环录像空间的真实占用并刷新圆环。
+     * 目录可能有几百个文件，放到后台线程算；拖动配额时用 token 丢弃过期结果。
+     */
+    private fun refreshStorageUsage(limitGb: Int) {
+        val requestId = ++storageUsageRequestId
+        storageUsageExecutor.execute {
+            val usage = runCatching { VideoStorage.storageUsage(this, limitGb) }.getOrNull() ?: return@execute
+            runOnUiThread {
+                if (requestId != storageUsageRequestId || isFinishing || isDestroyed) return@runOnUiThread
+                val usedText = Formatter.formatShortFileSize(this, usage.usedBytes)
+                val limitText = Formatter.formatShortFileSize(this, usage.limitBytes)
+                val freeText = Formatter.formatShortFileSize(this, (usage.limitBytes - usage.usedBytes).coerceAtLeast(0L))
+                storageUsageChart.setUsage(usage.percent)
+                tvStorageUsageSummary.text = getString(R.string.storage_usage_summary, usedText, limitText)
+                tvStorageUsageDetail.text = getString(R.string.storage_usage_detail, usage.percent, freeText)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         if (::btnAmapWatchGrant.isInitialized) updateAmapWatchGrant()
+    }
+
+    override fun onDestroy() {
+        storageUsageRequestId++
+        storageUsageExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun updateAutoTriggerControls() {

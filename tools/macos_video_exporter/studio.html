@@ -1,0 +1,4346 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>CarSpeed Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,700;1,500;1,700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* 和参考稿同一套设计变量：赛道橙 + 深蓝黑底 + 玻璃面板 */
+      --paper: #0f141c;
+      --paper-strong: #151b23;
+      --ink: #e8edf3;
+      --muted: #94a3b8;
+      --line: rgba(255, 255, 255, .15);
+      --card: rgba(13, 17, 23, .65);
+      --orange: #ff5e00;
+      --orange-dark: #ff8a3d;
+      --orange-glow: rgba(255, 94, 0, .4);
+      --teal: #00f2ff;
+      --teal-soft: rgba(0, 242, 255, .14);
+      --danger: #ff334b;
+      --shadow: 0 18px 55px rgba(0, 0, 0, .55);
+      --font-hud: 'Chakra Petch', "Avenir Next", "PingFang SC", sans-serif;
+      --font-num: 'Orbitron', "SF Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 50% 40%, rgba(43, 58, 74, .85) 0%, #0f141c 80%),
+        #0f141c;
+      font-family: var(--font-hud);
+    }
+
+    /* 参考稿的斜向路网纹理，压在背景上做纵深。 */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: -50%;
+      z-index: -1;
+      background:
+        linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      transform: perspective(600px) rotateX(58deg) translateY(220px);
+      pointer-events: none;
+    }
+
+    body::before {
+      content: none;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .shell { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 120px; }
+
+    .masthead {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 28px;
+      margin-bottom: 34px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 15px; }
+    .brand-mark {
+      display: grid;
+      width: 52px;
+      height: 52px;
+      place-items: center;
+      color: #fffaf2;
+      border-radius: 15px 22px 15px 22px;
+      background: var(--ink);
+      box-shadow: 8px 8px 0 rgba(228, 107, 46, .92);
+      transform: rotate(-2deg);
+    }
+    .brand-mark svg { width: 31px; height: 31px; }
+    h1 {
+      margin: 0;
+      font-family: "Iowan Old Style", "Songti SC", serif;
+      font-size: clamp(2.25rem, 5vw, 4.4rem);
+      font-weight: 600;
+      line-height: .9;
+      letter-spacing: -.055em;
+    }
+    .brand p { margin: 9px 0 0; color: var(--muted); font-size: .9rem; letter-spacing: .07em; }
+
+    .system-state {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: 350px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--muted);
+      font-size: .82rem;
+      backdrop-filter: blur(16px);
+    }
+    .signal {
+      width: 9px;
+      height: 9px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--orange);
+      box-shadow: 0 0 0 5px rgba(228, 107, 46, .12);
+    }
+    .system-state.ready .signal { background: var(--teal); box-shadow: 0 0 0 5px var(--orange-glow); }
+    .system-state.error .signal { background: var(--danger); box-shadow: 0 0 0 5px rgba(166, 64, 45, .12); }
+    /* 「没连手机、用演示行程预览」既不是就绪也不是出错，用橙色区分开。 */
+    .system-state.warn .signal { background: var(--orange); box-shadow: 0 0 0 5px rgba(228, 107, 46, .12); }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(240px, .6fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .intro-copy, .workflow {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .intro-copy { padding: 25px 28px; }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--orange-dark);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .intro-copy h2 { max-width: 670px; margin: 0; font-size: clamp(1.25rem, 2.4vw, 1.8rem); line-height: 1.36; }
+    .intro-copy p:last-child { max-width: 680px; margin: 12px 0 0; color: var(--muted); line-height: 1.6; }
+    .workflow { display: grid; align-content: center; gap: 13px; padding: 22px; }
+    .workflow-step { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center; color: var(--muted); font-size: .85rem; }
+    .workflow-step b {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--ink);
+      background: var(--paper-strong);
+      font-size: .72rem;
+    }
+    .workflow-step.active { color: var(--ink); font-weight: 700; }
+    .workflow-step.active b { color: white; background: var(--teal); }
+
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 30px 0 14px; }
+    .toolbar h2 { margin: 0; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.65rem; font-weight: 600; }
+    .toolbar-meta { color: var(--muted); font-size: .82rem; }
+    .icon-button, .primary-button, .ghost-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform .16s ease, background .16s ease, opacity .16s ease;
+    }
+    .icon-button:active, .primary-button:active, .ghost-button:active { transform: translateY(1px); }
+    .icon-button { padding: 9px 13px; border: 1px solid var(--line); background: var(--card); font-size: .82rem; backdrop-filter: blur(16px); }
+    .icon-button:hover { background: rgba(255, 94, 0, .16); border-color: var(--orange); color: var(--orange); }
+    .icon-button svg, .primary-button svg { width: 16px; height: 16px; }
+    /* 主按钮走参考稿的高亮橙，是整页唯一的实心强调色。 */
+    .primary-button {
+      padding: 11px 20px;
+      background: var(--orange);
+      color: #fff;
+      font-weight: 700;
+      letter-spacing: .3px;
+      box-shadow: 0 6px 22px var(--orange-glow);
+    }
+    .primary-button:hover { background: var(--orange-dark); }
+
+    .trip-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .trip-card {
+      position: relative;
+      min-height: 348px;
+      overflow: hidden;
+      padding: 0 19px 19px;
+      border: 1px solid var(--line);
+      border-radius: 4px 16px 4px 12px;
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .5);
+      cursor: pointer;
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+      animation: reveal .44s both;
+      animation-delay: calc(var(--index) * 35ms);
+    }
+    .trip-card:hover { transform: translateY(-3px); border-color: rgba(255, 94, 0, .55); box-shadow: 0 16px 35px rgba(0, 0, 0, .6); }
+    .trip-card.selected { border-color: var(--orange); box-shadow: 0 0 0 2px var(--orange-glow), 0 17px 38px rgba(0, 0, 0, .6); }
+    .trip-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .trip-cover {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      margin: 0 -19px 17px;
+      overflow: hidden;
+      color: rgba(255, 250, 242, .9);
+      background:
+        radial-gradient(circle at 75% 22%, rgba(228, 107, 46, .45), transparent 38%),
+        linear-gradient(135deg, #25332f, #111917 70%);
+    }
+    .trip-cover img { width: 100%; height: 100%; display: block; object-fit: cover; position: relative; z-index: 1; }
+    /* 有真实封面时不需要占位标识 */
+    .trip-cover.has-shot .trip-cover-placeholder { display: none; }
+    .trip-cover::after {
+      position: absolute;
+      inset: 0;
+      content: "";
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(10, 16, 14, .02) 48%, rgba(10, 16, 14, .52));
+    }
+    .trip-cover-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .cover-gauge {
+      display: grid;
+      gap: 4px;
+      justify-items: center;
+      width: 92px;
+      height: 92px;
+      align-content: center;
+      border: 1px solid rgba(255, 255, 255, .3);
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 8px rgba(255, 255, 255, .035), 0 12px 35px rgba(0, 0, 0, .18);
+    }
+    .cover-gauge strong { font-family: "Iowan Old Style", serif; font-size: 1.75rem; line-height: .9; }
+    .cover-gauge span { color: rgba(255, 255, 255, .58); font-size: .58rem; font-weight: 800; letter-spacing: .16em; }
+    .cover-duration {
+      position: absolute;
+      z-index: 1;
+      right: 10px;
+      bottom: 9px;
+      padding: 4px 7px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      border-radius: 6px;
+      color: #fffaf2;
+      background: rgba(12, 18, 16, .68);
+      font-family: "SFMono-Regular", Menlo, monospace;
+      font-size: .65rem;
+      font-weight: 700;
+      backdrop-filter: blur(8px);
+    }
+    .trip-cover .check {
+      position: absolute;
+      z-index: 2;
+      top: 12px;
+      right: 12px;
+      color: #fffaf2;
+      border-color: rgba(255, 255, 255, .5);
+      background: rgba(15, 23, 20, .58);
+      backdrop-filter: blur(8px);
+    }
+    .trip-card.selected .trip-cover .check { color: white; border-color: var(--teal); background: var(--teal); }
+    .trip-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .trip-date { margin: 0; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.32rem; font-weight: 600; letter-spacing: -.02em; }
+    .trip-time { margin: 4px 0 0; color: var(--muted); font-size: .77rem; }
+    .check { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(23, 32, 30, .22); border-radius: 8px; background: rgba(255, 255, 255, .52); }
+    .check svg { width: 14px; height: 14px; opacity: 0; transform: scale(.6); transition: .16s ease; }
+    .trip-card.selected .check svg { opacity: 1; transform: scale(1); }
+    .trip-facts { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0; }
+    .pill { padding: 5px 8px; border-radius: 7px; color: #43504b; background: #ece9e1; font-size: .7rem; font-weight: 700; }
+    .pill.good { color: #145954; background: var(--teal-soft); }
+    .pill.warn { color: #934412; background: #f7e3d4; }
+    .coverage { display: grid; gap: 8px; margin-top: auto; }
+    .coverage-row { display: grid; grid-template-columns: 68px 1fr 34px; gap: 8px; align-items: center; color: var(--muted); font-size: .7rem; }
+    .coverage-track { height: 5px; overflow: hidden; border-radius: 999px; background: #e4dfd5; }
+    .coverage-fill { height: 100%; border-radius: inherit; background: var(--teal); }
+    .coverage-fill.subtitle { background: var(--orange); }
+    .empty, .error-panel {
+      grid-column: 1 / -1;
+      padding: 54px 24px;
+      border: 1px dashed rgba(23, 32, 30, .22);
+      border-radius: 22px;
+      color: var(--muted);
+      text-align: center;
+      background: var(--card);
+    }
+    .error-panel { color: var(--danger); border-color: rgba(166, 64, 45, .3); }
+
+    .layout-panel {
+      margin: 26px 0 30px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .layout-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 26px 16px; }
+    .layout-head h2 { margin: 0; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.5rem; }
+    .layout-head p { margin: 6px 0 0; color: var(--muted); font-size: .82rem; }
+    .layout-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 20px; padding: 0 26px 24px; }
+    .preview-stage {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #0e1512;
+    }
+    .preview-stage img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      visibility: hidden;
+    }
+    .preview-stage video.layout-video {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      display: none;
+      pointer-events: none;
+      background: #000;
+    }
+    .preview-stage.is-split-mode video.layout-video {
+      height: var(--split-video-pct, 38%);
+    }
+    .chip.split-map {
+      transform: none;
+      cursor: default;
+      border-radius: 0;
+    }
+    .preview-stage video.layout-video.is-on { display: block; }
+    .overlay-frame {
+      position: absolute;
+      top: 0;
+      left: 0;
+      border: 0;
+      pointer-events: none;
+      background: transparent;
+      color-scheme: normal;
+      transform-origin: top left;
+      z-index: 1;
+    }
+    /* 没有可预览的行程时把黑底换成一句说明，别让人以为渲染坏了。 */
+    .preview-stage.empty::after {
+      content: '等待可预览的行程…';
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    .preview-stage .drop-layer { position: absolute; inset: 0; z-index: 2; }
+    /* 拖拽句柄只是透明热区：组件本身已经渲染在预览图上了，
+       句柄再画一遍内容就会叠出重影（之前 HUD 就是这样两个框叠在一起）。
+       平时看不见，鼠标移上去或拖动时才浮出边框，标出可拖范围。 */
+    .chip {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      transform-origin: center center;
+      white-space: nowrap;
+      user-select: none;
+      cursor: grab;
+      line-height: 1.15;
+      touch-action: none;
+      will-change: transform;
+      backface-visibility: hidden;
+      border: 1px dashed transparent;
+      border-radius: 8px;
+      background: transparent;
+    }
+    .chip:hover, .chip.dragging {
+      border-color: var(--orange);
+      background: var(--orange-glow);
+    }
+    /* 右键参数面板：直接贴着组件弹出，省得去右边一栏里翻找。 */
+    .chip-menu {
+      position: absolute;
+      z-index: 30;
+      min-width: 190px;
+      padding: 10px 0 8px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      border-radius: 8px;
+      background: rgba(18, 24, 38, .95);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, .8);
+      font-size: .74rem;
+      color: var(--ink);
+    }
+    /* 参考稿的菜单标题：全大写、宽字距、暗灰。 */
+    .chip-menu h4 {
+      margin: 0 0 7px;
+      padding: 0 14px;
+      font-size: .66rem;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .chip-menu[hidden] { display: none; }
+    /* 霓虹色点：18px 圆点，悬停放大，参考稿的换色交互。 */
+    .menu-swatches {
+      display: flex;
+      gap: 10px;
+      padding: 6px 14px 2px;
+    }
+    .menu-swatch {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 2px solid transparent;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform .2s ease, border-color .2s ease;
+    }
+    .menu-swatch:hover { transform: scale(1.2); border-color: #fff; }
+    /* 地图底图模式：卫星 / 道路，右键一键切换。 */
+    .menu-modes {
+      display: flex;
+      gap: 6px;
+      padding: 4px 14px 8px;
+    }
+    .menu-mode {
+      flex: 1;
+      padding: 6px 0;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .04);
+      color: var(--muted);
+      font-size: .68rem;
+      font-weight: 600;
+      letter-spacing: .4px;
+      cursor: pointer;
+      transition: border-color .15s ease, color .15s ease, background .15s ease;
+    }
+    .menu-mode:hover {
+      border-color: rgba(255, 255, 255, .35);
+      color: var(--ink);
+    }
+    .menu-mode.active {
+      border-color: var(--orange);
+      background: var(--orange-glow);
+      color: #fff;
+    }
+    .chip-menu h4 { margin: 0 0 6px; font-size: .74rem; color: var(--muted); font-weight: 600; }
+    .chip-menu label {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 6px;
+      margin: 5px 12px;
+      cursor: pointer;
+    }
+    .chip-menu label span { color: var(--muted); font-size: .68rem; }
+    .chip-menu input[type=range] { width: 100%; }
+    .chip-menu output { text-align: right; font-variant-numeric: tabular-nums; font-size: .68rem; }
+    .chip-menu .menu-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .stepper-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .step-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, .24);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .08);
+      color: var(--ink);
+      font-size: .88rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      user-select: none;
+      transition: background .15s ease, border-color .15s ease, transform .1s ease;
+    }
+    .step-btn:hover {
+      border-color: var(--orange);
+      background: var(--orange-glow);
+      color: #fff;
+    }
+    .step-btn:active { transform: scale(0.92); }
+    .field-controls .step-btn {
+      border-color: var(--line);
+      background: rgba(23, 32, 30, .06);
+    }
+    .field-controls .step-btn:hover {
+      border-color: var(--orange);
+      background: var(--orange-glow);
+      color: var(--ink);
+    }
+    .step-val {
+      min-width: 42px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      font-size: .72rem;
+      color: var(--ink);
+    }
+    /* 全屏预览拖拽工具条与全屏工作台模式 */
+    .stage-fs-toggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 25;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 11px;
+      border: 1px solid rgba(255, 255, 255, .24);
+      border-radius: 8px;
+      background: rgba(13, 17, 23, .78);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      font-size: .74rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease;
+    }
+    .stage-fs-toggle:hover {
+      border-color: var(--orange);
+      background: rgba(255, 94, 0, .28);
+    }
+    .layout-panel.is-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      margin: 0;
+      border-radius: 0;
+      border: none;
+      background: rgba(8, 12, 16, .97);
+      display: flex;
+      flex-direction: column;
+      padding: 12px 20px 16px;
+      overflow: hidden;
+    }
+    .layout-panel.is-fullscreen .layout-head {
+      padding: 4px 6px 10px;
+      color: #f8fafc;
+    }
+    .layout-panel.is-fullscreen .layout-head h2 { color: #fff; font-size: 1.25rem; }
+    .layout-panel.is-fullscreen .layout-head p { display: none; }
+    .layout-panel.is-fullscreen .layout-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      min-height: 0;
+      gap: 10px;
+    }
+    .layout-panel.is-fullscreen .layout-stage-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    .layout-panel.is-fullscreen .preview-stage {
+      width: min(calc(100vw - 40px), calc((100vh - 125px) * 16 / 9));
+      height: min(calc(100vh - 125px), calc((100vw - 40px) * 9 / 16));
+      box-shadow: 0 24px 68px rgba(0, 0, 0, .85);
+      border-color: rgba(255, 255, 255, .22);
+    }
+    .preview-stage.is-portrait {
+      aspect-ratio: 9 / 16;
+      max-height: 740px;
+      width: auto;
+      margin: 0 auto;
+    }
+    .layout-panel.is-fullscreen .preview-stage.is-portrait {
+      width: min(calc(100vw - 40px), calc((100vh - 125px) * 9 / 16));
+      height: min(calc(100vh - 125px), calc((100vw - 40px) * 16 / 9));
+      max-height: none;
+    }
+    .preset-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px 14px;
+      margin: 0 26px 16px;
+      padding: 11px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(15, 20, 28, .68);
+      backdrop-filter: blur(12px);
+    }
+    .layout-panel.is-fullscreen .preset-toolbar {
+      margin: 0 6px 10px;
+      padding: 8px 12px;
+    }
+    .preset-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .preset-label {
+      color: var(--muted);
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .preset-select,
+    .preset-input {
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      border-radius: 9px;
+      background: rgba(9, 13, 19, .85);
+      color: var(--ink);
+      font-size: .78rem;
+    }
+    .preset-select { min-width: 195px; cursor: pointer; }
+    .preset-input { min-width: 185px; }
+    .preset-select:focus,
+    .preset-input:focus {
+      outline: none;
+      border-color: var(--orange);
+      box-shadow: 0 0 0 2px var(--orange-glow);
+    }
+    .preset-btn {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 255, 255, .2);
+      border-radius: 9px;
+      background: rgba(255, 255, 255, .06);
+      color: var(--ink);
+      font-size: .76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .preset-btn:hover {
+      border-color: var(--orange);
+      background: var(--orange-glow);
+      color: #fff;
+    }
+    .preset-btn.primary {
+      border-color: var(--orange);
+      background: var(--orange);
+      color: #fff;
+      font-weight: 700;
+    }
+    .preset-btn.primary:hover {
+      background: #d35d25;
+    }
+    .preset-btn.is-active {
+      border-color: var(--teal);
+      background: var(--teal-soft);
+      color: #fff;
+    }
+    .preset-btn.danger:hover {
+      border-color: var(--danger);
+      background: rgba(255, 51, 75, .24);
+      color: #fff;
+    }
+    .layout-panel.is-fullscreen .timeline-row {
+      width: min(calc(100vw - 40px), calc((100vh - 125px) * 16 / 9));
+      margin-top: 10px;
+      color: #e2e8f0;
+    }
+    .layout-panel.is-fullscreen .layout-side-col {
+      display: none;
+    }
+    /* 地图句柄上的快捷比例尺 +/- 悬浮胶囊，拖拽/缩放地图时无需打开菜单即可微调比例尺 */
+    .chip-quick-bar {
+      position: absolute;
+      bottom: -32px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, .25);
+      background: rgba(13, 17, 23, .90);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      font-size: .68rem;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .14s ease;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .55);
+    }
+    .chip:hover .chip-quick-bar,
+    .chip.dragging .chip-quick-bar {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .chip-quick-bar .step-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      font-size: .8rem;
+    }
+    .chip:active { cursor: grabbing; }
+    /* 地图是参考稿的圆角矩形，Forza 表盘才是圆。 */
+    .chip.map { border-radius: 0 16px 4px 16px; }
+    .chip.gauge.bar, .chip.gauge:not(.aero):not(.gt) { border-radius: 50%; }
+    .chip.anchor-corner { transform: none; transform-origin: top left; }
+    .chip.map:hover, .chip.map.dragging,
+    .chip.gauge:hover, .chip.gauge.dragging {
+      border-color: var(--orange);
+      border-style: solid;
+    }
+    /* 缩放把手：右下角小三角，按住拖动改尺寸。 */
+    .chip .resize-handle {
+      position: absolute;
+      right: -7px;
+      bottom: -7px;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      background: var(--teal, #1e706b);
+      border: 2px solid #fff;
+      cursor: nwse-resize;
+      opacity: 0;
+      transition: opacity .12s ease;
+    }
+    .chip:hover .resize-handle,
+    .chip.dragging .resize-handle { opacity: 1; }
+    .timeline-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+    .timeline-row input[type=range] { flex: 1; }
+    .field-list { display: grid; gap: 10px; }
+    .field-row {
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--orange);
+      border-radius: 2px 12px 2px 8px;
+      background: var(--card);
+      backdrop-filter: blur(12px);
+    }
+    .field-row header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .field-row h3 { margin: 0; font-size: .88rem; }
+    .field-row.off { opacity: .5; }
+    .field-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 9px; }
+    .field-controls label { display: grid; gap: 3px; color: var(--muted); font-size: .68rem; }
+    .field-controls input[type=range] { width: 100%; }
+    .field-controls input[type=color] { width: 100%; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 7px; }
+    .layout-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; align-items: center; }
+    .layout-save-hint {
+      color: var(--muted);
+      font-size: .72rem;
+      letter-spacing: .2px;
+    }
+    .layout-save-hint.saving { color: #c9b27a; }
+    .layout-save-hint.saved { color: #7dba9a; }
+    .layout-save-hint.error { color: #e27d7d; }
+    .switch { position: relative; display: inline-flex; width: 38px; height: 21px; flex: 0 0 auto; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch span { position: absolute; inset: 0; border-radius: 999px; background: rgba(23, 32, 30, .18); transition: .18s ease; }
+    .switch span::after {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 15px;
+      height: 15px;
+      content: "";
+      border-radius: 50%;
+      background: var(--paper-strong);
+      transition: .18s ease;
+    }
+    .switch input:checked + span { background: var(--teal); }
+    .switch input:checked + span::after { transform: translateX(17px); }
+
+    .selection-bar {
+      position: fixed;
+      z-index: 10;
+      right: 20px;
+      bottom: 20px;
+      left: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px 18px;
+      width: min(1144px, calc(100% - 40px));
+      margin: auto;
+      padding: 13px 14px 13px 20px;
+      color: #fffaf2;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 18px;
+      background: rgba(23, 32, 30, .94);
+      box-shadow: 0 20px 55px rgba(22, 24, 20, .3);
+      backdrop-filter: blur(20px);
+    }
+    .selection-summary { display: flex; gap: 18px; align-items: center; }
+    .selection-count { font-weight: 800; }
+    .selection-size { color: rgba(255, 250, 242, .62); font-size: .8rem; }
+    .primary-button { min-height: 44px; padding: 0 19px; color: white; background: var(--orange); font-weight: 800; }
+    .primary-button:hover { background: #d35d25; }
+    .primary-button:disabled { opacity: .42; cursor: not-allowed; }
+    .ghost-button { min-height: 42px; padding: 0 16px; border: 1px solid rgba(255, 255, 255, .18); color: white; background: transparent; }
+    .ghost-button:disabled { opacity: .42; cursor: not-allowed; }
+    .selection-actions { display: flex; gap: 8px; align-items: center; }
+    .cache-note { margin: 10px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
+    .cache-button { width: 100%; margin-top: 8px; }
+    .cache-bar { flex: 1 0 100%; display: none; margin-top: 4px; }
+    .cache-bar.visible { display: block; }
+    .cache-bar-meta { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: rgba(255, 250, 242, .78); font-size: .75rem; }
+    .cache-bar-track { height: 6px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, .14); }
+    .cache-bar-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--orange), #ee9b48); transition: width .25s linear; }
+    .trip-card .cache-bar { display: block; margin-top: 8px; }
+    .trip-card .cache-bar-meta { color: var(--muted); }
+    .layout-source { margin: 8px 0 0; color: var(--muted); font-size: .78rem; }
+
+    .job-panel {
+      display: none;
+      margin-top: 32px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .job-panel.visible { display: block; animation: reveal .35s both; }
+    .job-head { display: flex; justify-content: space-between; gap: 20px; padding: 24px 26px 19px; }
+    .job-head h2 { margin: 0 0 6px; font-family: "Iowan Old Style", "Songti SC", serif; font-size: 1.55rem; }
+    .job-message { margin: 0; color: var(--muted); font-size: .86rem; }
+    .job-percent { font-family: "Iowan Old Style", serif; font-size: 2.25rem; line-height: 1; }
+    .progress-track { height: 4px; margin: 0 26px 12px; overflow: hidden; border-radius: 999px; background: #e4dfd5; }
+    .progress-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--orange), #ee9b48); transition: width .35s ease; }
+    .job-items { display: grid; gap: 1px; background: var(--line); }
+    .job-item { display: grid; grid-template-columns: 1fr auto; gap: 10px 20px; padding: 16px 26px; background: var(--paper-strong); }
+    .job-item-title { font-weight: 800; }
+    .job-item-status { align-self: center; color: var(--muted); font-size: .76rem; }
+    .job-item-status.done { color: var(--teal); }
+    .job-item-status.failed { color: var(--danger); }
+    .job-item-message { grid-column: 1 / -1; color: var(--muted); font-size: .77rem; overflow-wrap: anywhere; }
+    .job-item-path { grid-column: 1 / -1; padding: 8px 10px; border-radius: 8px; color: #34423d; background: #f0eee7; font-family: "SFMono-Regular", Menlo, monospace; font-size: .72rem; overflow-wrap: anywhere; }
+    .job-footer { display: flex; justify-content: flex-end; padding: 16px 26px 22px; }
+    .job-footer .ghost-button { color: var(--ink); border-color: var(--line); }
+
+    .toast {
+      position: fixed;
+      z-index: 20;
+      top: 18px;
+      left: 50%;
+      max-width: min(520px, calc(100% - 36px));
+      padding: 11px 16px;
+      color: white;
+      border-radius: 12px;
+      background: var(--ink);
+      box-shadow: 0 12px 35px rgba(23, 32, 30, .22);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -12px);
+      transition: .2s ease;
+    }
+    .toast.visible { opacity: 1; transform: translate(-50%, 0); }
+    .toast.error { background: var(--danger); }
+
+    @keyframes reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 880px) {
+      .masthead, .intro { grid-template-columns: 1fr; }
+      .masthead { align-items: stretch; flex-direction: column; }
+      .system-state { max-width: none; }
+      .trip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 610px) {
+      .shell { width: min(100% - 24px, 1180px); padding-top: 24px; }
+      .brand-mark { width: 45px; height: 45px; }
+      h1 { font-size: 2.8rem; }
+      .intro-copy { padding: 21px; }
+      .trip-grid { grid-template-columns: 1fr; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+      .selection-bar { right: 10px; bottom: 10px; left: 10px; width: calc(100% - 20px); padding: 12px; }
+      .selection-summary { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .primary-button { min-width: 120px; }
+      .job-head { padding: 20px; }
+      .progress-track { margin-right: 20px; margin-left: 20px; }
+      .job-item { padding-right: 20px; padding-left: 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 18a9 9 0 1 1 14 0"/><path d="m12 13 3-4"/><path d="M7 18h10"/>
+          </svg>
+        </div>
+        <div>
+          <h1>CarSpeed Studio</h1>
+          <p>手机行车素材 → 可编辑电影项目</p>
+        </div>
+      </div>
+      <div id="systemState" class="system-state">
+        <span class="signal" aria-hidden="true"></span>
+        <span id="systemText">正在检查 ADB、FilmCraft 和手机连接</span>
+      </div>
+    </header>
+
+    <section class="intro" aria-label="工作流程">
+      <div class="intro-copy">
+        <p class="eyebrow">Trip-first editing</p>
+        <h2>选择完整行程，其余交给本机。<br>每趟行程会生成一个独立的 FilmCraft 项目。</h2>
+        <p>视频、GPS 轨迹、CarSpeed 字幕和车牌数据会从手机拉取；多段录像按时间顺序拼接，字幕按片长偏移合并，然后自动打开 FilmCraft。</p>
+      </div>
+      <div class="workflow" aria-label="处理阶段">
+        <div class="workflow-step active"><b>01</b><span>从手机读取整趟行程</span></div>
+        <div class="workflow-step"><b>02</b><span>拉取并校验全部素材</span></div>
+        <div class="workflow-step"><b>03</b><span>生成项目、时间轴与字幕</span></div>
+        <div class="workflow-step"><b>04</b><span>在本机 FilmCraft 中打开</span></div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div>
+        <h2>历史行程</h2>
+        <div id="tripMeta" class="toolbar-meta">等待读取手机</div>
+      </div>
+      <button id="refreshButton" class="icon-button" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/>
+        </svg>
+        刷新
+      </button>
+    </div>
+
+    <section id="tripGrid" class="trip-grid" aria-live="polite">
+      <div class="empty">正在扫描手机中的 CarSpeed 行程…</div>
+    </section>
+
+    <section id="layoutPanel" class="layout-panel" aria-label="排版编辑器">
+      <div class="layout-head">
+        <div>
+          <h2>排版编辑器</h2>
+          <p>预览分两层：底下是录像画面，上面是 HUD。点进度条会从那一秒接着播；录像还在手机上时大约一秒一帧。</p>
+          <p id="layoutSource" class="layout-source"></p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="layoutFullscreenButton" class="icon-button" type="button" title="进入/退出全屏预览拖拽（快捷键 Esc 退出）">⛶ 全屏预览拖拽</button>
+          <button id="layoutRefreshButton" class="icon-button" type="button">重新载入</button>
+        </div>
+      </div>
+      <div class="preset-toolbar" aria-label="横竖屏与命名配置方案">
+        <div class="preset-group">
+          <span class="preset-label">展示模式</span>
+          <button id="modeFloatBtn" class="preset-btn is-active" type="button" title="经典模式：地图与 HUD 作为悬浮窗叠在全屏视频上">悬浮窗模式</button>
+          <button id="modeSplitBtn" class="preset-btn" type="button" title="手机竖屏拼接模式：上方视频仅显示速度，下方铺满高德轨迹/测速雷达/闪动定位图">上视频下地图 (竖屏)</button>
+        </div>
+        <div class="preset-group">
+          <span class="preset-label">画布方向</span>
+          <button id="orientLandscapeBtn" class="preset-btn is-active" type="button" title="切换为横屏画布 (1920×1080)">横屏 16:9</button>
+          <button id="orientPortraitBtn" class="preset-btn" type="button" title="切换为竖屏画布 (1080×1920)">竖屏 9:16</button>
+        </div>
+        <div class="preset-group">
+          <span class="preset-label">原视频</span>
+          <span id="sourceResBadge" class="pill good" style="font-family:var(--mono); font-size:.74rem; padding:4px 10px;" title="当前行程原始视频分辨率">探测中…</span>
+          <label for="exportResToolbarSelect" class="preset-label" style="margin-left:4px;">导出分辨率</label>
+          <select id="exportResToolbarSelect" class="preset-select" style="min-width:155px;" aria-label="选择导出视频分辨率">
+            <option value="source">跟随原视频清晰度</option>
+            <option value="2160p">4K 超清 (2160p)</option>
+            <option value="1440p">2K 高清 (1440p)</option>
+            <option value="1080p">1080p 全高清</option>
+            <option value="720p">720p 流畅</option>
+          </select>
+        </div>
+        <div class="preset-group">
+          <label for="layoutPresetSelect" class="preset-label">已存配置</label>
+          <select id="layoutPresetSelect" class="preset-select" aria-label="选择已保存的排版配置"></select>
+          <button id="layoutPresetLoadButton" class="preset-btn" type="button">加载配置</button>
+          <button id="layoutPresetDeleteButton" class="preset-btn danger" type="button" title="删除当前选中的自定义配置">删除配置</button>
+        </div>
+        <div class="preset-group">
+          <input id="layoutPresetName" class="preset-input" type="text" maxlength="64" placeholder="输入配置名称（如：竖屏赛道）" aria-label="配置名称">
+          <button id="layoutPresetSaveButton" class="preset-btn primary" type="button">保存配置</button>
+        </div>
+      </div>
+      <div class="layout-body">
+        <div class="layout-stage-col">
+          <div id="layoutStage" class="preview-stage">
+            <button id="stageFullscreenToggle" class="stage-fs-toggle" type="button" title="全屏预览拖拽与调节尺寸">⛶ 全屏预览</button>
+            <img id="layoutImage" alt="排版预览">
+            <video id="layoutVideo" class="layout-video" playsinline muted></video>
+            <iframe id="layoutOverlay" class="overlay-frame" title="覆盖层"></iframe>
+            <div id="layoutChips" class="drop-layer"></div>
+            <div id="chipMenu" class="chip-menu" hidden></div>
+          </div>
+          <div class="timeline-row">
+            <label for="layoutTime" style="color: var(--muted); font-size: .78rem;">进度</label>
+            <input id="layoutTime" type="range" min="0" max="120" step="1" value="5">
+            <span id="layoutTimeLabel" style="color: var(--muted); font-size: .78rem; min-width: 62px;">5.0s</span>
+            <label for="layoutSpeedSelect" style="color: var(--muted); font-size: .76rem;">倍速</label>
+            <select id="layoutSpeedSelect" class="preset-select" style="min-width:74px;" aria-label="播放与导出倍速">
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1.0x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2.0x</option>
+              <option value="4">4.0x</option>
+              <option value="8">8.0x</option>
+              <option value="16">16.0x</option>
+            </select>
+            <label for="layoutFpsSelect" style="color: var(--muted); font-size: .76rem;">FPS</label>
+            <select id="layoutFpsSelect" class="preset-select" style="min-width:82px;" aria-label="导出视频帧率">
+              <option value="15">15 fps</option>
+              <option value="24">24 fps</option>
+              <option value="30">30 fps</option>
+              <option value="60" selected>60 fps</option>
+              <option value="120">120 fps</option>
+            </select>
+            <button id="layoutPlayButton" class="ghost-button" type="button" style="color: var(--ink); border-color: var(--line);">▶ 播放</button>
+            <button id="layoutExportButton" class="primary-button" type="button" style="padding: 8px 14px; font-size: .82rem;">导出视频</button>
+          </div>
+        </div>
+        <div class="layout-side-col">
+          <div id="fieldList" class="field-list"></div>
+          <div class="layout-actions">
+            <button id="layoutSaveButton" class="primary-button" type="button">立即保存</button>
+            <button id="layoutResetButton" class="ghost-button" type="button" style="color: var(--ink); border-color: var(--line);">恢复默认</button>
+            <span id="layoutSaveHint" class="layout-save-hint">调整后会自动记住</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="jobPanel" class="job-panel" aria-live="polite">
+      <div class="job-head">
+        <div>
+          <p id="jobEyebrow" class="eyebrow">Video Export</p>
+          <h2 id="jobTitle">准备导出视频</h2>
+          <p id="jobMessage" class="job-message">等待任务开始</p>
+        </div>
+        <div id="jobPercent" class="job-percent">0%</div>
+      </div>
+      <div class="progress-track"><div id="jobProgress" class="progress-fill"></div></div>
+      <div id="jobItems" class="job-items"></div>
+      <div class="job-footer" style="display:flex; gap:10px;">
+        <button id="revealButton" class="ghost-button" type="button">在 Finder 中显示</button>
+        <a id="downloadJobButton" class="primary-button" href="#" hidden style="text-decoration:none; padding:10px 16px; font-size:.84rem;">下载导出视频</a>
+      </div>
+    </section>
+  </main>
+
+  <aside class="selection-bar" aria-label="已选择行程">
+    <div class="selection-summary">
+      <span id="selectionCount" class="selection-count">尚未选择行程</span>
+      <span id="selectionSize" class="selection-size">选择后将显示拉取大小</span>
+    </div>
+    <div id="cacheBar" class="cache-bar" hidden>
+      <div class="cache-bar-meta">
+        <span id="cacheBarLabel">正在从手机传输</span>
+        <span id="cacheBarPercent">0%</span>
+      </div>
+      <div class="cache-bar-track"><div id="cacheBarFill" class="cache-bar-fill"></div></div>
+    </div>
+    <div class="selection-actions">
+    <button id="cacheButton" class="ghost-button" type="button" disabled>拉到电脑</button>
+    <button id="exportSelectedButton" class="ghost-button" type="button" disabled style="color: var(--ink); border-color: var(--line);">导出 MP4</button>
+    <button id="startButton" class="primary-button" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m9 5 11 7-11 7V5Z"/>
+      </svg>
+      生成并打开
+    </button>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script>
+    if (location.protocol === 'file:') {
+      location.replace('http://127.0.0.1:8765/');
+    }
+    const state = { trips: [], selected: new Set(), jobId: null, pollTimer: null, cache: null, cacheTimer: null };
+    const $ = (id) => document.getElementById(id);
+
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    })[char]);
+    const formatBytes = (bytes) => {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+      const value = bytes / 1024 ** index;
+      return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+    };
+    const formatPercent = (value) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
+    const splitTitle = (title) => {
+      const [date, time = ''] = String(title).split(' ');
+      return { date, time };
+    };
+    const selectedTrips = () => state.trips.filter((trip) => state.selected.has(trip.id));
+
+    function showToast(message, isError = false) {
+      const toast = $('toast');
+      toast.textContent = message;
+      toast.className = `toast visible${isError ? ' error' : ''}`;
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => { toast.className = 'toast'; }, 3600);
+    }
+
+    async function requestJson(url, options) {
+      const response = await fetch(url, options);
+      let payload;
+      try { payload = await response.json(); }
+      catch { throw new Error(`服务返回了无效响应（HTTP ${response.status}）`); }
+      if (!response.ok || payload.error) throw new Error(payload.error || `请求失败（HTTP ${response.status}）`);
+      return payload;
+    }
+
+    function setSystemState(kind, text) {
+      $('systemState').className = `system-state ${kind}`;
+      $('systemText').textContent = text;
+    }
+
+    function renderTrips() {
+      const grid = $('tripGrid');
+      if (!state.trips.length) {
+        grid.innerHTML = '<div class="empty">手机中没有找到 CarSpeed 历史行程</div>';
+        $('tripMeta').textContent = '0 趟行程';
+        updateSelection();
+        return;
+      }
+      grid.innerHTML = state.trips.map((trip, index) => {
+        const title = splitTitle(trip.title);
+        const selected = state.selected.has(trip.id);
+        const trackClass = trip.trackCoverage >= 1 ? 'good' : trip.trackCoverage > 0 ? 'warn' : '';
+        const subtitleClass = trip.subtitleCoverage >= 1 ? 'good' : trip.subtitleCoverage > 0 ? 'warn' : '';
+        // 这个接口在手机没缩略图时会用本机缓存的录像抽一帧，所以永远可以尝试；
+        // 真取不到时 <img> 的 onerror 会把它移除，退回下面的占位样式。
+        const thumbnailUrl = `/api/trips/${encodeURIComponent(trip.id)}/thumbnail?v=${encodeURIComponent(trip.id)}`;
+        return `
+          <article class="trip-card${selected ? ' selected' : ''}" data-trip-id="${escapeHtml(trip.id)}" role="checkbox" tabindex="0" aria-checked="${selected}" style="--index:${index}">
+            <input type="checkbox" ${selected ? 'checked' : ''} aria-label="选择 ${escapeHtml(trip.title)}">
+            <div class="trip-cover">
+              <div class="trip-cover-placeholder" aria-hidden="true"><span class="cover-gauge"><strong>GPS</strong><span>CARSPEED</span></span></div>
+              <img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(title.date)} ${escapeHtml(title.time)} 行车画面" loading="lazy">
+              <span class="cover-duration">${trip.segments} × VIDEO</span>
+              <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg></span>
+            </div>
+            <div class="trip-top">
+              <div><p class="trip-date">${escapeHtml(title.date)}</p><p class="trip-time">${escapeHtml(title.time)} · ${escapeHtml(trip.id)}</p></div>
+            </div>
+            <div class="trip-facts">
+              <span class="pill">${trip.segments} 段视频</span>
+              <span class="pill">${formatBytes(trip.pullBytes)}</span>
+              ${sourceResPill(trip)}
+              ${localPill(trip)}
+              <span class="pill ${trackClass}">轨迹 ${trip.tracks}/${trip.segments}</span>
+              <span class="pill ${subtitleClass}">字幕 ${trip.subtitles}/${trip.segments}</span>
+            </div>
+            <div class="coverage">
+              <div class="coverage-row"><span>GPS 轨迹</span><span class="coverage-track"><span class="coverage-fill" style="width:${formatPercent(trip.trackCoverage)}"></span></span><span>${formatPercent(trip.trackCoverage)}</span></div>
+              <div class="coverage-row"><span>GPS 字幕</span><span class="coverage-track"><span class="coverage-fill subtitle" style="width:${formatPercent(trip.subtitleCoverage)}"></span></span><span>${formatPercent(trip.subtitleCoverage)}</span></div>
+            </div>
+            ${localActions(trip)}
+          </article>`;
+      }).join('');
+      installThumbnailFallbacks();
+    }
+
+    function localOf(trip) {
+      return trip.local || { ready: false, partial: false, demo: false, videoReady: 0, videoTotal: trip.segments || 0, path: '' };
+    }
+
+    function localPill(trip) {
+      const local = localOf(trip);
+      if (local.demo) return '';
+      if (local.ready && local.mapReady) return '<span class="pill good">视频+离线卫星图就绪</span>';
+      if (local.ready) return '<span class="pill good">已在电脑</span>';
+      if (local.partial) return `<span class="pill warn">已传 ${local.videoReady}/${local.videoTotal} 段</span>`;
+      return '<span class="pill">仍在手机</span>';
+    }
+
+    function formatResolutionLabel(w, h) {
+      const sw = Number(w) || 0;
+      const sh = Number(h) || 0;
+      if (sw <= 0 || sh <= 0) return '';
+      const shortSide = Math.min(sw, sh);
+      let tag = '';
+      if (shortSide >= 2000) tag = '4K ';
+      else if (shortSide >= 1350) tag = '2K ';
+      else if (shortSide >= 1000) tag = '1080p ';
+      else if (shortSide >= 700) tag = '720p ';
+      return `${tag}${sw}×${sh}`;
+    }
+
+    function sourceResPill(trip) {
+      const local = localOf(trip);
+      const label = formatResolutionLabel(local.sourceWidth, local.sourceHeight);
+      if (!label) return '';
+      return `<span class="pill" style="font-family:var(--mono);">原片 ${escapeHtml(label)}</span>`;
+    }
+
+    function computeExportDimsForTier(tier, srcW, srcH) {
+      const isSplit = Boolean(layout.config && layout.config.layoutMode === 'split');
+      const cfgW = Number((layout.config && layout.config.width) || 1920);
+      const cfgH = Number((layout.config && layout.config.height) || 1080);
+      const isPortrait = isSplit || cfgH > cfgW;
+      const mapShort = { '2160p': 2160, '1440p': 1440, '1080p': 1080, '720p': 720 };
+      const key = String(tier || 'source').toLowerCase();
+      if (mapShort[key]) {
+        const s = mapShort[key];
+        const l = Math.round(s * 16 / 9 / 2) * 2;
+        return isPortrait ? [s, l] : [l, s];
+      }
+      const sw = Number(srcW) || 3840;
+      const sh = Number(srcH) || 2160;
+      const sShort = Math.max(360, Math.min(sw, sh));
+      const sLong = Math.max(640, Math.max(sw, sh));
+      if (isSplit) {
+        const l = Math.round(sShort * 16 / 9 / 2) * 2;
+        return [sShort, l];
+      }
+      return isPortrait ? [sShort, sLong] : [sLong, sShort];
+    }
+
+    function syncResolutionControls() {
+      const srcW = Number(layout.sourceWidth) || 3840;
+      const srcH = Number(layout.sourceHeight) || 2160;
+      const srcLabel = formatResolutionLabel(srcW, srcH) || '3840×2160';
+      const badge = $('sourceResBadge');
+      if (badge) badge.textContent = srcLabel;
+      const sideSrc = $('sideSourceResText');
+      if (sideSrc) sideSrc.textContent = srcLabel;
+      const curTier = (layout.config && layout.config.exportResolution) || 'source';
+      const isSplit = Boolean(layout.config && layout.config.layoutMode === 'split');
+      const cfgW = Number((layout.config && layout.config.width) || 1920);
+      const cfgH = Number((layout.config && layout.config.height) || 1080);
+      const isPortrait = isSplit || cfgH > cfgW;
+      const orientTag = isPortrait ? '竖屏 9:16' : '横屏 16:9';
+      const tiers = [
+        { id: 'source', name: '跟随原视频清晰度' },
+        { id: '2160p', name: '4K 超清 (2160p)' },
+        { id: '1440p', name: '2K 高清 (1440p)' },
+        { id: '1080p', name: '1080p 全高清' },
+        { id: '720p', name: '720p 流畅' }
+      ];
+      const optionsHtml = tiers.map((t) => {
+        const [ew, eh] = computeExportDimsForTier(t.id, srcW, srcH);
+        const sel = t.id === curTier ? ' selected' : '';
+        return `<option value="${t.id}"${sel}>${t.name} · ${ew}×${eh}</option>`;
+      }).join('');
+      const topSel = $('exportResToolbarSelect');
+      if (topSel) topSel.innerHTML = optionsHtml;
+      const sideSel = $('export-res-select');
+      if (sideSel) sideSel.innerHTML = optionsHtml;
+      const [curExpW, curExpH] = computeExportDimsForTier(curTier, srcW, srcH);
+      const sideExp = $('sideExportResText');
+      if (sideExp) sideExp.textContent = `${curExpW}×${curExpH} (${orientTag})`;
+    }
+    function localActions(trip) {
+      const local = localOf(trip);
+      const pulling = state.cache && state.cache.status === 'running' && (state.cache.trips || []).includes(trip.id);
+      let body;
+      if (local.demo) body = '<p class="cache-note">演示行程，不用从手机传输</p>';
+      else if (pulling) {
+        body = cacheBarMarkup(state.cache);
+      } else if (local.ready) {
+        const mapNote = local.mapReady
+          ? ` · 离线卫星图已缓存(${local.mapTotalTiles || ''}块)`
+          : ' · 卫星图可离线下载防白屏';
+        const mapBtn = local.mapReady
+          ? `<button type="button" class="ghost-button cache-button" data-map-cache="${escapeHtml(trip.id)}">更新离线卫星图</button>`
+          : `<button type="button" class="ghost-button cache-button" style="border-color:var(--orange);color:var(--orange);" data-map-cache="${escapeHtml(trip.id)}">离线下载卫星图</button>`;
+        body = `<p class="cache-note">录像、字幕、轨迹已在电脑${mapNote}</p>` +
+          `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
+          `<button type="button" class="ghost-button cache-button" data-reveal="${escapeHtml(local.path || '')}">在 Finder 中显示</button>` +
+          `${mapBtn}</div>`;
+      } else {
+        const label = local.partial ? '继续拉到电脑' : '拉到电脑';
+        body = `<p class="cache-note">还在手机上。拉下来后会自动离线缓存卫星图，预览和播放零白屏。</p>` +
+          `<button type="button" class="ghost-button cache-button" data-cache="${escapeHtml(trip.id)}">${label}</button>`;
+      }
+      return `<div data-cache-status>${body}</div>`;
+    }
+
+    function cacheBarMarkup(job) {
+      const percent = Math.max(0, Math.min(100, Number(job.progress) || 0));
+      const detail = cacheProgressText(job);
+      return `<div class="cache-bar">` +
+        `<div class="cache-bar-meta"><span class="cache-bar-label">${escapeHtml(detail)}</span><span class="cache-bar-percent">${percent}%</span></div>` +
+        `<div class="cache-bar-track"><div class="cache-bar-fill" style="width:${percent}%"></div></div>` +
+        `</div>`;
+    }
+
+    function cacheProgressText(job) {
+      const done = Number(job.bytesDone) || 0;
+      const total = Number(job.bytesTotal) || 0;
+      const amount = total > 0 ? `${formatBytes(done)} / ${formatBytes(total)}` : '';
+      const message = job.message || '正在从手机传输';
+      return amount ? `${message} · ${amount}` : message;
+    }
+
+    /* 传输过程中只改进度条，不重画行程卡片，避免封面反复加载。 */
+    function paintCacheProgress() {
+      const job = state.cache;
+      const bar = $('cacheBar');
+      const running = Boolean(job && job.status === 'running');
+      if (bar) {
+        bar.hidden = !running;
+        bar.classList.toggle('visible', running);
+      }
+      if (!running) return;
+      const percent = Math.max(0, Math.min(100, Number(job.progress) || 0));
+      const detail = cacheProgressText(job);
+      const label = $('cacheBarLabel');
+      const percentNode = $('cacheBarPercent');
+      const fill = $('cacheBarFill');
+      if (label) label.textContent = detail;
+      if (percentNode) percentNode.textContent = `${percent}%`;
+      if (fill) fill.style.width = `${percent}%`;
+      const ids = new Set(job.trips || []);
+      document.querySelectorAll('.trip-card').forEach((card) => {
+        if (!ids.has(card.dataset.tripId)) return;
+        const slot = card.querySelector('[data-cache-status]');
+        if (!slot) return;
+        let cardFill = slot.querySelector('.cache-bar-fill');
+        if (!cardFill) {
+          slot.innerHTML = cacheBarMarkup(job);
+          cardFill = slot.querySelector('.cache-bar-fill');
+        }
+        const cardLabel = slot.querySelector('.cache-bar-label');
+        const cardPercent = slot.querySelector('.cache-bar-percent');
+        if (cardLabel) cardLabel.textContent = detail;
+        if (cardPercent) cardPercent.textContent = `${percent}%`;
+        if (cardFill) cardFill.style.width = `${percent}%`;
+      });
+      const cacheButton = $('cacheButton');
+      if (cacheButton) {
+        cacheButton.disabled = true;
+        cacheButton.textContent = `正在传输 ${percent}%`;
+      }
+    }
+
+    function syncLayoutSource() {
+      const node = $('layoutSource');
+      if (!node) return;
+      const trip = state.trips.find((item) => item.id === layout.tripId);
+      if (!trip) {
+        node.textContent = '';
+        return;
+      }
+      const local = localOf(trip);
+      if (local.demo) node.textContent = '演示行程没有手机录像。';
+      else if (local.ready) node.textContent = '这趟录像已在电脑上。点进度条会从那一秒接着播。';
+      else node.textContent = '这趟录像还在手机上。播放只能大约一秒一帧。拉到电脑后会连贯播放。';
+    }
+
+    async function startCache(tripIds) {
+      const ids = (tripIds || []).filter(Boolean);
+      if (!ids.length) return;
+      try {
+        const job = await requestJson('/api/cache', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ trips: ids })
+        });
+        state.cache = job;
+        paintCacheProgress();
+        pollCache();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    }
+
+    async function startOfflineMapCache(tripIds) {
+      const ids = (tripIds || []).filter(Boolean);
+      if (!ids.length) {
+        const cur = selectedTripId() || layout.tripId;
+        if (cur) ids.push(cur);
+      }
+      if (!ids.length) {
+        showToast('请先选择一条行程再离线下载卫星图', true);
+        return;
+      }
+      try {
+        showToast('正在后台并发下载全路线离线高德卫星图与道路图瓦片…');
+        const job = await requestJson('/api/map-cache', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ trips: ids })
+        });
+        state.cache = job;
+        paintCacheProgress();
+        pollCache();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    }
+    async function pollCache() {
+      if (!state.cache || !state.cache.id) return;
+      window.clearTimeout(state.cacheTimer);
+      try {
+        const job = await requestJson(`/api/cache/${state.cache.id}`);
+        state.cache = job;
+        if (job.status === 'running') {
+          paintCacheProgress();
+          state.cacheTimer = window.setTimeout(pollCache, 700);
+          return;
+        }
+        paintCacheProgress();
+        if (job.status === 'failed') showToast(job.error || job.message || '传输失败', true);
+        else showToast(job.message || '已拉到电脑');
+        const data = await requestJson('/api/trips');
+        state.trips = data.trips || [];
+        renderTrips();
+        updateSelection();
+        syncLayoutSource();
+        if (layout.tripId && (job.trips || []).includes(layout.tripId)) {
+          layout.liveReady = false;
+          refreshLayoutPreview({ forceFull: true });
+        }
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    }
+
+    function installThumbnailFallbacks() {
+      document.querySelectorAll('.trip-cover img').forEach((image) => {
+        // 真实封面到位后把「GPS CARSPEED」占位标识藏掉，别压在画面上。
+        const reveal = () => image.closest('.trip-cover')?.classList.add('has-shot');
+        if (image.complete && image.naturalWidth > 0) reveal();
+        else image.addEventListener('load', reveal, { once: true });
+        image.addEventListener('error', () => image.remove(), { once: true });
+      });
+    }
+
+    const layout = { tripId: null, config: null, presets: [], activePreset: '', dirty: false, interacting: false, saving: false };
+    let layoutPreviewTimer = null;
+    let layoutChipTimer = null;
+    let layoutSaveTimer = null;
+    let layoutSaveSeq = 0;
+    let layoutRevision = 0;
+
+    function nextLayoutRevision() {
+      // 用时间戳，刷新页面后新的保存仍比刷新前那次大，不会被服务端当成过期写入丢掉。
+      layoutRevision = Math.max(layoutRevision + 1, Date.now());
+      return layoutRevision;
+    }
+
+    const ORDERED_FIELDS = ['time', 'speed', 'coordinates', 'address', 'satellites', 'focus', 'videoMode', 'waitTime'];
+
+    function fieldLabel(key) {
+      const match = (layout.config.fields || []).find((item) => item.key === key);
+      return match ? match.label : key;
+    }
+
+    function selectedTripId() {
+      const first = state.trips.find((trip) => state.selected.has(trip.id));
+      return first ? first.id : (state.trips[0] ? state.trips[0].id : null);
+    }
+
+    async function loadLayout() {
+      const payload = await requestJson('/api/layout');
+      layout.config = payload.layout;
+      if (Array.isArray(payload.presets)) {
+        layout.presets = payload.presets;
+      }
+      layout.dirty = false;
+      layout.tripId = selectedTripId();
+      setSaveHint('已记住，重启后仍沿用', 'saved');
+      syncCanvasOrientationUi();
+      renderPresetControls();
+      renderFieldEditor();
+      refreshLayoutPreview();
+    }
+
+    /* 根据当前画布宽高同步横屏/竖屏预览比例和按钮高亮状态。 */
+    function syncCanvasOrientationUi() {
+      const stage = $('layoutStage');
+      const landBtn = $('orientLandscapeBtn');
+      const portBtn = $('orientPortraitBtn');
+      const floatBtn = $('modeFloatBtn');
+      const splitBtn = $('modeSplitBtn');
+      const w = (layout.config && Number(layout.config.width)) || 1920;
+      const h = (layout.config && Number(layout.config.height)) || 1080;
+      const isPortrait = h > w;
+      const isSplit = Boolean(layout.config && layout.config.layoutMode === 'split');
+      const splitPct = Math.max(25, Math.min(65, Number((layout.config && layout.config.splitVideoPercent) || 38)));
+      if (stage) {
+        stage.classList.toggle('is-portrait', isPortrait);
+        stage.classList.toggle('is-split-mode', isSplit);
+        stage.style.setProperty('--split-video-pct', `${splitPct}%`);
+        stage.style.aspectRatio = `${w} / ${h}`;
+      }
+      if (landBtn) landBtn.classList.toggle('is-active', !isPortrait);
+      if (portBtn) portBtn.classList.toggle('is-active', isPortrait);
+      if (floatBtn) floatBtn.classList.toggle('is-active', !isSplit);
+      if (splitBtn) splitBtn.classList.toggle('is-active', isSplit);
+      syncResolutionControls();
+    }
+
+    /* 一键切换「悬浮窗模式 (float)」与「上视频下地图竖屏拼接模式 (split)」。 */
+    function switchLayoutMode(targetMode) {
+      if (!layout.config) return;
+      const wantSplit = targetMode === 'split';
+      layout.config.layoutMode = wantSplit ? 'split' : 'float';
+      if (layout.config.splitVideoPercent == null) layout.config.splitVideoPercent = 38;
+      if (wantSplit) {
+        // 上视频下地图模式自动切为常见手机竖屏 9:16 比例，并把速度表放到上方视频区右下角
+        const curW = Number(layout.config.width) || 1920;
+        const curH = Number(layout.config.height) || 1080;
+        if (curW >= curH) {
+          layout.config.width = 1080;
+          layout.config.height = 1920;
+        }
+        const splitRatio = Math.max(0.25, Math.min(0.65, (Number(layout.config.splitVideoPercent) || 38) / 100));
+        if (layout.config.gauge) {
+          layout.config.gauge.enabled = true;
+          if (layout.config.gauge.y > splitRatio - 0.06) {
+            layout.config.gauge.x = 0.80;
+            layout.config.gauge.y = Math.max(0.14, splitRatio - 0.12);
+          }
+        }
+        if (layout.config.mapLayer) {
+          layout.config.mapLayer.enabled = true;
+          if (!layout.config.mapLayer.scaleMeters || layout.config.mapLayer.scaleMeters <= 0) {
+            layout.config.mapLayer.scaleMeters = 260;
+          }
+        }
+      } else if (layout.config.gauge && layout.config.gauge.y < 0.45) {
+        layout.config.gauge.y = 0.78;
+      }
+      syncCanvasOrientationUi();
+      renderFieldEditor();
+      fitOverlayFrame();
+      renderChips();
+      markDirty();
+      refreshLayoutPreview({ forceFull: true });
+    }
+
+    /* 渲染配置方案下拉框，支持区分横屏/竖屏及自定义/内置标签。 */
+    function renderPresetControls() {
+      const select = $('layoutPresetSelect');
+      if (!select) return;
+      const presets = Array.isArray(layout.presets) ? layout.presets : [];
+      const curW = (layout.config && Number(layout.config.width)) || 1920;
+      const curH = (layout.config && Number(layout.config.height)) || 1080;
+      const defaultMatch = curH > curW ? '默认竖屏 (9:16)' : '默认横屏 (16:9)';
+      const selectedName = layout.activePreset || select.value || defaultMatch;
+      select.innerHTML = presets.map((item) => {
+        const tag = item.orientation === 'portrait' ? '竖屏 9:16' : '横屏 16:9';
+        const suffix = item.builtin ? ' [预设]' : '';
+        const isSel = item.name === selectedName ? ' selected' : '';
+        return `<option value="${escapeHtml(item.name)}"${isSel}>${escapeHtml(item.name)} · ${tag}${suffix}</option>`;
+      }).join('');
+      const delBtn = $('layoutPresetDeleteButton');
+      if (delBtn) {
+        const current = presets.find((p) => p.name === select.value);
+        delBtn.disabled = !current || Boolean(current.builtin && !current.updatedAt);
+      }
+    }
+
+    /* 切换画布横屏 (1920x1080) 或竖屏 (1080x1920)；若已有对应默认预设且当前未自定义名称则同步调整画布规格。 */
+    function switchCanvasOrientation(targetOrientation) {
+      if (!layout.config) return;
+      const wantPortrait = targetOrientation === 'portrait';
+      const curW = Number(layout.config.width) || 1920;
+      const curH = Number(layout.config.height) || 1080;
+      if (wantPortrait && curH < curW) {
+        layout.config.width = curH;
+        layout.config.height = curW;
+      } else if (!wantPortrait && curH > curW) {
+        layout.config.width = curH;
+        layout.config.height = curW;
+      } else if (wantPortrait && curW === curH) {
+        layout.config.width = 1080;
+        layout.config.height = 1920;
+      } else if (!wantPortrait && curW === curH) {
+        layout.config.width = 1920;
+        layout.config.height = 1080;
+      }
+      syncCanvasOrientationUi();
+      fitOverlayFrame();
+      renderChips();
+      markDirty();
+      refreshLayoutPreview({ forceFull: true });
+    }
+
+    /* 按名称保存当前组件参数与位置到命名预设。 */
+    async function saveNamedLayoutPreset() {
+      if (!layout.config) return;
+      const nameInput = $('layoutPresetName');
+      const select = $('layoutPresetSelect');
+      const rawName = (nameInput && nameInput.value.trim()) || (select && select.value.trim()) || '';
+      if (!rawName) {
+        showToast('请先输入要保存的配置名称', true);
+        if (nameInput) nameInput.focus();
+        return;
+      }
+      const saveBtn = $('layoutPresetSaveButton');
+      if (saveBtn) saveBtn.disabled = true;
+      try {
+        window.clearTimeout(layoutSaveTimer);
+        const payload = await requestJson('/api/layout-presets', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'save',
+            name: rawName,
+            layout: layout.config
+          })
+        });
+        if (Array.isArray(payload.presets)) layout.presets = payload.presets;
+        layout.activePreset = payload.activePreset || rawName;
+        layout.dirty = false;
+        renderPresetControls();
+        setSaveHint(`已保存配置「${rawName}」`, 'saved');
+        showToast(`配置「${rawName}」已保存并生效`);
+      } catch (error) {
+        showToast(error.message || '保存配置失败', true);
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+
+    /* 加载选中的命名配置方案，立即切换画布横竖屏比例及所有组件位置与参数。 */
+    async function loadNamedLayoutPreset(presetName) {
+      const select = $('layoutPresetSelect');
+      const targetName = (presetName || (select && select.value) || '').trim();
+      if (!targetName) {
+        showToast('请先选择要加载的配置方案', true);
+        return;
+      }
+      const loadBtn = $('layoutPresetLoadButton');
+      if (loadBtn) loadBtn.disabled = true;
+      try {
+        window.clearTimeout(layoutSaveTimer);
+        const payload = await requestJson('/api/layout-presets', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'load',
+            name: targetName
+          })
+        });
+        if (Array.isArray(payload.presets)) layout.presets = payload.presets;
+        if (payload.layout) layout.config = payload.layout;
+        layout.activePreset = payload.activePreset || targetName;
+        layout.dirty = false;
+        const nameInput = $('layoutPresetName');
+        if (nameInput) nameInput.value = targetName;
+        syncCanvasOrientationUi();
+        renderPresetControls();
+        renderFieldEditor();
+        fitOverlayFrame();
+        renderChips();
+        setSaveHint(`已加载「${targetName}」`, 'saved');
+        showToast(`已加载配置「${targetName}」`);
+        await refreshLayoutPreview({ forceFull: true });
+      } catch (error) {
+        showToast(error.message || '加载配置失败', true);
+      } finally {
+        if (loadBtn) loadBtn.disabled = false;
+      }
+    }
+
+    /* 删除当前选中的自定义命名配置方案。 */
+    async function deleteNamedLayoutPreset() {
+      const select = $('layoutPresetSelect');
+      const targetName = (select && select.value || '').trim();
+      if (!targetName) return;
+      const delBtn = $('layoutPresetDeleteButton');
+      if (delBtn) delBtn.disabled = true;
+      try {
+        const payload = await requestJson('/api/layout-presets', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete',
+            name: targetName
+          })
+        });
+        if (Array.isArray(payload.presets)) layout.presets = payload.presets;
+        if (layout.activePreset === targetName) layout.activePreset = '';
+        renderPresetControls();
+        showToast(`已删除配置「${targetName}」`);
+      } catch (error) {
+        showToast(error.message || '删除配置失败', true);
+      } finally {
+        renderPresetControls();
+      }
+    }
+
+    function renderFieldEditor() {
+      const list = $('fieldList');
+      const gauge = layout.config.gauge;
+      const bar = layout.config.infoBar || { enabled: false, fields: [], textSize: 30, padding: 14, opacity: 100, backgroundColor: '#ffffff', textColor: '#17201e' };
+      layout.config.infoBar = bar;
+      if (!layout.config.layoutMode) layout.config.layoutMode = 'float';
+      if (layout.config.splitVideoPercent == null) layout.config.splitVideoPercent = 38;
+      const isSplitMode = layout.config.layoutMode === 'split';
+      const allFieldChecks = (layout.config.fields || []).map((f) => {
+        const on = bar.fields.includes(f.key);
+        return `<label style="display:flex; gap:6px; align-items:center; color: var(--ink); font-size:.72rem;"><input type="checkbox" data-bar-field="${escapeHtml(f.key)}" ${on ? 'checked' : ''}> ${escapeHtml(f.label)}</label>`;
+      }).join('');
+      const rows = [
+        '<div class="field-row"><header><h3>展示模式 (悬浮窗 / 上视频下地图)</h3></header>' +
+        `<div style="display:flex; gap:10px; margin-top:6px;">` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.76rem; font-weight:600;"><input type="radio" name="layout-mode-radio" value="float" ${!isSplitMode ? 'checked' : ''}> 悬浮窗模式 (经典)</label>` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.76rem; font-weight:600;"><input type="radio" name="layout-mode-radio" value="split" ${isSplitMode ? 'checked' : ''}> 上视频下地图 (手机竖屏 9:16)</label>` +
+        `</div>` +
+        '<div class="field-controls" style="margin-top:8px;">' +
+        rangeControl('split-video-pct', '上方视频高度(%)', layout.config.splitVideoPercent ?? 38, 25, 65, 1) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '上视频下地图模式下，上方视频仅保留速度表（无白底与多余字段），下方铺满高德地图并还原手机 App 路线、闪动当前位置圈、最高速度点与测速雷达限速图标。' +
+        '</div></div>',
+        '<div class="field-row"><header><h3>底部信息栏</h3>' +
+        `<label class="switch"><input type="checkbox" id="bar-enabled" ${bar.enabled ? 'checked' : ''} aria-label="启用底部信息栏"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('bar-size', '字号', bar.textSize, 10, 120, 1) +
+        rangeControl('bar-opacity', '不透明度', bar.opacity, 0, 100, 1) +
+        rangeControl('bar-padding', '内边距', bar.padding, 0, 80, 1) +
+        colorControl('bar-bg', '底色', bar.backgroundColor) +
+        colorControl('bar-text', '文字色', bar.textColor) +
+        '</div>' +
+        `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">${allFieldChecks}</div>` +
+        '</div>',
+        '<div class="field-row"><header><h3>速度显示</h3>' +
+        `<label class="switch"><input type="checkbox" id="gauge-enabled" ${gauge.enabled ? 'checked' : ''} aria-label="启用速度仪表盘"><span></span></label></header>` +
+        `<div style="display:flex; gap:8px; margin-top:8px;">` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.74rem;"><input type="radio" name="gauge-style" value="bar" ${gauge.style === 'bar' ? 'checked' : ''}> Forza 弧形</label>` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.74rem;"><input type="radio" name="gauge-style" value="aero" ${gauge.style === 'aero' ? 'checked' : ''}> Aero 全息</label>` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.74rem;"><input type="radio" name="gauge-style" value="gt" ${gauge.style === 'gt' ? 'checked' : ''}> GT 点阵</label>` +
+        `<label style="display:flex; gap:5px; align-items:center; font-size:.74rem;"><input type="radio" name="gauge-style" value="circular" ${gauge.style === 'circular' ? 'checked' : ''}> 圆形表盘</label>` +
+        `</div>` +
+        '<div class="field-controls">' +
+        rangeControl('gauge-size', '大小', gauge.radiusPercent * 100, 5, 45, 1) +
+        rangeControl('gauge-bar-width', '速度条宽', gauge.barWidth, 120, 1200, 10) +
+        rangeControl('gauge-bar-height', '速度条高', gauge.barHeight, 8, 120, 1) +
+        rangeControl('gauge-segments', '分段数', gauge.barSegments, 4, 60, 1) +
+        rangeControl('gauge-opacity', '透明度', gauge.opacity, 0, 100, 1) +
+        rangeControl('gauge-max', '表盘上限', gauge.maxSpeed, 20, 400, 10) +
+        colorControl('gauge-bg', '底色', gauge.backgroundColor) +
+        colorControl('gauge-arc', '弧线色', gauge.arcColor) +
+        colorControl('gauge-value', '数字色', gauge.valueColor) +
+        '</div></div>'];
+      const map = layout.config.mapLayer || { enabled: true, sizePercent: 0.22, x: 0.15, y: 0.72, opacity: 100, backgroundColor: '#1d2a24', backgroundOpacity: 100, routeColor: '#7fb7ff', playedColor: '#ffffff', markerColor: '#ffb020', scaleMeters: 220, showScaleBar: true, scaleBarColor: '#ffffff', mapStyle: 'satellite', rotateWithHeading: true, showSpeedLabel: true, labelColor: '#ffffff', showCoordinates: true, coordinateSize: 11, coordinateColor: '#ffffff' };
+      if (map.coordinateSize == null || map.coordinateSize === 26) map.coordinateSize = 11;
+      if (map.cycleOverviewEnabled == null) map.cycleOverviewEnabled = true;
+      if (map.overviewSeconds == null) map.overviewSeconds = 10;
+      if (map.detailSeconds == null) map.detailSeconds = 50;
+      layout.config.mapLayer = map;
+      const hud = layout.config.hud || { enabled: true, x: 0.055, y: 0.075, opacity: 100, timeSize: 13, durationSize: 30, progressSize: 30, timeFormat24h: true, showDate: false, showDuration: true, textColor: '#ffffff', progressColor: '#ffb020', background: true, backgroundColor: '#0b1410', backgroundOpacity: 55, progressBar: true, progressBarWidth: 260, progressBarHeight: 8, progressBarTrackColor: '#ffffff', showDistance: true };
+      layout.config.hud = hud;
+      rows.push(
+        '<div class="field-row"><header><h3>左上角时间 / 里程 HUD</h3>' +
+        `<label class="switch"><input type="checkbox" id="hud-enabled" ${hud.enabled ? 'checked' : ''} aria-label="启用时间里程 HUD"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('hud-time-size', '面板大小', hud.timeSize, 12, 120, 1) +
+        rangeControl('hud-duration-size', '时长字号', hud.durationSize, 10, 100, 1) +
+        rangeControl('hud-progress-size', '进度字号', hud.progressSize, 10, 100, 1) +
+        rangeControl('hud-opacity', '不透明度', hud.opacity, 0, 100, 1) +
+        colorControl('hud-text', '时间颜色', hud.textColor) +
+        colorControl('hud-progress', '进度颜色', hud.progressColor) +
+        colorControl('hud-bg', '背板色', hud.backgroundColor) +
+        '</div>' +
+        `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-24h" ${hud.timeFormat24h ? 'checked' : ''}> 24 小时制</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-date" ${hud.showDate ? 'checked' : ''}> 显示年月日</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-duration" ${hud.showDuration ? 'checked' : ''}> 显示驾驶时长</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-bg-on" ${hud.background ? 'checked' : ''}> 显示背板</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-bar" ${hud.progressBar ? 'checked' : ''}> 显示进度条</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="hud-distance" ${hud.showDistance ? 'checked' : ''}> 显示里程</label>` +
+        '</div></div>'
+      );
+      rows.push(
+        '<div class="field-row"><header><h3>轨迹地图 & 周期性全貌缩放 (10s:50s)</h3>' +
+        `<label class="switch"><input type="checkbox" id="map-enabled" ${map.enabled ? 'checked' : ''} aria-label="启用轨迹地图图层"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('map-size', '高度占比', map.sizePercent * 100, 8, 60, 1) +
+        rangeControl('map-scale', '比例半径(m,0=全程)', map.scaleMeters, 0, 5000, 20) +
+        rangeControl('map-overview-sec', '周期全程图(秒)', map.overviewSeconds ?? 10, 2, 60, 1) +
+        rangeControl('map-detail-sec', '周期局部图(秒)', map.detailSeconds ?? 50, 5, 180, 5) +
+        rangeControl('map-coord-size', '经纬度字号', map.coordinateSize, 8, 18, 1) +
+        rangeControl('map-opacity', '不透明度', map.opacity, 0, 100, 1) +
+        colorControl('map-bg', '卫星底色', map.backgroundColor) +
+        colorControl('map-route', '全程色', map.routeColor) +
+        colorControl('map-played', '已行驶色', map.playedColor) +
+        colorControl('map-marker', '箭头色', map.markerColor) +
+        '</div>' +
+        `<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="map-style" id="map-style-satellite" value="satellite" ${map.mapStyle !== 'road' ? 'checked' : ''}> 卫星图</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="map-style" id="map-style-road" value="road" ${map.mapStyle === 'road' ? 'checked' : ''}> 道路图</label>` +
+        `<label style="display:flex; gap:6px; align-items:center; font-weight:600; color: var(--orange);"><input type="checkbox" id="map-cycle-overview" ${map.cycleOverviewEnabled !== false ? 'checked' : ''}> 周期性丝滑切换全貌 (默认10s全程:50s局部)</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-rotate" ${map.rotateWithHeading ? 'checked' : ''}> 随车头旋转</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-scale-bar" ${map.showScaleBar ? 'checked' : ''}> 显示比例尺</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-label" ${map.showSpeedLabel ? 'checked' : ''}> 显示速度</label>` +
+        `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="map-show-coords" ${map.showCoordinates ? 'checked' : ''}> 显示经纬度</label>` +
+        '</div>' +
+        `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding-top:8px; border-top:1px dashed var(--line);">` +
+        `<span style="color:var(--muted); font-size:.72rem;">离线缓存整趟轨迹卫星图+道路图到本地磁盘，彻底消除播放与切换白屏</span>` +
+        `<button type="button" id="map-offline-download-btn" class="preset-btn primary" style="white-space:nowrap;">⬇ 离线下载本行程卫星图</button>` +
+        `</div>` +
+        '</div>'
+      );
+      const caption = layout.config.caption || { enabled: true, font: 'PingFang SC', size: 28, color: '#ffffff', backgroundColor: '#000000b3', outline: 1, outlineColor: '#000000', margin: 0.30 };
+      layout.config.caption = caption;
+      const stabilize = layout.config.stabilize || { enabled: true, strength: 65, cropPercent: 6 };
+      layout.config.stabilize = stabilize;
+      const introMap = layout.config.introMap || { enabled: true, satelliteSeconds: 3, roadSeconds: 3, scaleMeters: 0 };
+      layout.config.introMap = introMap;
+      const privacy = layout.config.privacy || { enabled: true, trimMeters: 1000 };
+      layout.config.privacy = privacy;
+      if (layout.config.fps == null) layout.config.fps = 60;
+      if (layout.config.playbackSpeed == null) layout.config.playbackSpeed = 1;
+      if (!layout.config.exportResolution) layout.config.exportResolution = 'source';
+      const topSpeedSel = $('layoutSpeedSelect');
+      if (topSpeedSel) topSpeedSel.value = String(layout.config.playbackSpeed);
+      const topFpsSel = $('layoutFpsSelect');
+      if (topFpsSel) topFpsSel.value = String(layout.config.fps);
+      rows.push(
+        '<div class="field-row"><header><h3>视频分辨率与导出设置 (原片规格 / 导出分辨率 / 倍速 / FPS)</h3></header>' +
+        `<div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.04); border:1px solid var(--line); font-size:.75rem;">` +
+        `<span>原视频分辨率：<strong id="sideSourceResText" style="font-family:var(--mono); color:var(--green);">3840×2160</strong></span>` +
+        `<span>当前导出规格：<strong id="sideExportResText" style="font-family:var(--mono); color:var(--orange);">2160×3840</strong></span>` +
+        `</div>` +
+        '<div class="field-controls">' +
+        `<label style="grid-column: 1 / -1;"><span>导出视频分辨率</span>` +
+        `<select id="export-res-select" class="preset-select" style="width:100%;"></select></label>` +
+        rangeControl('export-fps-range', '导出帧率(FPS)', layout.config.fps, 5, 120, 5) +
+        `<label><span>播放/导出倍速</span>` +
+        `<select id="export-speed-select" class="preset-select" style="width:100%;">` +
+        [0.5, 1, 1.5, 2, 4, 8, 16].map((s) => `<option value="${s}" ${Number(layout.config.playbackSpeed) === s ? 'selected' : ''}>${s}x 倍速</option>`).join('') +
+        `</select></label>` +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '支持自由切换 4K (2160p)、2K (1440p)、1080p、720p 或跟随原视频清晰度导出；横竖屏比例随当前展示模式自动匹配。' +
+        '</div></div>'
+      );
+      rows.push(
+        '<div class="field-row"><header><h3>隐私保护模式 (默认开启 · 首尾截断 1km)</h3>' +
+        `<label class="switch"><input type="checkbox" id="privacy-enabled" ${privacy.enabled !== false ? 'checked' : ''} aria-label="启用家庭隐私保护模式"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('privacy-trim-meters', '首尾截断距离(m)', privacy.trimMeters ?? 1000, 0, 10000, 100) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '从有有效 GPS 信号起算，自动截断开头与结尾各 1000m（1km）的视频画面与地图轨迹（含片头全屏图与正片地图），防止分享视频时暴露家庭或目的地位置。' +
+        '</div></div>'
+      );
+      rows.push(
+        '<div class="field-row"><header><h3>片头全屏地图 (3s卫星 + 3s道路)</h3>' +
+        `<label class="switch"><input type="checkbox" id="intro-map-enabled" ${introMap.enabled ? 'checked' : ''} aria-label="启用片头全屏地图"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('intro-scale-meters', '比例半径(m,0=全程)', introMap.scaleMeters ?? 0, 0, 20000, 100) +
+        rangeControl('intro-sat-sec', '卫星图秒数', introMap.satelliteSeconds ?? 3, 0, 15, 1) +
+        rangeControl('intro-road-sec', '道路图秒数', introMap.roadSeconds ?? 3, 0, 15, 1) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '视频导出时默认在片头插入 3 秒全屏高德卫星轨迹图 + 3 秒全屏道路轨迹图；比例尺设为 0 时自动缩放展示整趟行程完整轨迹，也可通过 −/+ 修改比例半径并随配置方案保存。' +
+        '</div></div>'
+      );
+      rows.push(
+        '<div class="field-row"><header><h3>视频防抖 (Vision + Metal GPU)</h3>' +
+        `<label class="switch"><input type="checkbox" id="stab-enabled" ${stabilize.enabled ? 'checked' : ''} aria-label="启用视频防抖"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('stab-strength', '防抖强度', stabilize.strength ?? 65, 10, 95, 5) +
+        rangeControl('stab-crop', '边缘裁切(%)', stabilize.cropPercent ?? 6, 3, 15, 1) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '基于 Apple Vision 远景运动配准与 Metal GPU 亚像素重采样，自动滤除手机支架高频颠簸，同时保持 HUD、地图与速度表完全静止。' +
+        '</div></div>'
+      );
+      rows.push(
+        '<div class="field-row"><header><h3>字幕轨</h3>' +
+        `<label class="switch"><input type="checkbox" id="caption-enabled" ${caption.enabled ? 'checked' : ''} aria-label="启用字幕轨"><span></span></label></header>` +
+        '<div class="field-controls">' +
+        rangeControl('caption-size', '字号', caption.size, 10, 96, 1) +
+        rangeControl('caption-margin', '距底部(%)', Math.round(caption.margin * 100), 0, 45, 1) +
+        rangeControl('caption-outline', '描边', caption.outline, 0, 8, 1) +
+        colorControl('caption-color', '文字色', caption.color) +
+        colorControl('caption-outline-color', '描边色', caption.outlineColor) +
+        '</div>' +
+        `<div style="margin-top:8px; color: var(--ink); font-size:.72rem;">` +
+        '字幕轨只放「时间 + 速度」：地址、坐标由独立字段和地图图层显示，重复放进字幕会挤占画面。' +
+        '<br>字幕是 FilmCraft 的元数据轨，导出时必须勾选烧录字幕才会进入成片。' +
+        '</div></div>'
+      );
+      layout.config.fields.forEach((field, index) => {
+        rows.push(
+          `<div class="field-row${field.enabled ? '' : ' off'}" data-key="${escapeHtml(field.key)}"><header><h3>${escapeHtml(field.label)}</h3>` +
+          `<label class="switch"><input type="checkbox" data-field-enabled="${index}" ${field.enabled ? 'checked' : ''} aria-label="显示${escapeHtml(field.label)}"><span></span></label></header>` +
+          '<div class="field-controls">' +
+          rangeControl(`size-${index}`, '字号', field.size, 12, 160, 1) +
+          rangeControl(`opacity-${index}`, '透明度', field.opacity, 0, 100, 1) +
+          rangeControl(`bgop-${index}`, '底色透明', field.backgroundOpacity, 0, 100, 1) +
+          colorControl(`color-${index}`, '文字', field.color) +
+          colorControl(`bgcolor-${index}`, '底板', field.backgroundColor) +
+          `<label>底板<input type="checkbox" data-field-bg="${index}" ${field.background ? 'checked' : ''}></label>` +
+          '</div></div>'
+        );
+      });
+      list.innerHTML = rows.join('');
+      bindFieldControls();
+      renderChips();
+    }
+
+    function rangeControl(id, label, value, min, max, step) {
+      return (
+        `<label><span>${label}</span>` +
+        `<div class="stepper-row">` +
+        `<button type="button" class="step-btn" data-step-target="${id}" data-step-dir="-1" title="减小">−</button>` +
+        `<input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">` +
+        `<button type="button" class="step-btn" data-step-target="${id}" data-step-dir="1" title="增大">+</button>` +
+        `<output class="step-val" data-step-out="${id}">${Math.round(Number(value))}</output>` +
+        `</div></label>`
+      );
+    }
+
+    function colorControl(id, label, value) {
+      return `<label>${label}<input type="color" id="${id}" value="${value}"></label>`;
+    }
+
+    function bindFieldControls() {
+      const config = layout.config;
+      const gauge = config.gauge;
+      const bar = config.infoBar;
+      document.querySelectorAll('input[name="layout-mode-radio"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          switchLayoutMode(radio.value);
+        });
+      });
+      bindRange('split-video-pct', (value) => {
+        config.splitVideoPercent = clampInt(value, 25, 65);
+        syncCanvasOrientationUi();
+      });
+      bindRange('bar-size', (value) => { bar.textSize = value; });
+      bindRange('bar-opacity', (value) => { bar.opacity = value; });
+      bindRange('bar-padding', (value) => { bar.padding = value; });
+      bindColor('bar-bg', (value) => { bar.backgroundColor = value; });
+      bindColor('bar-text', (value) => { bar.textColor = value; });
+      const barEnabled = $('bar-enabled');
+      if (barEnabled) barEnabled.addEventListener('change', () => { bar.enabled = barEnabled.checked; markDirty(); });
+      document.querySelectorAll('[data-bar-field]').forEach((box) => {
+        box.addEventListener('change', () => {
+          const key = box.dataset.barField;
+          const next = new Set(bar.fields);
+          if (box.checked) next.add(key); else next.delete(key);
+          bar.fields = ORDERED_FIELDS.filter((name) => next.has(name));
+          // 勾了字段却没打开信息栏是最容易踩的坑：勾选框看着有反应，
+          // 画面却一点变化都没有。勾第一个字段时顺手把信息栏打开。
+          if (bar.fields.length && !bar.enabled) {
+            bar.enabled = true;
+            const toggle = $('bar-enabled');
+            if (toggle) toggle.checked = true;
+          }
+          markDirty();
+        });
+      });
+      bindRange('gauge-size', (value) => { gauge.radiusPercent = value / 100; });
+      // 速度条宽/高：渲染端只认 radiusPercent（draw_gauge_bar 用半径算所有几何），
+      // 这两个滑块换算成等价半径写回去，否则改了配置也不会影响出片。
+      bindRange('gauge-bar-width', (value) => {
+        gauge.barWidth = value;
+        const shortSide = Math.min(layout.config.width, layout.config.height);
+        // draw_gauge_bar 的圆盘半径是 radius * 1.15，宽度对应它的直径。
+        gauge.radiusPercent = clampNumber(value / 2 / 1.15 / shortSide, 0.05, 0.45);
+      });
+      bindRange('gauge-bar-height', (value) => {
+        gauge.barHeight = value;
+        // 高度按同一个圆盘的观感反推，保证两个滑块都能带动尺寸。
+        const shortSide = Math.min(layout.config.width, layout.config.height);
+        gauge.radiusPercent = clampNumber(value / 1.15 / shortSide, 0.05, 0.45);
+      });
+      bindRange('gauge-segments', (value) => { gauge.barSegments = value; });
+      bindRange('gauge-opacity', (value) => { gauge.opacity = value; });
+      bindRange('gauge-max', (value) => { gauge.maxSpeed = value; });
+      bindColor('gauge-bg', (value) => { gauge.backgroundColor = value; });
+      bindColor('gauge-arc', (value) => { gauge.arcColor = value; });
+      bindColor('gauge-value', (value) => { gauge.valueColor = value; });
+      const enabled = $('gauge-enabled');
+      if (enabled) enabled.addEventListener('change', () => { gauge.enabled = enabled.checked; markDirty(); });
+      document.querySelectorAll('input[name="gauge-style"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          gauge.style = radio.value;
+          markDirty();
+        });
+      });
+
+      const map = config.mapLayer;
+      const hud = config.hud;
+      bindRange('hud-time-size', (value) => { hud.timeSize = value; });
+      bindRange('hud-duration-size', (value) => { hud.durationSize = value; });
+      bindRange('hud-progress-size', (value) => { hud.progressSize = value; });
+      bindRange('hud-opacity', (value) => { hud.opacity = value; });
+      bindColor('hud-text', (value) => { hud.textColor = value; });
+      bindColor('hud-progress', (value) => { hud.progressColor = value; });
+      bindColor('hud-bg', (value) => { hud.backgroundColor = value; });
+      const hudEnabled = $('hud-enabled');
+      if (hudEnabled) hudEnabled.addEventListener('change', () => { hud.enabled = hudEnabled.checked; markDirty(); });
+      const hud24 = $('hud-24h');
+      if (hud24) hud24.addEventListener('change', () => { hud.timeFormat24h = hud24.checked; markDirty(); });
+      const hudDate = $('hud-date');
+      if (hudDate) hudDate.addEventListener('change', () => { hud.showDate = hudDate.checked; markDirty(); });
+      const hudDuration = $('hud-duration');
+      if (hudDuration) hudDuration.addEventListener('change', () => { hud.showDuration = hudDuration.checked; markDirty(); });
+      const hudBg = $('hud-bg-on');
+      if (hudBg) hudBg.addEventListener('change', () => { hud.background = hudBg.checked; markDirty(); });
+      const hudBar = $('hud-bar');
+      if (hudBar) hudBar.addEventListener('change', () => { hud.progressBar = hudBar.checked; markDirty(); });
+      const hudDistance = $('hud-distance');
+      if (hudDistance) hudDistance.addEventListener('change', () => { hud.showDistance = hudDistance.checked; markDirty(); });
+      bindRange('map-size', (value) => { map.sizePercent = value / 100; });
+      bindRange('map-scale', (value) => { map.scaleMeters = value; });
+      bindRange('map-overview-sec', (value) => { map.overviewSeconds = value; });
+      bindRange('map-detail-sec', (value) => { map.detailSeconds = value; });
+      const mapCycleBox = $('map-cycle-overview');
+      if (mapCycleBox) mapCycleBox.addEventListener('change', () => { map.cycleOverviewEnabled = mapCycleBox.checked; markDirty(); });
+      bindRange('map-coord-size', (value) => {
+        map.coordinateSize = value;
+        const mapWidget = overlayWidget('map');
+        if (mapWidget) {
+          const cpx = Math.max(6.5, Math.min(14.0, Number(value) * 0.78));
+          mapWidget.style.setProperty('--coord-px', `${cpx.toFixed(2)}px`);
+        }
+      });
+      bindRange('map-opacity', (value) => { map.opacity = value; });
+      bindColor('map-bg', (value) => { map.backgroundColor = value; });
+      bindColor('map-route', (value) => { map.routeColor = value; });
+      bindColor('map-played', (value) => { map.playedColor = value; });
+      bindColor('map-marker', (value) => { map.markerColor = value; });
+      const mapEnabled = $('map-enabled');
+      if (mapEnabled) mapEnabled.addEventListener('change', () => { map.enabled = mapEnabled.checked; markDirty(); });
+      document.querySelectorAll('input[name="map-style"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          map.mapStyle = radio.value === 'road' ? 'road' : 'satellite';
+          markDirty();
+        });
+      });
+      const mapRotate = $('map-rotate');
+      if (mapRotate) mapRotate.addEventListener('change', () => { map.rotateWithHeading = mapRotate.checked; markDirty(); });
+      const mapScaleBar = $('map-scale-bar');
+      if (mapScaleBar) mapScaleBar.addEventListener('change', () => { map.showScaleBar = mapScaleBar.checked; markDirty(); });
+      const mapLabel = $('map-label');
+      if (mapLabel) mapLabel.addEventListener('change', () => { map.showSpeedLabel = mapLabel.checked; markDirty(); });
+      const mapCoords = $('map-show-coords');
+      if (mapCoords) mapCoords.addEventListener('change', () => { map.showCoordinates = mapCoords.checked; markDirty(); });
+      const mapOfflineBtn = $('map-offline-download-btn');
+      if (mapOfflineBtn) {
+        mapOfflineBtn.addEventListener('click', () => {
+          const targetId = layout.tripId || selectedTripId();
+          startOfflineMapCache(targetId ? [targetId] : []);
+        });
+      }
+
+      const caption = config.caption;
+      bindRange('caption-size', (value) => { caption.size = value; });
+      // UI 用百分比，配置和 CLI 用 0..1 的小数。
+      bindRange('caption-margin', (value) => { caption.margin = value / 100; });
+      bindRange('caption-outline', (value) => { caption.outline = value; });
+      bindColor('caption-color', (value) => { caption.color = value; });
+      bindColor('caption-outline-color', (value) => { caption.outlineColor = value; });
+      const captionEnabled = $('caption-enabled');
+      if (captionEnabled) captionEnabled.addEventListener('change', () => { caption.enabled = captionEnabled.checked; markDirty(); });
+
+      const stabilize = config.stabilize || { enabled: true, strength: 65, cropPercent: 6 };
+      config.stabilize = stabilize;
+      bindRange('stab-strength', (value) => { stabilize.strength = value; });
+      bindRange('stab-crop', (value) => { stabilize.cropPercent = value; });
+      const stabEnabled = $('stab-enabled');
+      if (stabEnabled) stabEnabled.addEventListener('change', () => { stabilize.enabled = stabEnabled.checked; markDirty(); });
+
+      const introMap = config.introMap || { enabled: true, satelliteSeconds: 3, roadSeconds: 3, scaleMeters: 0 };
+      config.introMap = introMap;
+      bindRange('intro-scale-meters', (value) => { introMap.scaleMeters = value; });
+      bindRange('intro-sat-sec', (value) => { introMap.satelliteSeconds = value; });
+      bindRange('intro-road-sec', (value) => { introMap.roadSeconds = value; });
+      const introMapEnabled = $('intro-map-enabled');
+      if (introMapEnabled) introMapEnabled.addEventListener('change', () => { introMap.enabled = introMapEnabled.checked; markDirty(); });
+
+      const privacy = config.privacy || { enabled: true, trimMeters: 1000 };
+      config.privacy = privacy;
+      bindRange('privacy-trim-meters', (value) => { privacy.trimMeters = value; });
+      const privacyEnabled = $('privacy-enabled');
+      if (privacyEnabled) privacyEnabled.addEventListener('change', () => { privacy.enabled = privacyEnabled.checked; markDirty(); });
+
+      bindRange('export-fps-range', (value) => {
+        config.fps = value;
+        const topFps = $('layoutFpsSelect');
+        if (topFps && [15, 24, 30, 60, 120].includes(Number(value))) topFps.value = String(value);
+      });
+      const sideSpeedSel = $('export-speed-select');
+      if (sideSpeedSel) {
+        sideSpeedSel.addEventListener('change', () => {
+          const spd = Math.max(0.25, Math.min(16, Number(sideSpeedSel.value) || 1));
+          config.playbackSpeed = spd;
+          const topSpd = $('layoutSpeedSelect');
+          if (topSpd) topSpd.value = String(spd);
+          const vid = layoutVideo();
+          if (vid) { try { vid.playbackRate = Math.min(16, spd); } catch (_) {} }
+          markDirty();
+        });
+      }
+      const sideResSel = $('export-res-select');
+      if (sideResSel) {
+        sideResSel.addEventListener('change', () => {
+          config.exportResolution = sideResSel.value || 'source';
+          syncResolutionControls();
+          markDirty();
+        });
+      }
+      syncResolutionControls();
+
+      config.fields.forEach((field, index) => {
+        bindRange(`size-${index}`, (value) => { field.size = value; });
+        bindRange(`opacity-${index}`, (value) => { field.opacity = value; });
+        bindRange(`bgop-${index}`, (value) => { field.backgroundOpacity = value; });
+        bindColor(`color-${index}`, (value) => { field.color = value; });
+        bindColor(`bgcolor-${index}`, (value) => { field.backgroundColor = value; });
+        document.querySelectorAll(`[data-field-enabled="${index}"]`).forEach((box) => {
+          box.addEventListener('change', () => {
+            field.enabled = box.checked;
+            box.closest('.field-row').classList.toggle('off', !field.enabled);
+            markDirty();
+          });
+        });
+        document.querySelectorAll(`[data-field-bg="${index}"]`).forEach((box) => {
+          box.addEventListener('change', () => { field.background = box.checked; markDirty(); });
+        });
+      });
+    }
+
+    function bindRange(id, apply) {
+      const input = $(id);
+      if (!input) return;
+      const syncVal = () => {
+        const num = Number(input.value);
+        const out = document.querySelector(`[data-step-out="${id}"]`);
+        if (out) out.textContent = String(Math.round(num));
+        apply(num);
+        markDirty();
+        refreshChipsSoon();
+      };
+      input.addEventListener('input', syncVal);
+      document.querySelectorAll(`[data-step-target="${id}"]`).forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          event.preventDefault();
+          const dir = Number(btn.dataset.stepDir || 0);
+          const step = Number(input.step) || 1;
+          const min = Number(input.min) || 0;
+          const max = Number(input.max) || 100;
+          const next = clampNumber(Number(input.value) + dir * step, min, max);
+          input.value = String(next);
+          syncVal();
+        });
+      });
+    }
+
+    /* 尺寸类改动要同步缩放句柄：只重画句柄不动预览，操作还是即时的。 */
+    function refreshChipsSoon() {
+      window.clearTimeout(layoutChipTimer);
+      layoutChipTimer = window.setTimeout(renderChips, 80);
+    }
+
+    function bindColor(id, apply) {
+      const input = $(id);
+      if (input) input.addEventListener('input', () => { apply(input.value); markDirty(); });
+    }
+
+    function setSaveHint(text, state) {
+      const hint = $('layoutSaveHint');
+      if (!hint) return;
+      hint.textContent = text;
+      hint.classList.remove('saving', 'saved', 'error');
+      if (state) hint.classList.add(state);
+    }
+
+    function queueAutosave(delayMs) {
+      // 拖拽过程中也排队，松手后立刻落盘；防抖避免每像素写一次。
+      window.clearTimeout(layoutSaveTimer);
+      layoutSaveTimer = window.setTimeout(() => {
+        persistLayout({ silent: true }).catch(() => {});
+      }, delayMs == null ? 700 : delayMs);
+    }
+
+    function markDirty() {
+      layout.dirty = true;
+      setSaveHint('有未保存改动…', 'saving');
+      queueAutosave(layout.interacting ? 1200 : 700);
+      // 正在拖拽/缩放时不排预览：一次渲染要 8~10 秒，排上会抢主线程，手感直接卡死。
+      // 松手时 stop 里会再调一次 markDirty，那时才真正去渲染。
+      if (layout.interacting) return;
+      window.clearTimeout(layoutPreviewTimer);
+      layoutPreviewTimer = window.setTimeout(refreshLayoutPreview, 260);
+    }
+
+    async function persistLayout(options) {
+      const silent = Boolean(options && options.silent);
+      if (!layout.config) return null;
+      if (silent && !layout.dirty) return layout.config;
+      // 拖拽中先不写：坐标还在变，写下去会被下一帧覆盖，也白白打盘。
+      if (layout.interacting && silent) {
+        queueAutosave(400);
+        return layout.config;
+      }
+      const seq = ++layoutSaveSeq;
+      const revision = nextLayoutRevision();
+      const snapshot = JSON.parse(JSON.stringify(layout.config));
+      layout.dirty = false;
+      layout.saving = true;
+      setSaveHint(silent ? '正在自动保存…' : '正在保存…', 'saving');
+      try {
+        const payload = await requestJson('/api/layout', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ layout: snapshot, revision })
+        });
+        if (seq !== layoutSaveSeq) return payload.layout;
+        // 保存期间又改过：保留内存脏数据，再排一次落盘。
+        // 不要用响应体换掉 layout.config。右键菜单和右侧滑块闭包拿着原来的对象，
+        // 换掉之后再拖「面板大小」会写进旧对象，下一次保存仍是上一份，滑块看起来弹回去。
+        if (layout.dirty) {
+          queueAutosave(400);
+        } else {
+          setSaveHint('已记住，重启后仍沿用', 'saved');
+        }
+        if (!silent) showToast('排版已保存，生成项目时会用这套排版');
+        return payload.layout;
+      } catch (error) {
+        if (seq === layoutSaveSeq) {
+          layout.dirty = true;
+          setSaveHint(error.message || '保存失败', 'error');
+        }
+        if (!silent) showToast(error.message, true);
+        throw error;
+      } finally {
+        if (seq === layoutSaveSeq) layout.saving = false;
+      }
+    }
+
+    async function flushLayoutSave() {
+      window.clearTimeout(layoutSaveTimer);
+      if (!layout.config || (!layout.dirty && !layout.saving)) return;
+      layout.interacting = false;
+      try {
+        await persistLayout({ silent: true });
+      } catch (_) {
+        // 刷新/关闭时尽力写盘，失败不挡后续流程。
+      }
+    }
+
+    /* 样例内容：和预览用的是同一批字段值，所以句柄上看到的字就是成片里的字。 */
+    const SAMPLE_VALUES = {
+      time: '14:32:05',
+      address: '杭州市上城区 · 中河高架',
+      coordinates: '30.26240,120.16560',
+      satellites: 'GPS卫星：19',
+      focus: '对焦 0.07D(14m) · MF',
+      videoMode: '4K 3840x2160 · 30fps',
+      waitTime: '静止等待：00:00:00',
+      speed: '42.0 km/h'
+    };
+
+    /* 每个组件「1 单位 = 画面短边的百分之几」，用来把配置里的像素值换算成屏幕尺寸。 */
+    function chipScaleFactor() {
+      const stage = $('layoutStage');
+      const canvasW = (layout.config && layout.config.width) || 1920;
+      const canvasH = (layout.config && layout.config.height) || 1080;
+      return Math.min((stage.clientWidth || 1) / canvasW, (stage.clientHeight || 1) / canvasH);
+    }
+
+    /* 配置里的像素值 → 屏幕像素。所有句柄都必须走这里，
+       否则句柄尺寸和真实渲染值不是同一个比例，缩放就会「调了没反应」。 */
+    function px(canvasPx) {
+      return canvasPx * chipScaleFactor();
+    }
+
+    /* 真实渲染用的尺寸（画布像素），和 overlay_widgets.py 的算法保持一致。 */
+    function chipMetrics(key, config) {
+      const shortSide = Math.min(layout.config.width, layout.config.height);
+      if (key === 'map') {
+        const canvasHeight = Math.max(80, shortSide * config.sizePercent);
+        const canvasWidth = canvasHeight * (220 / 140);
+        // 徽章叠在卡片顶上，高度大约是卡片的 32/140。句柄要罩住整块。
+        return { kind: 'map', canvasWidth, canvasHeight: canvasHeight * (1 + 32 / 140) };
+      }
+      if (key === 'gauge') {
+        const size = Math.max(120, config.radiusPercent * shortSide * 1.15 * 2);
+        const ui = size / 250;
+        if (config.style === 'aero') {
+          return { kind: 'gauge aero', canvasWidth: 280 * ui, canvasHeight: 160 * ui };
+        }
+        if (config.style === 'gt') {
+          return { kind: 'gauge gt', canvasWidth: 260 * ui, canvasHeight: 150 * ui };
+        }
+        return { kind: config.style === 'bar' ? 'gauge bar' : 'gauge', canvasWidth: size, canvasHeight: size };
+      }
+      if (key === 'hud') {
+        // 参考稿时间戳 13px。面板大小 13 在 1080p 上就是原稿，左上角对齐。
+        const ui = (Math.max(8, config.timeSize) / 13) * (shortSide / 1080);
+        return { kind: 'hud', canvasWidth: 400 * ui, canvasHeight: 92 * ui, anchor: 'corner' };
+      }
+      return null;
+    }
+
+    function renderChips() {
+      const stage = $('layoutChips');
+      // 画布短边映射到屏幕短边的比例，所有尺寸都过它换算。
+      const parts = [];
+      const isSplit = Boolean(layout.config && layout.config.layoutMode === 'split');
+      const splitPct = Math.max(25, Math.min(65, Number((layout.config && layout.config.splitVideoPercent) || 38)));
+      const hud = layout.config.hud;
+      if (!isSplit && hud && hud.enabled) {
+        const metrics = chipMetrics('hud', hud);
+        // 真实 HUD 已经在预览图上画出来了，句柄只做透明热区罩住它。
+        // 计时栏的 x/y 是左上角，句柄不能再按中心点回移一半。
+        const width = px(metrics.canvasWidth);
+        const height = px(metrics.canvasHeight || metrics.canvasSize);
+        parts.push(
+          `<div class="chip hud anchor-corner" data-drag="hud" data-x="${hud.x}" data-y="${hud.y}" style="left:${(hud.x * 100).toFixed(2)}%;top:${(hud.y * 100).toFixed(2)}%;width:${width.toFixed(0)}px;height:${height.toFixed(0)}px" title="拖动移动，右键改参数">` +
+          `<span class="resize-handle" data-resize="hud"></span>` +
+          `</div>`
+        );
+      }
+      const map = layout.config.mapLayer;
+      if (map && map.enabled) {
+        const scaleText = map.scaleMeters && map.scaleMeters > 0 ? `${Math.round(map.scaleMeters)}m` : '全程';
+        if (isSplit) {
+          parts.push(
+            `<div class="chip map split-map" data-drag="map" data-x="0.5" data-y="${((splitPct + 100) / 200).toFixed(3)}" style="left:0%;top:${splitPct}%;width:100%;height:${100 - splitPct}%" title="右键切换卫星图/道路图、调整比例尺 +/- 或显示全程">` +
+            `<div class="chip-quick-bar" style="bottom:14px;">` +
+            `<button type="button" class="step-btn" data-quick-map-scale="-40" title="放大地图视野 (-40m)">−</button>` +
+            `<span data-quick-map-scale-label>${scaleText}</span>` +
+            `<button type="button" class="step-btn" data-quick-map-scale="40" title="缩小地图视野 (+40m)">+</button>` +
+            `<button type="button" class="step-btn" data-quick-map-full="1" style="width:auto;padding:0 7px;font-size:.68rem;" title="切换全程轨迹 / 局部跟随">全程</button>` +
+            `</div>` +
+            `</div>`
+          );
+        } else {
+          const metrics = chipMetrics('map', map);
+          const mapWidth = Math.max(24, px(metrics.canvasWidth));
+          const mapHeight = Math.max(24, px(metrics.canvasHeight));
+          // 地图句柄按 220:140 的圆角卡片罩住预览里的那一块，不再画成圆。
+          parts.push(
+            `<div class="chip map" data-drag="map" data-x="${map.x}" data-y="${map.y}" style="left:${(map.x * 100).toFixed(2)}%;top:${(map.y * 100).toFixed(2)}%;width:${mapWidth.toFixed(0)}px;height:${mapHeight.toFixed(0)}px" title="拖动移动，右下角拖拽缩放，底部 +/- 调比例尺，右键更多设置">` +
+            `<div class="chip-quick-bar">` +
+            `<button type="button" class="step-btn" data-quick-map-scale="-20" title="缩小比例尺半径 (-20m)">−</button>` +
+            `<span data-quick-map-scale-label>${scaleText}</span>` +
+            `<button type="button" class="step-btn" data-quick-map-scale="20" title="增大比例尺半径 (+20m)">+</button>` +
+            `<button type="button" class="step-btn" data-quick-map-full="1" style="width:auto;padding:0 6px;font-size:.66rem;" title="切换全程轨迹 / 局部跟随">全程</button>` +
+            `</div>` +
+            `<span class="resize-handle" data-resize="map"></span>` +
+            `</div>`
+          );
+        }
+      }
+      const gauge = layout.config.gauge;
+      if (gauge.enabled) {
+        const metrics = chipMetrics('gauge', gauge);
+        const gaugeWidth = Math.max(28, px(metrics.canvasWidth || metrics.canvasSize));
+        const gaugeHeight = Math.max(28, px(metrics.canvasHeight || metrics.canvasSize));
+        parts.push(
+          `<div class="chip ${metrics.kind}" data-drag="gauge" data-x="${gauge.x}" data-y="${gauge.y}" style="left:${(gauge.x * 100).toFixed(2)}%;top:${(gauge.y * 100).toFixed(2)}%;width:${gaugeWidth.toFixed(0)}px;height:${gaugeHeight.toFixed(0)}px" title="拖动移动，右键改参数">` +
+          `<span class="resize-handle" data-resize="gauge"></span>` +
+          `</div>`
+        );
+      }
+      if (!isSplit) layout.config.fields.forEach((field, index) => {
+        if (!field.enabled) return;
+        const text = SAMPLE_VALUES[field.key] || field.label;
+        // 字段热区按字号估宽高，同样保持透明：真实文字已经渲染在底图上了。
+        const fontSize = Math.max(8, px(field.size));
+        const boxWidth = Math.max(28, fontSize * text.length * 0.62 + 16);
+        const boxHeight = Math.max(18, fontSize * 1.6);
+        parts.push(
+          `<div class="chip field" data-drag="field-${index}" data-x="${field.x}" data-y="${field.y}" style="left:${(field.x * 100).toFixed(2)}%;top:${(field.y * 100).toFixed(2)}%;width:${boxWidth.toFixed(0)}px;height:${boxHeight.toFixed(0)}px" title="拖动移动，右键改参数">` +
+          `<span class="resize-handle" data-resize="field-${index}"></span>` +
+          `</div>`
+        );
+      });
+      stage.innerHTML = parts.join('');
+      stage.querySelectorAll('.chip').forEach((chip) => {
+        chip.addEventListener('pointerdown', startDrag);
+        chip.addEventListener('contextmenu', openChipMenu);
+        const handle = chip.querySelector('.resize-handle');
+        if (handle) handle.addEventListener('pointerdown', startResize);
+      });
+      stage.querySelectorAll('[data-quick-map-scale]').forEach((btn) => {
+        btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const delta = Number(btn.dataset.quickMapScale || 0);
+          const m = layout.config && layout.config.mapLayer;
+          if (!m) return;
+          const baseScale = Number(m.scaleMeters) > 0 ? Number(m.scaleMeters) : 220;
+          m.scaleMeters = clampInt(baseScale + delta, 40, 5000);
+          mirrorHudControl('map-scale', m.scaleMeters);
+          const lbl = stage.querySelector('[data-quick-map-scale-label]');
+          if (lbl) lbl.textContent = `${m.scaleMeters}m`;
+          markDirty();
+        });
+      });
+      stage.querySelectorAll('[data-quick-map-full]').forEach((btn) => {
+        btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const m = layout.config && layout.config.mapLayer;
+          if (!m) return;
+          m.scaleMeters = m.scaleMeters > 0 ? 0 : 260;
+          mirrorHudControl('map-scale', m.scaleMeters);
+          const lbl = stage.querySelector('[data-quick-map-scale-label]');
+          if (lbl) lbl.textContent = m.scaleMeters > 0 ? `${m.scaleMeters}m` : '全程';
+          markDirty();
+        });
+      });
+    }
+
+    function startDrag(event) {
+      // 右键是参数菜单，不能当成拖动。否则松手会按旧尺寸排一次保存，把刚改的面板大小盖掉。
+      if (event.button !== 0) return;
+      // 按在缩放手把上时交给 startResize，不要同时触发拖动。
+      if (event.target.classList.contains('resize-handle') || event.target.closest('.chip-quick-bar')) return;
+      if (event.currentTarget.classList.contains('split-map')) return;
+      event.preventDefault();
+      const chip = event.currentTarget;
+      const stage = $('layoutStage');
+      const rect = stage.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const originX = Number(chip.dataset.x || 0.5);
+      const originY = Number(chip.dataset.y || 0.5);
+      chip.setPointerCapture(event.pointerId);
+      chip.classList.add('dragging');
+      layout.interacting = true;
+      let latestX = originX;
+      let latestY = originY;
+      let frame = 0;
+      const move = (moveEvent) => {
+        // 按住的那个点跟着光标走，不要一按下就把组件中心跳到鼠标上。
+        latestX = Math.min(1, Math.max(0, originX + (moveEvent.clientX - startX) / rect.width));
+        latestY = Math.min(1, Math.max(0, originY + (moveEvent.clientY - startY) / rect.height));
+        chip.style.left = `${(latestX * 100).toFixed(2)}%`;
+        chip.style.top = `${(latestY * 100).toFixed(2)}%`;
+        syncOverlayPosition(chip.dataset.drag, latestX, latestY);
+        if (!frame) {
+          frame = requestAnimationFrame(() => {
+            frame = 0;
+            applyChipPosition(chip.dataset.drag, latestX, latestY);
+          });
+        }
+      };
+      const stop = () => {
+        chip.removeEventListener('pointermove', move);
+        chip.removeEventListener('pointerup', stop);
+        chip.classList.remove('dragging');
+        if (frame) cancelAnimationFrame(frame);
+        layout.interacting = false;
+        // 落点写回后用 left/top 重新定位，保持和配置一致。
+        chip.dataset.x = String(latestX);
+        chip.dataset.y = String(latestY);
+        chip.style.left = `${(latestX * 100).toFixed(2)}%`;
+        chip.style.top = `${(latestY * 100).toFixed(2)}%`;
+        applyChipPosition(chip.dataset.drag, latestX, latestY);
+        // 拖动过程中不请求预览（一次 8~10 秒，会把拖拽卡死），松手才刷新。
+        markDirty();
+      };
+      chip.addEventListener('pointermove', move);
+      chip.addEventListener('pointerup', stop);
+    }
+
+    /* 拖右下角手把改尺寸：以按下时的尺寸为基准，按相对位移等比缩放。 */
+    /* 每个组件右键能调的关键参数。只放最常用的几项，
+       避免又变成右侧那一整栏；其余细节仍在右侧面板。 */
+    function chipMenuSpec(key) {
+      const c = layout.config;
+      if (key === 'map') {
+        const m = c.mapLayer;
+        const isSplit = c.layoutMode === 'split';
+        return {
+          title: isSplit ? '下半屏轨迹地图 (右键快捷调节)' : '地图浮窗',
+          modes: [
+            { id: 'satellite', label: '卫星图' },
+            { id: 'road', label: '道路图' },
+            { id: 'full', label: m.scaleMeters <= 0 ? '局部跟随' : '显示全程' }
+          ],
+          modeValue: m.scaleMeters <= 0 ? 'full' : (m.mapStyle === 'road' ? 'road' : 'satellite'),
+          setMode: (id) => {
+            if (id === 'full') {
+              m.scaleMeters = m.scaleMeters <= 0 ? 260 : 0;
+              mirrorHudControl('map-scale', m.scaleMeters);
+            } else {
+              m.mapStyle = id;
+            }
+          },
+          items: [
+            { label: '比例尺(0=全程)', min: 0, max: 5000, step: 20, value: m.scaleMeters,
+              get: () => layout.config.mapLayer.scaleMeters,
+              set: (v) => { layout.config.mapLayer.scaleMeters = v; mirrorHudControl('map-scale', v); } },
+            { label: '全程秒数', min: 2, max: 60, step: 1, value: m.overviewSeconds ?? 10,
+              get: () => layout.config.mapLayer.overviewSeconds ?? 10,
+              set: (v) => { layout.config.mapLayer.overviewSeconds = v; mirrorHudControl('map-overview-sec', v); } },
+            { label: '局部秒数', min: 5, max: 180, step: 5, value: m.detailSeconds ?? 50,
+              get: () => layout.config.mapLayer.detailSeconds ?? 50,
+              set: (v) => { layout.config.mapLayer.detailSeconds = v; mirrorHudControl('map-detail-sec', v); } },
+            isSplit
+              ? { label: '视频占比%', min: 25, max: 65, step: 1, value: c.splitVideoPercent ?? 38,
+                  get: () => layout.config.splitVideoPercent ?? 38,
+                  set: (v) => { layout.config.splitVideoPercent = v; mirrorHudControl('split-video-pct', v); syncCanvasOrientationUi(); } }
+              : { label: '高度', min: 4, max: 60, step: 1, value: Math.round(m.sizePercent * 100),
+                  get: () => Math.round(layout.config.mapLayer.sizePercent * 100),
+                  set: (v) => { layout.config.mapLayer.sizePercent = v / 100; mirrorHudControl('map-size', v); } },
+            { label: '透明度', min: 0, max: 100, step: 1, value: m.opacity,
+              get: () => layout.config.mapLayer.opacity,
+              set: (v) => { layout.config.mapLayer.opacity = v; mirrorHudControl('map-opacity', v); } },
+            { label: '坐标字号', min: 8, max: 18, step: 1, value: m.coordinateSize,
+              get: () => m.coordinateSize,
+              set: (v) => {
+                m.coordinateSize = v;
+                mirrorHudControl('map-coord-size', v);
+                const mapWidget = overlayWidget('map');
+                if (mapWidget) {
+                  const cpx = Math.max(6.5, Math.min(14.0, Number(v) * 0.78));
+                  mapWidget.style.setProperty('--coord-px', `${cpx.toFixed(2)}px`);
+                }
+              } }
+          ]
+        };
+      }
+      if (key === 'gauge') {
+        const g = c.gauge;
+        return {
+          title: '速度表',
+          items: [
+            { label: '大小', min: 5, max: 45, step: 1, value: Math.round(g.radiusPercent * 100),
+              get: () => Math.round(g.radiusPercent * 100), set: (v) => { g.radiusPercent = v / 100; } },
+            { label: '上限', min: 20, max: 400, step: 10, value: g.maxSpeed,
+              get: () => g.maxSpeed, set: (v) => { g.maxSpeed = v; } },
+            { label: '透明度', min: 0, max: 100, step: 1, value: g.opacity,
+              get: () => g.opacity, set: (v) => { g.opacity = v; } }
+          ]
+        };
+      }
+      if (key === 'hud') {
+        const h = c.hud;
+        return {
+          title: '左上角 HUD',
+          items: [
+            { label: '面板大小', min: 12, max: 160, step: 1, value: h.timeSize,
+              get: () => layout.config.hud.timeSize,
+              set: (v) => { layout.config.hud.timeSize = v; syncHudUi(); mirrorHudControl('hud-time-size', v); } },
+            { label: '时长字号', min: 10, max: 140, step: 1, value: h.durationSize,
+              get: () => layout.config.hud.durationSize,
+              set: (v) => { layout.config.hud.durationSize = v; mirrorHudControl('hud-duration-size', v); } },
+            { label: '进度字号', min: 10, max: 140, step: 1, value: h.progressSize,
+              get: () => layout.config.hud.progressSize,
+              set: (v) => { layout.config.hud.progressSize = v; mirrorHudControl('hud-progress-size', v); } },
+            { label: '透明度', min: 0, max: 100, step: 1, value: h.opacity,
+              get: () => layout.config.hud.opacity,
+              set: (v) => { layout.config.hud.opacity = v; syncHudUi(); mirrorHudControl('hud-opacity', v); } }
+          ]
+        };
+      }
+      if (key.startsWith('field-')) {
+        const index = Number(key.replace('field-', ''));
+        const f = c.fields[index];
+        if (!f) return null;
+        return {
+          title: `字段 · ${f.label}`,
+          items: [
+            { label: '字号', min: 8, max: 220, step: 1, value: f.size,
+              get: () => f.size, set: (v) => { f.size = v; } },
+            { label: '透明度', min: 0, max: 100, step: 1, value: f.opacity,
+              get: () => f.opacity, set: (v) => { f.opacity = v; } },
+            { label: '底板透明', min: 0, max: 100, step: 1, value: f.backgroundOpacity,
+              get: () => f.backgroundOpacity, set: (v) => { f.backgroundOpacity = v; } }
+          ]
+        };
+      }
+      return null;
+    }
+
+    /* 右键组件就地弹参数面板，改完立刻重画句柄并排队渲染预览。 */
+    function openChipMenu(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      const chip = event.currentTarget;
+      const key = chip.dataset.drag;
+      const spec = chipMenuSpec(key);
+      const menu = $('chipMenu');
+      if (!spec) return;
+      const rows = spec.items.map((item, i) =>
+        `<label><span>${item.label}</span>` +
+        `<div class="stepper-row">` +
+        `<button type="button" class="step-btn" data-menu-step="${i}" data-menu-dir="-1" title="减小">−</button>` +
+        `<input type="range" data-menu-index="${i}" min="${item.min}" max="${item.max}" step="${item.step}" value="${item.value}">` +
+        `<button type="button" class="step-btn" data-menu-step="${i}" data-menu-dir="1" title="增大">+</button>` +
+        `</div>` +
+        `<output class="step-val" data-menu-out="${i}">${item.value}</output></label>`
+      ).join('');
+      // 地图：卫星图 / 道路图模式切换。
+      const modes = Array.isArray(spec.modes)
+        ? `<div class="menu-modes">` +
+          spec.modes.map((mode) =>
+            `<button type="button" class="menu-mode${mode.id === spec.modeValue ? ' active' : ''}" data-mode="${mode.id}">${escapeHtml(mode.label)}</button>`
+          ).join('') +
+          `</div>`
+        : '';
+      // 速度表额外给一行预设霓虹色，参考稿的色点交互。
+      const swatches = key === 'gauge'
+        ? `<div class="menu-swatches">` +
+          ['#ff5e00', '#00f2ff', '#e6ff00', '#ff2a5f'].map((hex) =>
+            `<button type="button" class="menu-swatch" data-color="${hex}" style="background:${hex}" aria-label="主题色 ${hex}"></button>`
+          ).join('') +
+          `</div>`
+        : '';
+      menu.innerHTML = `<h4>${escapeHtml(spec.title)}</h4>${modes}${rows}${swatches}`;
+      // 贴着组件右下角弹，超出画面时往回贴。
+      const stage = $('layoutStage').getBoundingClientRect();
+      const chipBox = chip.getBoundingClientRect();
+      let left = chipBox.right - stage.left + 8;
+      let top = chipBox.top - stage.top;
+      menu.hidden = false;
+      const menuBox = menu.getBoundingClientRect();
+      if (left + menuBox.width > stage.width) left = Math.max(4, chipBox.left - stage.left - menuBox.width - 8);
+      if (top + menuBox.height > stage.height) top = Math.max(4, stage.height - menuBox.height - 4);
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+      menu.querySelectorAll('input[type=range]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const index = Number(input.dataset.menuIndex);
+          const item = spec.items[index];
+          const value = Number(input.value);
+          item.set(value);
+          const out = menu.querySelector(`[data-menu-out="${index}"]`);
+          if (out) out.textContent = String(value);
+          refreshChipsSoon();
+          markDirty();
+        });
+      });
+      menu.querySelectorAll('[data-menu-step]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const index = Number(btn.dataset.menuStep);
+          const dir = Number(btn.dataset.menuDir || 0);
+          const item = spec.items[index];
+          const input = menu.querySelector(`input[data-menu-index="${index}"]`);
+          if (!item || !input) return;
+          const next = clampNumber(Number(input.value) + dir * (Number(item.step) || 1), item.min, item.max);
+          input.value = String(next);
+          item.set(next);
+          const out = menu.querySelector(`[data-menu-out="${index}"]`);
+          if (out) out.textContent = String(next);
+          refreshChipsSoon();
+          markDirty();
+        });
+      });
+      menu.querySelectorAll('.menu-mode').forEach((button) => {
+        button.addEventListener('click', () => {
+          const mode = button.dataset.mode;
+          if (!mode || typeof spec.setMode !== 'function') return;
+          spec.setMode(mode);
+          menu.querySelectorAll('.menu-mode').forEach((node) => {
+            node.classList.toggle('active', node.dataset.mode === mode);
+          });
+          markDirty();
+          renderFieldEditor();
+        });
+      });
+      // 色点：同时改弧线和强调色，参考稿里是一键换主题。
+      menu.querySelectorAll('.menu-swatch').forEach((swatch) => {
+        swatch.addEventListener('click', () => {
+          const hex = swatch.dataset.color;
+          if (key === 'gauge') {
+            layout.config.gauge.arcColor = hex;
+          } else if (key === 'hud') {
+            layout.config.hud.progressColor = hex;
+          } else if (key === 'map') {
+            layout.config.mapLayer.markerColor = hex;
+          }
+          markDirty();
+          renderFieldEditor();
+          closeChipMenu();
+        });
+      });
+    }
+
+    function closeChipMenu() {
+      const menu = $('chipMenu');
+      if (menu) menu.hidden = true;
+    }
+
+    /* 切换排版编辑器全屏预览拖拽模式，全屏下仍支持组件拖拽、右下角缩放、右键参数与比例尺 +/- 微调。 */
+    function syncFullscreenButtonLabels(isFull) {
+      const topBtn = $('layoutFullscreenButton');
+      const stageBtn = $('stageFullscreenToggle');
+      if (topBtn) topBtn.textContent = isFull ? '✕ 退出全屏预览' : '⛶ 全屏预览拖拽';
+      if (stageBtn) stageBtn.textContent = isFull ? '✕ 退出全屏' : '⛶ 全屏预览';
+    }
+
+    async function toggleStageFullscreen() {
+      const panel = $('layoutPanel');
+      if (!panel) return;
+      const nativeFs = document.fullscreenElement === panel;
+      const classFs = panel.classList.contains('is-fullscreen');
+      if (nativeFs || classFs) {
+        panel.classList.remove('is-fullscreen');
+        if (document.fullscreenElement && document.exitFullscreen) {
+          try { await document.exitFullscreen(); } catch (_) {}
+        }
+        syncFullscreenButtonLabels(false);
+      } else {
+        panel.classList.add('is-fullscreen');
+        if (panel.requestFullscreen) {
+          try { await panel.requestFullscreen(); } catch (_) {}
+        }
+        syncFullscreenButtonLabels(true);
+      }
+      window.requestAnimationFrame(() => {
+        fitOverlayFrame();
+        renderChips();
+      });
+    }
+
+    document.addEventListener('fullscreenchange', () => {
+      const panel = $('layoutPanel');
+      if (!panel) return;
+      const isFull = document.fullscreenElement === panel;
+      panel.classList.toggle('is-fullscreen', isFull);
+      syncFullscreenButtonLabels(isFull);
+      window.requestAnimationFrame(() => {
+        fitOverlayFrame();
+        renderChips();
+      });
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+      const menu = $('chipMenu');
+      if (menu && !menu.hidden && !menu.contains(event.target)) closeChipMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        const menu = $('chipMenu');
+        if (menu && !menu.hidden) {
+          closeChipMenu();
+          return;
+        }
+        const panel = $('layoutPanel');
+        if (panel && panel.classList.contains('is-fullscreen') && !document.fullscreenElement) {
+          panel.classList.remove('is-fullscreen');
+          syncFullscreenButtonLabels(false);
+          window.requestAnimationFrame(() => {
+            fitOverlayFrame();
+            renderChips();
+          });
+        }
+      }
+    });
+
+    function startResize(event) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const handle = event.currentTarget;
+      const chip = handle.closest('.chip');
+      const key = handle.dataset.resize;
+      const stage = $('layoutStage');
+      const rect = stage.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startWidth = chip.getBoundingClientRect().width;
+      const startHeight = chip.getBoundingClientRect().height;
+      const aspect = startWidth / Math.max(1, startHeight);
+      // 屏幕上每移动短边的 1/3，尺寸翻一倍左右，手感不至于太钝或太飘。
+      const span = Math.max(80, Math.min(rect.width, rect.height) / 3);
+      handle.setPointerCapture(event.pointerId);
+      chip.classList.add('dragging');
+      layout.interacting = true;
+      const move = (moveEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        // 往右下拖变大，往左上拖变小；取平均让两个方向都能调。
+        const factor = Math.min(4, Math.max(0.3, 1 + (dx + dy) / 2 / span));
+        // 拖动过程中直接改句柄尺寸，眼睛能立刻看到变化；
+        // 真实配置在松手时才写回，避免每帧都触发预览重渲染。
+        const width = Math.max(16, startWidth * factor);
+        chip.style.width = `${width}px`;
+        chip.style.height = `${Math.max(10, width / aspect)}px`;
+        chip.dataset.pendingFactor = String(factor);
+        syncOverlayScale(key, factor);
+      };
+      const stop = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', stop);
+        chip.classList.remove('dragging');
+        layout.interacting = false;
+        const factor = Number(chip.dataset.pendingFactor || 1);
+        delete chip.dataset.pendingFactor;
+        if (factor !== 1) applyChipScale(key, factor);
+        markDirty();
+        // 松手后按新的配置重画，句柄和右侧滑块对齐。
+        renderChips();
+        renderFieldEditor();
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', stop);
+    }
+
+    /* 把缩放比例写回配置：每个组件的尺寸字段不同，按各自语义换算。 */
+    function applyChipScale(key, factor) {
+      const config = layout.config;
+      if (key === 'map') {
+        // 卡片高度占画面短边的比例，宽度按参考稿 220:140。
+        const start = config.mapLayer.sizePercent || 0.22;
+        config.mapLayer.sizePercent = Math.min(0.95, Math.max(0.04, start * factor));
+        return;
+      }
+      if (key === 'gauge') {
+        // 圆形表盘和速度条都按 radiusPercent 缩放。
+        const start = config.gauge.radiusPercent || 0.16;
+        config.gauge.radiusPercent = Math.min(0.45, Math.max(0.05, start * factor));
+        return;
+      }
+      if (key === 'hud') {
+        // HUD 没有单一尺寸字段，三个字号一起等比缩放。
+        const hud = config.hud;
+        hud.timeSize = clampInt(hud.timeSize * factor, 12, 160);
+        hud.durationSize = clampInt(hud.durationSize * factor, 10, 140);
+        hud.progressSize = clampInt(hud.progressSize * factor, 10, 140);
+        syncHudUi();
+        return;
+      }
+      if (key.startsWith('field-')) {
+        const index = Number(key.replace('field-', ''));
+        const field = config.fields[index];
+        if (!field) return;
+        field.size = clampInt(field.size * factor, 8, 220);
+      }
+    }
+
+    function clampInt(value, low, high) {
+      return Math.round(Math.min(high, Math.max(low, value)));
+    }
+
+    function clampNumber(value, low, high) {
+      return Math.min(high, Math.max(low, value));
+    }
+
+    function applyChipPosition(key, x, y) {
+      if (key === 'hud') {
+        layout.config.hud.x = x;
+        layout.config.hud.y = y;
+        return;
+      }
+      if (key === 'map') {
+        layout.config.mapLayer.x = x;
+        layout.config.mapLayer.y = y;
+        return;
+      }
+      if (key === 'gauge') {
+        layout.config.gauge.x = x;
+        layout.config.gauge.y = y;
+        return;
+      }
+      const index = Number(key.replace('field-', ''));
+      const field = layout.config.fields[index];
+      if (field) {
+        field.x = x;
+        field.y = y;
+      }
+    }
+
+    function fitOverlayFrame() {
+      const stage = $('layoutStage');
+      const frame = $('layoutOverlay');
+      if (!stage || !frame || !layout.config) return;
+      const canvasW = layout.config.width || 1920;
+      const canvasH = layout.config.height || 1080;
+      const scaleX = (stage.clientWidth || canvasW) / canvasW;
+      const scaleY = (stage.clientHeight || canvasH) / canvasH;
+      frame.style.width = `${canvasW}px`;
+      frame.style.height = `${canvasH}px`;
+      frame.style.transform = `scale(${scaleX}, ${scaleY})`;
+    }
+
+    function overlayWidget(key) {
+      const doc = $('layoutOverlay') && $('layoutOverlay').contentDocument;
+      if (!doc) return null;
+      if (key === 'hud') return doc.getElementById('widget-timing');
+      if (key === 'map') return doc.getElementById('widget-map');
+      if (key === 'gauge') return doc.getElementById('widget-speed');
+      if (key.startsWith('field-')) return doc.querySelector(`[data-field="${key.slice(6)}"]`);
+      return null;
+    }
+
+    function syncOverlayPosition(key, x, y) {
+      const widget = overlayWidget(key);
+      if (!widget) return;
+      widget.style.left = `${(x * 100).toFixed(2)}%`;
+      widget.style.top = `${(y * 100).toFixed(2)}%`;
+    }
+
+    function mirrorHudControl(id, value) {
+      const input = $(id);
+      if (input) input.value = String(value);
+      const out = document.querySelector(`[data-step-out="${id}"]`);
+      if (out) out.textContent = String(Math.round(Number(value)));
+    }
+
+    /* 和 overlay_widgets.timing_ui 同一条公式：时间戳 13px 在 1080p 上就是原稿大小。 */
+    function hudUiScale(timeSize) {
+      const width = (layout.config && layout.config.width) || 1920;
+      const height = (layout.config && layout.config.height) || 1080;
+      const canvas = Math.max(0.5, Math.min(width, height) / 1080);
+      return Math.max(0.5, Number(timeSize) / 13) * canvas;
+    }
+
+    function syncHudUi() {
+      const hud = layout.config && layout.config.hud;
+      const widget = overlayWidget('hud');
+      if (!hud || !widget) return;
+      // 拖动手把时用 transform 跟着光标；松手或右键改大小后改回 --ui，
+      // 否则两套缩放叠在一起，预览一刷新又跳回改之前的尺寸。
+      widget.style.transform = '';
+      widget.style.setProperty('--ui', hudUiScale(hud.timeSize).toFixed(4));
+      widget.style.opacity = (Number(hud.opacity) / 100).toFixed(2);
+    }
+
+    function syncOverlayScale(key, factor) {
+      const widget = overlayWidget(key);
+      if (!widget) return;
+      if (key === 'hud') {
+        widget.style.transformOrigin = 'top left';
+        widget.style.transform = `scale(${factor})`;
+        return;
+      }
+      widget.style.transformOrigin = 'center center';
+      widget.style.transform = `translate(-50%, -50%) scale(${factor})`;
+    }
+
+    let previewSeq = 0;
+    let playRunning = false;
+    let scrubbing = false;
+    let playToken = 0;
+
+    /* 录像画进覆盖层自己的底图。父页面 color-scheme 为 dark 时，
+       iframe 会自带一块不透明黑底，光靠底下的 img 会看不见画面。 */
+    function mountOverlayHtml(html, background) {
+      const plate = background
+        ? `<img id="video-plate" class="video-plate" alt="" src="${background}">`
+        : '<img id="video-plate" class="video-plate" alt="">';
+      if (html.includes('id="video-plate"')) {
+        return html.replace('<img id="video-plate" class="video-plate" alt="">', plate);
+      }
+      return html.replace('<body>', `<body>${plate}`);
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    function paintVideoPlate(url) {
+      if (!url) return;
+      const image = $('layoutImage');
+      if (image) image.src = url;
+      const doc = $('layoutOverlay') && $('layoutOverlay').contentDocument;
+      const plate = doc && doc.getElementById('video-plate');
+      if (plate) plate.src = url;
+    }
+
+    async function refreshLayoutPreview(options) {
+      if (!layout.config) return;
+      const opts = options || {};
+      const tripId = layout.tripId || selectedTripId();
+      layout.tripId = tripId;
+      if (!tripId) {
+        // 没有行程就没有底图可渲染。之前这里静默 return，预览区只剩一块黑底，
+        // 看起来像程序坏了，实际上只是没东西可画。
+        $('layoutStage').classList.add('empty');
+        showToast('还没有可预览的行程，连上手机或稍后重试', true);
+        return;
+      }
+      $('layoutStage').classList.remove('empty');
+      const seconds = Number($('layoutTime').value || 0);
+      $('layoutTimeLabel').textContent = `${seconds.toFixed(1)}s`;
+      const frame = $('layoutOverlay');
+      if (frame) frame.style.visibility = '';
+      // 两层预览：底图 JPEG + 覆盖层 HTML。换行程必须重抽底图和轨迹；
+      // 同一秒拖排版只改 HTML。演示底图不变，播放时也能只刷覆盖层。
+      const sameTrip = layout.liveReady === true && layout.liveTrip === tripId;
+      const htmlOnly = opts.forceFull
+        ? false
+        : Boolean(opts.htmlOnly) || (sameTrip && layout.liveSeconds === seconds);
+      const backgroundOnly = Boolean(opts.backgroundOnly);
+      const seq = ++previewSeq;
+      try {
+        const response = await fetch('/api/preview-live', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            trip: tripId,
+            t: seconds,
+            layout: layout.config,
+            htmlOnly: backgroundOnly ? false : htmlOnly,
+            backgroundOnly
+          })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (seq !== previewSeq) return;
+        if (!response.ok) throw new Error(payload.error || '预览渲染失败');
+        const totalMs = Number(payload.durationMs || 0);
+        if (totalMs > 0) {
+          layout.durationMs = totalMs;
+          const slider = $('layoutTime');
+          const pStartSec = payload.privacyEnabled ? Math.max(0, Math.floor(Number(payload.privacyStartMs || 0) / 1000)) : 0;
+          const pEndSec = payload.privacyEnabled && Number(payload.privacyEndMs || 0) > pStartSec * 1000
+            ? Math.max(pStartSec + 1, Math.floor(Number(payload.privacyEndMs) / 1000))
+            : Math.max(1, Math.floor(totalMs / 1000));
+          layout.privacyStartSec = pStartSec;
+          layout.privacyEndSec = pEndSec;
+          const minSeconds = pStartSec;
+          const maxSeconds = pEndSec;
+          if (Number(slider.min) !== minSeconds) {
+            slider.min = String(minSeconds);
+          }
+          if (Number(slider.max) !== maxSeconds) {
+            slider.max = String(maxSeconds);
+          }
+          if (Number(slider.value) < minSeconds) {
+            slider.value = String(minSeconds);
+            $('layoutTimeLabel').textContent = `${minSeconds.toFixed(1)}s`;
+          } else if (Number(slider.value) > maxSeconds) {
+            slider.value = String(maxSeconds);
+            $('layoutTimeLabel').textContent = `${maxSeconds.toFixed(1)}s`;
+          }
+        }
+        if (payload.background) {
+          layout.lastBackground = payload.background;
+          $('layoutImage').src = payload.background;
+        }
+        if (payload.sourceWidth && payload.sourceHeight) {
+          layout.sourceWidth = Number(payload.sourceWidth);
+          layout.sourceHeight = Number(payload.sourceHeight);
+          syncResolutionControls();
+        }
+        if (payload.backgroundNote && layout.notedTrip !== tripId) {
+          layout.notedTrip = tripId;
+          showToast(payload.backgroundNote, true);
+        }
+        // 只要新底图时别重载 iframe，否则覆盖层会闪一下，播放更像幻灯片。
+        if (backgroundOnly) {
+          paintVideoPlate(layout.lastBackground || '');
+          layout.liveReady = true;
+          layout.liveTrip = tripId;
+          layout.liveSeconds = seconds;
+          paintTelemetryAt(seconds * 1000);
+          return;
+        }
+        if (Array.isArray(payload.speeds)) {
+          layout.speeds = payload.speeds;
+          layout.speedTrip = tripId;
+        }
+        if (payload.mapFrame) {
+          layout.mapFrame = payload.mapFrame;
+          layout.tileOriginX = payload.mapFrame.originX;
+          layout.tileOriginY = payload.mapFrame.originY;
+        }
+        if (Array.isArray(payload.trackPoints) && payload.trackPoints.length) {
+          layout.trackPoints = payload.trackPoints;
+          layout.trackTrip = tripId;
+          layout.cumulativeDistances = buildCumulativeDistances(payload.trackPoints);
+        }
+        if (Array.isArray(payload.radars)) {
+          layout.radars = payload.radars;
+        }
+        if (Array.isArray(payload.maxSpeedPoint)) {
+          layout.maxSpeedPoint = payload.maxSpeedPoint;
+        }
+        if (Array.isArray(payload.cues)) {
+          layout.cues = payload.cues;
+          layout.cuesTrip = tripId;
+        }
+        if (typeof payload.totalDistanceMeters === 'number') {
+          layout.totalDistanceMeters = payload.totalDistanceMeters;
+        }
+        if (frame) frame.srcdoc = mountOverlayHtml(payload.html || '', layout.lastBackground || '');
+        layout.liveReady = true;
+        layout.liveTrip = tripId;
+        layout.liveSeconds = seconds;
+        fitOverlayFrame();
+      } catch (error) {
+        if (seq !== previewSeq) return;
+        showToast(error.message, true);
+      }
+    }
+
+    let playAbort = null;
+
+    function layoutVideo() {
+      return $('layoutVideo');
+    }
+
+    function setPlateHidden(hidden) {
+      const doc = $('layoutOverlay') && $('layoutOverlay').contentDocument;
+      const plate = doc && doc.getElementById('video-plate');
+      if (plate) plate.style.visibility = hidden ? 'hidden' : '';
+    }
+
+    function stopLayoutVideo() {
+      const video = layoutVideo();
+      if (!video) return;
+      video.pause();
+      video.classList.remove('is-on');
+      setPlateHidden(false);
+    }
+
+    function waitFor(target, eventName, timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => finish(new Error('这段录像在浏览器里播不了')), timeoutMs);
+        const finish = (error) => {
+          window.clearTimeout(timer);
+          target.removeEventListener(eventName, onOk);
+          target.removeEventListener('error', onError);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onOk = () => finish(null);
+        const onError = () => finish(new Error('这段录像在浏览器里播不了'));
+        target.addEventListener(eventName, onOk);
+        target.addEventListener('error', onError);
+      });
+    }
+
+    async function fetchPreviewMedia(tripId, start, span) {
+      playAbort = new AbortController();
+      const response = await fetch('/api/preview-media', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ trip: tripId, t: start, seconds: span }),
+        signal: playAbort.signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || '读取本地录像失败');
+      return payload;
+    }
+
+    /* 字幕里的速度大约一秒一个点，全部留着。两点之间按时间插值，表盘才跟得上车。 */
+    function speedAt(elapsedMs) {
+      const series = layout.speeds;
+      const tripId = layout.tripId || selectedTripId();
+      if (!series || !series.length || layout.speedTrip !== tripId) return null;
+      const t = Math.max(0, Number(elapsedMs) || 0);
+      if (t <= series[0][0]) return series[0][1];
+      const last = series[series.length - 1];
+      if (t >= last[0]) return last[1];
+      let lo = 0;
+      let hi = series.length - 1;
+      while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1;
+        if (series[mid][0] <= t) lo = mid;
+        else hi = mid;
+      }
+      const left = series[lo];
+      const right = series[hi];
+      const span = Math.max(1, right[0] - left[0]);
+      return left[1] + (right[1] - left[1]) * ((t - left[0]) / span);
+    }
+
+    function paintGauge(kmh) {
+      const doc = $('layoutOverlay') && $('layoutOverlay').contentDocument;
+      const root = doc && doc.getElementById('widget-speed');
+      if (!root || kmh == null || !isFinite(kmh)) return;
+      const maxSpeed = Math.max(1, Number(layout.config && layout.config.gauge && layout.config.gauge.maxSpeed) || 300);
+      // 超过最大速度时，数值显示真实车速，但表盘弧度 ratio 夹在 1.0（停在最右侧）
+      const ratio = Math.max(0, Math.min(1, kmh / maxSpeed));
+      const num = root.querySelector('.speed-num');
+      if (num) num.textContent = String(Math.round(kmh));
+      const ticks = root.querySelectorAll('.tick');
+      if (ticks.length) {
+        const active = Math.round(ratio * ticks.length);
+        ticks.forEach((tick, index) => tick.classList.toggle('active', index < active));
+      }
+      const blocks = root.querySelectorAll('.gt-block');
+      if (blocks.length) {
+        const filled = Math.round(ratio * blocks.length);
+        blocks.forEach((block, index) => block.classList.toggle('fill', index < filled));
+        const percent = root.querySelector('.gt-header span:last-child');
+        if (percent) percent.textContent = `${Math.round(ratio * 100)}%`;
+      }
+      const bar = root.querySelector('.gauge-bar');
+      if (bar) {
+        if (root.querySelector('.style-circular')) {
+          bar.style.strokeDashoffset = String(377 * (1 - ratio));
+        } else {
+          bar.style.strokeDashoffset = String(471 - ratio * (471 - 118));
+        }
+      }
+    }
+
+    function paintPlaybackClock(video, start) {
+      if (scrubbing || layout.seekSeconds != null) return;
+      const lead = Number(video.dataset.lead || 0);
+      const fileStart = Number(video.dataset.fileStart || 0);
+      const tripT = Math.max(0, start - lead + video.currentTime - fileStart);
+      $('layoutTime').value = String(tripT.toFixed(1));
+      $('layoutTimeLabel').textContent = `${tripT.toFixed(1)}s`;
+      paintTelemetryAt(tripT * 1000);
+    }
+
+    /* 计算轨迹点的球面累计距离（米），用于前端播放/拖动时实时刷新 HUD 里程与进度。 */
+    function buildCumulativeDistances(points) {
+      if (!Array.isArray(points) || !points.length) return [];
+      const out = [0];
+      const toRad = Math.PI / 180;
+      for (let i = 1; i < points.length; i += 1) {
+        const lat1 = Number(points[i - 1][3]) * toRad;
+        const lon1 = Number(points[i - 1][4]) * toRad;
+        const lat2 = Number(points[i][3]) * toRad;
+        const lon2 = Number(points[i][4]) * toRad;
+        const dLat = lat2 - lat1;
+        const dLon = lon2 - lon1;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+        const d = 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
+        out.push(out[out.length - 1] + d);
+      }
+      return out;
+    }
+
+    /* 把毫秒格式化成 HH:MM:SS 驾驶耗时字符串。 */
+    function formatHudDuration(elapsedMs) {
+      const totalSec = Math.max(0, Math.floor((Number(elapsedMs) || 0) / 1000));
+      const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    }
+
+    /* 按 HUD 的 24 小时制和日期开关格式化时间戳，默认隐藏年月日防止隐私泄露。 */
+    function formatHudTimestamp(rawTime) {
+      const text = String(rawTime || '').trim();
+      const match = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+      if (!match) return text;
+      const [, datePart, hStr, mStr, sStr] = match;
+      const hud = (layout.config && layout.config.hud) || {};
+      const use24h = hud.timeFormat24h !== false;
+      const showDate = Boolean(hud.showDate);
+      const hour = Number(hStr);
+      let clock = `${hStr}:${mStr}:${sStr}`;
+      if (!use24h) {
+        const suffix = hour < 12 ? 'AM' : 'PM';
+        const hour12 = String(hour % 12 || 12).padStart(2, '0');
+        clock = `${hour12}:${mStr}:${sStr} ${suffix}`;
+      }
+      return showDate ? `${datePart} ${clock}` : clock;
+    }
+
+    /* 从字幕的卫星字段（如 'GPS卫星：19'）提取数字文本。 */
+    function extractSatelliteNum(rawSat) {
+      const text = String(rawSat || '').trim();
+      if (!text) return '';
+      const match = text.match(/(\d+)/);
+      return match ? match[1] : text;
+    }
+
+    /* 把米数格式化成 m 或 km 字符串。 */
+    function formatDistanceMeters(meters) {
+      const m = Math.max(0, Number(meters) || 0);
+      return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+    }
+
+    /* 二分查找当前毫秒对应的字幕切片。 */
+    function cueAt(elapsedMs) {
+      const cues = layout.cues;
+      const tripId = layout.tripId || selectedTripId();
+      if (!Array.isArray(cues) || !cues.length || layout.cuesTrip !== tripId) return null;
+      const t = Math.max(0, Number(elapsedMs) || 0);
+      let lo = 0;
+      let hi = cues.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cues[mid].endMs <= t) lo = mid + 1;
+        else hi = mid;
+      }
+      return cues[lo] || cues[cues.length - 1];
+    }
+
+    /* 在当前墨卡托地图窗口内插值计算车标位置 (0..100%)、朝向角、已行驶轨迹与累计距离。 */
+    function trackStateAt(elapsedMs) {
+      const pts = layout.trackPoints;
+      const tripId = layout.tripId || selectedTripId();
+      if (!Array.isArray(pts) || pts.length < 2 || layout.trackTrip !== tripId) return null;
+      const t = Math.max(0, Number(elapsedMs) || 0);
+      let lo = 0;
+      let hi = pts.length - 1;
+      if (t <= pts[0][0]) {
+        lo = 0;
+        hi = 1;
+      } else if (t >= pts[hi][0]) {
+        lo = hi - 1;
+      } else {
+        while (lo + 1 < hi) {
+          const mid = (lo + hi) >> 1;
+          if (pts[mid][0] <= t) lo = mid;
+          else hi = mid;
+        }
+      }
+      const p0 = pts[lo];
+      const p1 = pts[hi];
+      const spanMs = Math.max(1, p1[0] - p0[0]);
+      const alpha = Math.max(0, Math.min(1, (t - p0[0]) / spanMs));
+      const mx = p0[1] + (p1[1] - p0[1]) * alpha;
+      const my = p0[2] + (p1[2] - p0[2]) * alpha;
+      const speedKmh = p0[5] + (p1[5] - p0[5]) * alpha;
+      const cum = layout.cumulativeDistances || [];
+      const d0 = cum[lo] || 0;
+      const d1 = cum[hi] != null ? cum[hi] : d0;
+      const travelled = d0 + (d1 - d0) * alpha;
+      const totalDist = cum.length ? cum[cum.length - 1] : (layout.totalDistanceMeters || 0);
+      return { index: lo, alpha, mx, my, speedKmh, travelled, totalDist };
+    }
+
+    let mapWindowRefreshBusy = false;
+    let lastMapRefreshAt = 0;
+
+    /* 当车标靠近当前局部地图边缘（或拖动跳转较远）时，静默向后端请求最新墨卡托窗口底图。 */
+    async function maybeRefreshMapWindow(seconds) {
+      if (mapWindowRefreshBusy) return;
+      const now = performance.now();
+      if (now - lastMapRefreshAt < 450) return;
+      const tripId = layout.tripId || selectedTripId();
+      if (!tripId || !layout.config) return;
+      mapWindowRefreshBusy = true;
+      lastMapRefreshAt = now;
+      try {
+        const response = await fetch('/api/preview-live', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            trip: tripId,
+            t: seconds,
+            layout: layout.config,
+            htmlOnly: true,
+            backgroundOnly: false
+          })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.html) return;
+        if (payload.mapFrame) {
+          layout.mapFrame = payload.mapFrame;
+          layout.tileOriginX = payload.mapFrame.originX;
+          layout.tileOriginY = payload.mapFrame.originY;
+          layout.tileSpanX = payload.mapFrame.spanX;
+          layout.tileSpanY = payload.mapFrame.spanY;
+          layout.tileBlend = payload.mapFrame.overviewBlend || 0;
+        }
+        const doc = $('layoutOverlay') && $('layoutOverlay').contentDocument;
+        if (!doc) return;
+        const parser = new DOMParser();
+        const nextDoc = parser.parseFromString(payload.html, 'text/html');
+        const nextMap = nextDoc.getElementById('widget-map');
+        const curMap = doc.getElementById('widget-map');
+        if (nextMap && curMap) {
+          const nextPhoto = nextMap.querySelector('.map-photo');
+          const curPhoto = curMap.querySelector('.map-photo');
+          const nextSrc = nextPhoto && nextPhoto.getAttribute('src');
+          if (curPhoto && nextSrc) {
+            // 先在内存预解码新底图，解码完成后再原子更新 src 并重置位移，彻底消除切换瞬间的白屏闪动与残影跳动
+            const preload = new Image();
+            preload.src = nextSrc;
+            try {
+              if (typeof preload.decode === 'function') await preload.decode();
+            } catch (_) {}
+            curPhoto.setAttribute('src', nextSrc);
+            curPhoto.style.transform = 'translate(0%, 0%)';
+          }
+          const nextFull = nextMap.querySelector('.route-full');
+          const curFull = curMap.querySelector('.route-full');
+          if (nextFull && curFull) {
+            curFull.setAttribute('d', nextFull.getAttribute('d') || '');
+          }
+          const nextOv = nextMap.querySelector('#map-overlays-layer');
+          const curOv = curMap.querySelector('#map-overlays-layer');
+          if (nextOv && curOv) {
+            curOv.innerHTML = nextOv.innerHTML;
+          }
+        }
+        const currentPlayMs = Number(($('layoutTime') && $('layoutTime').value) || seconds) * 1000;
+        paintTelemetryAt(currentPlayMs, { skipWindowRefresh: true });
+      } catch (_) {
+        // 静默忽略网络抖动
+      } finally {
+        mapWindowRefreshBusy = false;
+      }
+    }
+
+    /* 与后端 overlay_widgets.cycle_overview_blend_factor 完全一致的 10s:50s 周期丝滑缩放融合权重。 */
+    function cycleOverviewBlendAt(elapsedMs) {
+      const mapCfg = (layout.config && layout.config.mapLayer) || {};
+      const scaleM = Number(mapCfg.scaleMeters || 0);
+      if (scaleM <= 0) return 1.0;
+      if (mapCfg.cycleOverviewEnabled === false) return 0.0;
+      const ovSec = Math.max(0, Number(mapCfg.overviewSeconds ?? 10));
+      const dtSec = Math.max(0, Number(mapCfg.detailSeconds ?? 50));
+      if (ovSec <= 0.01) return 0.0;
+      if (dtSec <= 0.01) return 1.0;
+      const spd = Math.max(0.25, Number((layout.config && layout.config.playbackSpeed) || 1));
+      const outSec = Math.max(0, (Number(elapsedMs) || 0) / 1000.0) / spd;
+      const period = ovSec + dtSec;
+      const t = outSec % period;
+      const trans = Math.min(Math.max(0.25, 1.8), ovSec * 0.35, dtSec * 0.25);
+      if (t < ovSec - trans) return 1.0;
+      if (t < ovSec) {
+        const u = (t - (ovSec - trans)) / Math.max(1e-6, trans);
+        return 0.5 * (1.0 + Math.cos(Math.PI * u));
+      }
+      if (t < period - trans) return 0.0;
+      const u = (t - (period - trans)) / Math.max(1e-6, trans);
+      return 0.5 * (1.0 - Math.cos(Math.PI * u));
+    }
+
+    /* 构建测速摄像头 SVG 图标（对齐手机 App ic_speed_radar.xml）。 */
+    function radarCameraSvg(compact) {
+      const cls = compact ? 'radar-cam-svg is-compact' : 'radar-cam-svg';
+      return `<svg class="${cls}" viewBox="0 0 28 28" aria-hidden="true">` +
+        '<circle cx="14" cy="14" r="13" fill="#152033"/>' +
+        '<circle cx="14" cy="14" r="11" fill="#FFFFFF"/>' +
+        '<path fill="#152033" d="M7.5,10.5h7.8c1.1,0 2,0.9 2,2v3c0,1.1 -0.9,2 -2,2H7.5c-1.1,0 -2,-0.9 -2,-2v-3C5.5,11.4 6.4,10.5 7.5,10.5z"/>' +
+        '<circle cx="11.4" cy="14" r="2.2" fill="#2E6BFF"/>' +
+        '<path fill="none" stroke="#FF5A36" stroke-width="1.8" stroke-linecap="round" d="M18.6,11.2c1.5,1.5 1.5,4.1 0,5.6"/>' +
+        '<path fill="none" stroke="#FF5A36" stroke-width="1.6" stroke-linecap="round" d="M21.0,9.4c2.5,2.5 2.5,6.7 0,9.2"/>' +
+        '</svg>';
+    }
+
+    /* 播放或拖动进度条时，实时更新速度表、左上角计时 HUD、左下角地图车标位置与朝向、地址及独立字段。 */
+    function paintTelemetryAt(elapsedMs, options) {
+      const opts = options || {};
+      const doc = $('layoutOverlay') && $('layoutOverlay').contentDocument;
+      const tState = trackStateAt(elapsedMs);
+      const cue = cueAt(elapsedMs);
+      let kmh = speedAt(elapsedMs);
+      if (kmh == null && tState) kmh = tState.speedKmh;
+      if (kmh != null) paintGauge(kmh);
+      if (!doc) return;
+
+      // 1. 更新左上角 HUD 计时栏
+      const timingRoot = doc.getElementById('widget-timing');
+      if (timingRoot) {
+        if (cue && cue.time) {
+          const tsNode = timingRoot.querySelector('.timestamp');
+          if (tsNode) tsNode.textContent = formatHudTimestamp(cue.time);
+        }
+        if (cue && cue.satellites) {
+          const satWrap = doc.getElementById('hud-satellites');
+          const satVal = doc.getElementById('hud-sat-val');
+          const satNum = extractSatelliteNum(cue.satellites);
+          if (satVal && satNum) satVal.textContent = satNum;
+          if (satWrap) satWrap.style.display = satNum ? '' : 'none';
+        }
+        const durNode = doc.getElementById('hud-duration');
+        if (durNode) durNode.textContent = formatHudDuration(elapsedMs);
+        if (tState && tState.totalDist > 0) {
+          const ratio = Math.max(0, Math.min(1, tState.travelled / tState.totalDist));
+          const distNode = doc.getElementById('hud-distance');
+          if (distNode) {
+            distNode.textContent = `${formatDistanceMeters(tState.travelled)} / ${formatDistanceMeters(tState.totalDist)}`;
+          }
+          const progNode = doc.getElementById('hud-progress');
+          if (progNode) progNode.textContent = `${(ratio * 100).toFixed(1)}%`;
+          const barNode = timingRoot.querySelector('.progress-bar');
+          if (barNode) barNode.style.width = `${(ratio * 100).toFixed(1)}%`;
+        }
+      }
+
+      // 2. 更新左下角地图车标位置、朝向、已行驶路线与地址徽章
+      const mapRoot = doc.getElementById('widget-map');
+      if (mapRoot) {
+        mapRoot.classList.toggle('is-high-speed', Boolean(kmh != null && kmh > 180));
+        if (cue && cue.address) {
+          const addrNode = doc.getElementById('map-address') || mapRoot.querySelector('.map-badge span');
+          if (addrNode) addrNode.textContent = cue.address;
+        }
+        if (cue && cue.coordinates) {
+          const coordNode = doc.getElementById('map-coords');
+          if (coordNode) coordNode.textContent = cue.coordinates;
+        }
+        if (tState && tState.totalDist > 0) {
+          const splitDistText = doc.getElementById('split-distance-text');
+          const splitDistPill = doc.getElementById('split-distance-pill');
+          if (splitDistText) {
+            splitDistText.textContent = `${formatDistanceMeters(tState.travelled)} / ${formatDistanceMeters(tState.totalDist)}`;
+          }
+          if (splitDistPill) splitDistPill.style.display = '';
+        }
+        const frame = layout.mapFrame;
+        const pts = layout.trackPoints;
+        if (tState && frame && frame.spanX > 0 && frame.spanY > 0 && Array.isArray(pts) && pts.length >= 2) {
+          if (layout.tileOriginX == null) layout.tileOriginX = frame.originX;
+          if (layout.tileOriginY == null) layout.tileOriginY = frame.originY;
+          // 计算周期性 10s 全程轨迹图 : 50s 局部当前位置图的平滑对数插值窗口
+          const mapCfg = (layout.config && layout.config.mapLayer) || {};
+          const scaleMeters = Number(mapCfg.scaleMeters != null ? mapCfg.scaleMeters : frame.scaleMeters) || 0;
+          const blend = cycleOverviewBlendAt(elapsedMs);
+          const aspect = Number(frame.aspect) > 0.05 ? Number(frame.aspect) : (220 / 140);
+          const fullSpanX = Number(frame.fullSpanX || frame.spanX);
+          const fullSpanY = Number(frame.fullSpanY || frame.spanY);
+          const fullCx = Number(frame.fullOriginX != null ? frame.fullOriginX : frame.originX) + fullSpanX / 2;
+          const fullCy = Number(frame.fullOriginY != null ? frame.fullOriginY : frame.originY) + fullSpanY / 2;
+          let curOriginX = fullCx - fullSpanX / 2;
+          let curOriginY = fullCy - fullSpanY / 2;
+          let curSpanX = fullSpanX;
+          let curSpanY = fullSpanY;
+          if (scaleMeters > 0) {
+            const curLat = pts[tState.index][3] || 30.26;
+            const metersPerUnit = 40075016.686 * Math.max(0.25, Math.cos(curLat * Math.PI / 180));
+            const localSpanY = (2.0 * scaleMeters) / metersPerUnit;
+            const localSpanX = localSpanY * aspect;
+            if (blend <= 1e-4) {
+              curSpanX = localSpanX;
+              curSpanY = localSpanY;
+              curOriginX = tState.mx - curSpanX / 2;
+              curOriginY = tState.my - curSpanY / 2;
+            } else if (blend < 1.0 - 1e-4) {
+              const sx1 = Math.max(localSpanX * 1.02, fullSpanX);
+              const sy1 = Math.max(localSpanY * 1.02, fullSpanY);
+              curSpanX = localSpanX * Math.pow(sx1 / Math.max(1e-12, localSpanX), blend);
+              curSpanY = localSpanY * Math.pow(sy1 / Math.max(1e-12, localSpanY), blend);
+              const wPos = Math.pow(blend, 0.78);
+              const cx = tState.mx + (fullCx - tState.mx) * wPos;
+              const cy = tState.my + (fullCy - tState.my) * wPos;
+              curOriginX = cx - curSpanX / 2;
+              curOriginY = cy - curSpanY / 2;
+            }
+          }
+          const followCenter = scaleMeters > 0 && blend <= 1e-4;
+          const xPct = followCenter ? 50.0 : ((tState.mx - curOriginX) / curSpanX * 100);
+          const yPct = followCenter ? 50.0 : ((tState.my - curOriginY) / curSpanY * 100);
+          const p0 = pts[tState.index];
+          const p1 = pts[Math.min(pts.length - 1, tState.index + 1)];
+          const x0 = (p0[1] - curOriginX) / curSpanX * 100;
+          const y0 = (p0[2] - curOriginY) / curSpanY * 100;
+          const x1 = (p1[1] - curOriginX) / curSpanX * 100;
+          const y1 = (p1[2] - curOriginY) / curSpanY * 100;
+          const angle = Math.atan2((x1 - x0) * aspect, y0 - y1) * (180 / Math.PI);
+          const marker = mapRoot.querySelector('.car-marker');
+          if (marker) {
+            marker.style.left = `${xPct.toFixed(2)}%`;
+            marker.style.top = `${yPct.toFixed(2)}%`;
+            if (marker.classList.contains('car-pulse-marker')) {
+              marker.style.transform = 'translate(-50%,-50%)';
+            } else {
+              marker.style.transform = `translate(-50%,-50%) rotate(${Math.round(angle)}deg)`;
+            }
+          }
+          if (followCenter) {
+            const photoNode = mapRoot.querySelector('.map-photo');
+            if (photoNode) {
+              const shiftX = (layout.tileOriginX - curOriginX) / curSpanX * 100;
+              const shiftY = (layout.tileOriginY - curOriginY) / curSpanY * 100;
+              photoNode.style.transform = `translate(${shiftX.toFixed(2)}%, ${shiftY.toFixed(2)}%)`;
+            }
+          } else {
+            const photoNode = mapRoot.querySelector('.map-photo');
+            if (photoNode && photoNode.style.transform) {
+              photoNode.style.transform = 'translate(0%, 0%)';
+            }
+          }
+          const fullNode = mapRoot.querySelector('.route-full');
+          if (fullNode) {
+            const fullSegs = [];
+            for (let i = 0; i < pts.length; i += 1) {
+              const fx = (pts[i][1] - curOriginX) / curSpanX * 100;
+              const fy = (pts[i][2] - curOriginY) / curSpanY * 100;
+              fullSegs.push(`${fx.toFixed(2)} ${fy.toFixed(2)}`);
+            }
+            fullNode.setAttribute('d', fullSegs.length >= 2 ? `M ${fullSegs.join(' L ')}` : '');
+          }
+          let playedNode = mapRoot.querySelector('.route-played');
+          const svgNode = mapRoot.querySelector('.map-route-line');
+          if (!playedNode && svgNode) {
+            playedNode = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+            playedNode.setAttribute('class', 'route-played');
+            playedNode.setAttribute('vector-effect', 'non-scaling-stroke');
+            svgNode.appendChild(playedNode);
+          }
+          if (playedNode) {
+            const segs = [];
+            for (let i = 0; i <= tState.index; i += 1) {
+              const px = (pts[i][1] - curOriginX) / curSpanX * 100;
+              const py = (pts[i][2] - curOriginY) / curSpanY * 100;
+              segs.push(`${px.toFixed(2)} ${py.toFixed(2)}`);
+            }
+            segs.push(`${xPct.toFixed(2)} ${yPct.toFixed(2)}`);
+            playedNode.setAttribute('d', segs.length >= 2 ? `M ${segs.join(' L ')}` : '');
+          }
+          // 实时重投影最高速度玫红点与测速雷达限速胶囊
+          const ovLayer = doc.getElementById('map-overlays-layer');
+          if (ovLayer) {
+            const ovItems = [];
+            const peak = layout.maxSpeedPoint;
+            if (Array.isArray(peak) && peak.length >= 3) {
+              const pxPct = (peak[0] - curOriginX) / curSpanX * 100;
+              const pyPct = (peak[1] - curOriginY) / curSpanY * 100;
+              if (pxPct >= -8 && pxPct <= 108 && pyPct >= -8 && pyPct <= 108) {
+                const pSpd = Math.round(Number(peak[2]) || 0);
+                ovItems.push(`<div class="map-max-speed-dot" style="left:${pxPct.toFixed(2)}%;top:${pyPct.toFixed(2)}%"><span class="max-speed-tag">${pSpd}</span></div>`);
+              }
+            }
+            const radars = layout.radars;
+            const compactRadar = blend >= 0.45 || scaleMeters <= 0 || scaleMeters >= 3000;
+            if (Array.isArray(radars)) {
+              for (let rIdx = 0; rIdx < radars.length; rIdx += 1) {
+                const r = radars[rIdx];
+                const rxPct = (r[0] - curOriginX) / curSpanX * 100;
+                const ryPct = (r[1] - curOriginY) / curSpanY * 100;
+                if (rxPct >= -8 && rxPct <= 108 && ryPct >= -8 && ryPct <= 108) {
+                  const rSpd = Math.round(Number(r[2]) || 0);
+                  const pill = rSpd > 0 ? `<span class="radar-limit-pill">${rSpd}</span>` : '';
+                  ovItems.push(`<div class="map-radar-item${compactRadar ? ' is-compact' : ''}" style="left:${rxPct.toFixed(2)}%;top:${ryPct.toFixed(2)}%">${radarCameraSvg(compactRadar)}${pill}</div>`);
+                }
+              }
+            }
+            ovLayer.innerHTML = ovItems.join('');
+          }
+          // 当底图平移量超过 4% 时，后台静默更新高德底图瓦片，始终保持瓦片与实时车标中心对齐
+          const driftX = Math.abs((layout.tileOriginX - curOriginX) / curSpanX * 100);
+          const driftY = Math.abs((layout.tileOriginY - curOriginY) / curSpanY * 100);
+          const blendDiff = Math.abs((layout.tileBlend || 0) - blend);
+          if (!opts.skipWindowRefresh && (driftX > 4 || driftY > 4 || blendDiff > 0.14)) {
+            maybeRefreshMapWindow(elapsedMs / 1000);
+          }
+        }
+      }
+
+      // 3. 更新独立字幕字段与底部信息栏
+      if (cue) {
+        const fieldValues = {
+          time: formatHudTimestamp(cue.time),
+          address: cue.address,
+          coordinates: cue.coordinates,
+          satellites: cue.satellites,
+          focus: cue.focus,
+          videoMode: cue.videoMode,
+          waitTime: cue.waitTime,
+          speed: kmh != null ? `${kmh.toFixed(1)} km/h` : cue.speed
+        };
+        doc.querySelectorAll('.field[data-field-key]').forEach((node) => {
+          const key = node.getAttribute('data-field-key');
+          if (key && fieldValues[key]) node.textContent = fieldValues[key];
+        });
+        const infoBar = doc.getElementById('widget-infobar');
+        if (infoBar && layout.config && layout.config.infoBar && Array.isArray(layout.config.infoBar.fields)) {
+          const parts = layout.config.infoBar.fields.map((k) => fieldValues[k]).filter(Boolean);
+          if (parts.length) infoBar.innerHTML = parts.map(escapeHtml).join(' &nbsp;·&nbsp; ');
+        }
+      }
+    }
+
+    function seekInsideClip(video, start, target) {
+      const lead = Number(video.dataset.lead || 0);
+      const fileStart = Number(video.dataset.fileStart || 0);
+      const clipStart = start - lead;
+      const clipEnd = clipStart + (Number(video.duration) || 0);
+      if (!video.duration || target < clipStart - 0.05 || target > clipEnd - 0.2) return false;
+      video.currentTime = fileStart + (target - clipStart);
+      return true;
+    }
+
+    /* 直接播本地 mp4。进度条被按住时不要把滑块写回去。 */
+    async function playLocalVideo(media, start, token) {
+      const video = layoutVideo();
+      if (!video) throw new Error('预览画面还没准备好');
+      video.classList.add('is-on');
+      setPlateHidden(true);
+      if (video.dataset.src !== media.url) {
+        video.dataset.src = media.url;
+        video.src = media.url;
+        await waitFor(video, 'loadedmetadata');
+      }
+      if (!playRunning || token !== playToken) return 'stopped';
+      const fileStart = Number(media.startMs || 0) / 1000;
+      const lead = Number(media.leadMs || 0) / 1000;
+      video.dataset.lead = String(lead);
+      video.dataset.fileStart = String(fileStart);
+      video.dataset.origin = String(start);
+      const begin = fileStart + lead;
+      if (Math.abs(video.currentTime - begin) > 0.05) {
+        const seeking = waitFor(video, 'seeked');
+        video.currentTime = begin;
+        await seeking;
+      }
+      if (!playRunning || token !== playToken) return 'stopped';
+      const curRate = Math.max(0.25, Math.min(16, Number((layout.config && layout.config.playbackSpeed) || ($('layoutSpeedSelect') && $('layoutSpeedSelect').value) || 1)));
+      try { video.playbackRate = curRate; } catch (_) {}
+      await video.play();
+      paintPlaybackClock(video, start);
+      while (playRunning && token === playToken) {
+        const liveRate = Math.max(0.25, Math.min(16, Number((layout.config && layout.config.playbackSpeed) || ($('layoutSpeedSelect') && $('layoutSpeedSelect').value) || 1)));
+        if (Math.abs((video.playbackRate || 1) - liveRate) > 0.01) {
+          try { video.playbackRate = liveRate; } catch (_) {}
+        }
+        if (layout.seekSeconds != null) {
+          const target = Number(layout.seekSeconds);
+          if (seekInsideClip(video, start, target)) {
+            if (!scrubbing) layout.seekSeconds = null;
+          } else if (!scrubbing) {
+            layout.seekSeconds = null;
+            return 'seek';
+          }
+        }
+        paintPlaybackClock(video, start);
+        if (video.ended || (video.duration && video.currentTime >= video.duration - 0.08)) return 'ended';
+        await sleep(50);
+      }
+      return 'stopped';
+    }
+
+    async function fetchPreviewClip(tripId, start, span) {
+      playAbort = new AbortController();
+      const response = await fetch('/api/preview-clip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ trip: tripId, t: start, seconds: span, fps: 8 }),
+        signal: playAbort.signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || '读取这一段画面失败');
+      return payload;
+    }
+
+    async function playFrameList(frames, fps, start, token) {
+      const rate = Math.max(0.25, Math.min(16, Number((layout.config && layout.config.playbackSpeed) || 1)));
+      const interval = 1000 / Math.max(1, fps * rate);
+      const began = performance.now();
+      for (let index = 0; playRunning && token === playToken && index < frames.length; index += 1) {
+        const wait = began + index * interval - performance.now();
+        if (wait > 30) await sleep(wait);
+        if (!playRunning || token !== playToken) break;
+        paintVideoPlate(frames[index]);
+        const t = start + index / fps;
+        $('layoutTime').value = String(t.toFixed(1));
+        $('layoutTimeLabel').textContent = `${t.toFixed(1)}s`;
+        paintTelemetryAt(t * 1000);
+      }
+    }
+
+    /* 录像在电脑上时，一次抽出这 10 秒再按帧率播。
+       逐帧请求 preview-live 时，每一帧都要扫手机、抽整张画布、重做覆盖层，
+       往往接近 1 秒，所以会感觉一秒一帧。 */
+    async function playSteppedPreview(start, span, token, demoTrip) {
+      const rate = Math.max(0.25, Math.min(16, Number((layout.config && layout.config.playbackSpeed) || 1)));
+      const step = Math.max(0.5, rate);
+      const end = start + span;
+      let first = true;
+      for (let t = start; playRunning && token === playToken && t <= end + 1e-6; t += step) {
+        $('layoutTime').value = String(Number(t.toFixed(1)));
+        await refreshLayoutPreview({
+          forceFull: first,
+          htmlOnly: !first && demoTrip,
+          backgroundOnly: !first && !demoTrip
+        });
+        first = false;
+      }
+    }
+
+    function stopPlaySession() {
+      playRunning = false;
+      playToken += 1;
+      layout.seekSeconds = null;
+      scrubbing = false;
+      if (playAbort) playAbort.abort();
+      stopLayoutVideo();
+      const button = $('layoutPlayButton');
+      if (button) button.textContent = '▶ 播放';
+    }
+
+    async function playLayoutPreview() {
+      if (!layout.config) return;
+      const button = $('layoutPlayButton');
+      if (playRunning) {
+        const demoTrip = String(layout.tripId || selectedTripId() || '').startsWith('demo');
+        stopPlaySession();
+        refreshLayoutPreview({ forceFull: false, htmlOnly: demoTrip });
+        return;
+      }
+      const tripId = layout.tripId || selectedTripId();
+      if (!tripId) return;
+      const demoTrip = String(tripId).startsWith('demo');
+      const token = ++playToken;
+      playRunning = true;
+      button.disabled = false;
+      let cursor = Number($('layoutTime').value || 0);
+      try {
+        while (playRunning && token === playToken) {
+          const total = layout.durationMs ? layout.durationMs / 1000 : cursor + 30;
+          const span = Math.max(1, Math.min(30, total - cursor));
+          if (cursor >= total - 0.3) break;
+          button.textContent = demoTrip ? '■ 停止' : '读取画面…';
+          if (demoTrip) {
+            button.textContent = '■ 停止';
+            await playSteppedPreview(cursor, Math.min(10, span), token, true);
+            break;
+          }
+          const media = await fetchPreviewMedia(tripId, cursor, span);
+          if (!playRunning || token !== playToken) return;
+          const wanted = Number($('layoutTime').value || 0);
+          if (Math.abs(wanted - cursor) > 0.4 || layout.seekSeconds != null) {
+            cursor = layout.seekSeconds != null ? Number(layout.seekSeconds) : wanted;
+            layout.seekSeconds = null;
+            continue;
+          }
+          if (media && media.source === 'local' && media.url) {
+            button.textContent = '■ 停止';
+            let outcome = 'ended';
+            try {
+              outcome = await playLocalVideo(media, cursor, token);
+            } catch (videoError) {
+              if (!playRunning || token !== playToken) return;
+              stopLayoutVideo();
+              const clip = await fetchPreviewClip(tripId, cursor, Math.min(10, span));
+              if (clip && clip.frames && clip.frames.length) {
+                await playFrameList(clip.frames, clip.fps || 8, cursor, token);
+                break;
+              }
+              throw videoError;
+            }
+            if (!playRunning || token !== playToken) return;
+            if (outcome === 'seek') {
+              cursor = Number($('layoutTime').value || 0);
+              continue;
+            }
+            if (outcome === 'ended') {
+              const next = Number($('layoutTime').value || cursor);
+              if (next <= cursor + 0.3) break;
+              cursor = next;
+              continue;
+            }
+            break;
+          }
+          button.textContent = '■ 停止';
+          showToast('录像还在手机上，这一段大约一秒一帧。拉到电脑后会连贯播放。', true);
+          await playSteppedPreview(cursor, Math.min(10, span), token, false);
+          break;
+        }
+      } catch (error) {
+        if (error && error.name === 'AbortError') return;
+        if (token === playToken) showToast((error && error.message) || '播放失败', true);
+      } finally {
+        if (token === playToken) {
+          playRunning = false;
+          layout.seekSeconds = null;
+          stopLayoutVideo();
+          button.textContent = '▶ 播放';
+          refreshLayoutPreview({ forceFull: false, htmlOnly: demoTrip });
+        }
+      }
+    }
+
+    async function saveLayout() {
+      const button = $('layoutSaveButton');
+      button.disabled = true;
+      try {
+        window.clearTimeout(layoutSaveTimer);
+        layout.dirty = true;
+        await persistLayout({ silent: false });
+        renderFieldEditor();
+        refreshLayoutPreview();
+      } catch (_) {
+        // toast 已在 persistLayout 里处理
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function updateSelection() {
+      const selected = selectedTrips();
+      const bytes = selected.reduce((total, trip) => total + Number(trip.pullBytes || 0), 0);
+      $('selectionCount').textContent = selected.length ? `已选 ${selected.length} 趟完整行程` : '尚未选择行程';
+      $('selectionSize').textContent = selected.length ? `预计从手机拉取 ${formatBytes(bytes)}` : '选择后将显示拉取大小';
+      $('startButton').disabled = !selected.length || Boolean(state.jobId && state.pollTimer);
+      const exportSelectedBtn = $('exportSelectedButton');
+      if (exportSelectedBtn) {
+        exportSelectedBtn.disabled = (!selected.length && !layout.tripId) || Boolean(state.jobId && state.pollTimer);
+      }
+      const cacheButton = $('cacheButton');
+      if (cacheButton) {
+        const needPull = selected.filter((trip) => {
+          const local = localOf(trip);
+          return !local.demo && !local.ready;
+        });
+        const busy = state.cache && state.cache.status === 'running';
+        cacheButton.disabled = busy || !needPull.length;
+        cacheButton.textContent = busy ? '正在传输…' : (needPull.length ? `拉到电脑（${needPull.length}）` : '已在电脑');
+      }
+      syncLayoutSource();
+      document.querySelectorAll('.trip-card').forEach((card) => {
+        const checked = state.selected.has(card.dataset.tripId);
+        card.classList.toggle('selected', checked);
+        const input = card.querySelector('input');
+        if (input) input.checked = checked;
+      });
+    }
+
+    async function refreshAll() {
+      const button = $('refreshButton');
+      button.disabled = true;
+      setSystemState('', '正在读取设备与历史行程');
+      try {
+        await flushLayoutSave();
+        const [health, data] = await Promise.all([
+          requestJson('/api/health'),
+          requestJson('/api/trips')
+        ]);
+        const tools = health.tools || {};
+        const missing = Object.entries(tools).filter(([, value]) => value === 'missing').map(([name]) => name);
+        if (missing.length) throw new Error(`缺少依赖：${missing.join(', ')}`);
+        const devices = health.devices || [];
+        state.trips = data.trips || [];
+        const available = new Set(state.trips.map((trip) => trip.id));
+        state.selected = new Set([...state.selected].filter((id) => available.has(id)));
+        const savedTrips = state.trips.filter((trip) => trip.local && !trip.local.demo);
+        if (devices.length) {
+          setSystemState('ready', `${devices[0]} 已连接 · FilmCraft CLI ${tools['filmcraft-cli'] ? '就绪' : '异常'}`);
+        } else if (savedTrips.length) {
+          // 手机拔掉后，已经拉到资料库的行程还在。演示行程只在一台都没有时才出现。
+          setSystemState('warn', `未连接手机 · 电脑上还有 ${savedTrips.length} 趟已下载的行程`);
+        } else {
+          // 没连手机、资料库也是空的时，后端会给一条杭州演示行程，排版预览照样能调；
+          // 之前这里直接抛错，连排版编辑器也一起黑掉了。
+          setSystemState('warn', '未连接手机 · 当前使用杭州演示行程预览');
+        }
+        $('tripMeta').textContent = devices.length
+          ? `${state.trips.length} 趟行程 · 按整趟行程生成独立项目`
+          : savedTrips.length
+            ? `${savedTrips.length} 趟已在电脑 · 连上手机后还能看到其余行程`
+            : `${state.trips.length} 条演示行程 · 连上手机后可生成项目`;
+        renderTrips();
+        await loadLayout();
+      } catch (error) {
+        state.trips = [];
+        setSystemState('error', error.message);
+        $('tripGrid').innerHTML = `<div class="error-panel">${escapeHtml(error.message)}</div>`;
+        $('tripMeta').textContent = '读取失败';
+        updateSelection();
+        // 排版设置存在 layout.json 里，跟手机连没连无关：读不到行程也要让用户能改排版。
+        await loadLayout().catch(() => {});
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function renderJob(job) {
+      $('jobPanel').classList.add('visible');
+      const isExportJob = job.kind !== 'studio' && Boolean(!job.items || !job.items.length);
+      if ($('jobEyebrow')) {
+        $('jobEyebrow').textContent = isExportJob ? 'Metal 3 GPU Export' : 'Studio Job';
+      }
+      $('jobTitle').textContent = job.status === 'done'
+        ? (isExportJob ? '视频导出完成' : '项目生成完成')
+        : job.status === 'partial'
+          ? '部分项目已生成'
+          : job.status === 'failed'
+            ? '任务失败'
+            : (isExportJob ? '视频 GPU 硬件导出中' : 'FilmCraft 项目生成中');
+      $('jobMessage').textContent = job.error && job.status === 'failed' ? job.error : job.message;
+      $('jobPercent').textContent = `${Math.round(job.progress || 0)}%`;
+      $('jobProgress').style.width = `${Math.max(0, Math.min(100, job.progress || 0))}%`;
+      $('jobItems').innerHTML = (job.items || []).map((item) => `
+        <div class="job-item">
+          <div class="job-item-title">${escapeHtml(item.tripId)}</div>
+          <div class="job-item-status ${escapeHtml(item.status)}">${item.status === 'done' ? '已完成' : item.status === 'failed' ? '失败' : item.status === 'running' ? '处理中' : '等待中'}</div>
+          <div class="job-item-message">${escapeHtml(item.error || item.message || '')}</div>
+          ${item.project ? `<div class="job-item-path">${escapeHtml(item.project)}</div>` : ''}
+        </div>`).join('');
+      const firstOutput = (job.outputs || [])[0] || job.output || '';
+      $('revealButton').hidden = !firstOutput;
+      $('revealButton').dataset.path = firstOutput;
+      const dlBtn = $('downloadJobButton');
+      if (dlBtn) {
+        if (job.status === 'done' && job.output && job.id) {
+          dlBtn.hidden = false;
+          dlBtn.href = `/api/jobs/${encodeURIComponent(job.id)}/download`;
+        } else {
+          dlBtn.hidden = true;
+        }
+      }
+    }
+
+    async function pollJob() {
+      if (!state.jobId) return;
+      window.clearTimeout(state.pollTimer);
+      state.pollTimer = window.setTimeout(async () => {
+        try {
+          const job = await requestJson(`/api/jobs/${encodeURIComponent(state.jobId)}`);
+          state.jobFailCount = 0;
+          renderJob(job);
+          if (['queued', 'running'].includes(job.status)) {
+            pollJob();
+          } else {
+            state.pollTimer = null;
+            updateSelection();
+            showToast(job.status === 'failed' ? job.error || '任务失败' : job.message, job.status === 'failed');
+          }
+        } catch (error) {
+          const msg = String((error && error.message) || error || '');
+          state.jobFailCount = (state.jobFailCount || 0) + 1;
+          if (state.jobFailCount <= 3 && !msg.includes('404')) {
+            pollJob();
+            return;
+          }
+          state.pollTimer = null;
+          state.jobId = null;
+          $('jobTitle').textContent = '任务已中断（服务已重启，可重新点击导出 MP4）';
+          $('jobMessage').textContent = msg;
+          updateSelection();
+          showToast(error.message, true);
+        }
+      }, 900);
+    }
+
+    async function startStudio() {
+      const trips = selectedTrips().map((trip) => trip.id);
+      if (!trips.length) return;
+      $('startButton').disabled = true;
+      try {
+        await flushLayoutSave();
+        const job = await requestJson('/api/studio', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ trips, open: true })
+        });
+        state.jobId = job.id;
+        renderJob(job);
+        $('jobPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pollJob();
+      } catch (error) {
+        showToast(error.message, true);
+        updateSelection();
+      }
+    }
+
+    async function startVideoExport() {
+      if (state.jobId && state.pollTimer) {
+        $('jobPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showToast('当前已有导出任务正在进行中');
+        return;
+      }
+      const tripId = selectedTripId() || layout.tripId;
+      if (!tripId || String(tripId).startsWith('demo')) {
+        showToast('请先选择一条真实行车记录再导出视频', true);
+        return;
+      }
+      const spd = Math.max(0.25, Math.min(16, Number((layout.config && layout.config.playbackSpeed) || ($('layoutSpeedSelect') && $('layoutSpeedSelect').value) || 1)));
+      const fpsVal = Math.max(5, Math.min(120, Number((layout.config && layout.config.fps) || ($('layoutFpsSelect') && $('layoutFpsSelect').value) || 60)));
+      const stab = (layout.config && layout.config.stabilize) || { enabled: true, strength: 65, cropPercent: 6 };
+      const intro = (layout.config && layout.config.introMap) || { enabled: true, satelliteSeconds: 3, roadSeconds: 3, scaleMeters: 0 };
+      const priv = (layout.config && layout.config.privacy) || { enabled: true, trimMeters: 1000 };
+      const expRes = (layout.config && layout.config.exportResolution) || ($('exportResToolbarSelect') && $('exportResToolbarSelect').value) || 'source';
+      const [expW, expH] = computeExportDimsForTier(expRes, layout.sourceWidth, layout.sourceHeight);
+      try {
+        await flushLayoutSave();
+        const job = await requestJson('/api/export', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            trip: tripId,
+            startMs: 0,
+            playbackSpeed: spd,
+            fps: fpsVal,
+            stabilize: Boolean(stab.enabled),
+            stabilizeStrength: Number(stab.strength ?? 65),
+            stabilizeCropPercent: Number(stab.cropPercent ?? 6),
+            introMap: Boolean(intro.enabled),
+            introSatelliteSeconds: Number(intro.satelliteSeconds ?? 3),
+            introRoadSeconds: Number(intro.roadSeconds ?? 3),
+            introScaleMeters: Number(intro.scaleMeters ?? 0),
+            privacyMode: Boolean(priv.enabled !== false),
+            privacyTrimMeters: Number(priv.trimMeters ?? 1000),
+            exportResolution: expRes,
+            exportWidth: expW,
+            exportHeight: expH
+          })
+        });
+        state.jobId = job.id;
+        renderJob(job);
+        updateSelection();
+        $('jobPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showToast(`已启动导出（${expW}×${expH} · ${spd}x 倍速 · ${fpsVal}fps）`);
+        pollJob();
+      } catch (error) {
+        showToast(error.message, true);
+        updateSelection();
+      }
+    }
+
+    $('tripGrid').addEventListener('click', (event) => {
+      const reveal = event.target.closest('[data-reveal]');
+      if (reveal) {
+        event.preventDefault();
+        event.stopPropagation();
+        const path = reveal.dataset.reveal;
+        if (!path) return;
+        requestJson('/api/reveal', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path })
+        }).catch((error) => showToast(error.message, true));
+        return;
+      }
+      const cache = event.target.closest('[data-cache]');
+      if (cache) {
+        event.preventDefault();
+        event.stopPropagation();
+        startCache([cache.dataset.cache]);
+        return;
+      }
+      const mapCache = event.target.closest('[data-map-cache]');
+      if (mapCache) {
+        event.preventDefault();
+        event.stopPropagation();
+        startOfflineMapCache([mapCache.dataset.mapCache]);
+        return;
+      }
+      if (state.jobId && state.pollTimer) return;
+      const card = event.target.closest('.trip-card');
+      if (!card) return;
+      const id = card.dataset.tripId;
+      if (state.selected.has(id)) state.selected.delete(id);
+      else state.selected.add(id);
+      updateSelection();
+      // 勾选后立刻切到该行程的底图和轨迹；取消勾选则退回仍选中的第一趟。
+      const nextTrip = state.selected.has(id) ? id : (selectedTripId() || id);
+      layout.tripId = nextTrip;
+      layout.liveReady = false;
+      layout.liveTrip = null;
+      layout.liveSeconds = null;
+      if (playRunning) {
+        playRunning = false;
+        playToken += 1;
+        const button = $('layoutPlayButton');
+        if (button) button.textContent = '▶ 播放';
+      }
+      refreshLayoutPreview({ forceFull: true });
+    });
+    $('tripGrid').addEventListener('keydown', (event) => {
+      if (!['Enter', ' '].includes(event.key)) return;
+      const card = event.target.closest('.trip-card');
+      if (!card) return;
+      event.preventDefault();
+      card.click();
+    });
+    $('refreshButton').addEventListener('click', refreshAll);
+    $('layoutTime').addEventListener('pointerdown', () => { scrubbing = true; });
+    $('layoutTime').addEventListener('pointerup', () => { scrubbing = false; });
+    $('layoutTime').addEventListener('pointercancel', () => { scrubbing = false; });
+    $('layoutTime').addEventListener('input', () => {
+      const seconds = Number($('layoutTime').value || 0);
+      $('layoutTimeLabel').textContent = `${seconds.toFixed(1)}s`;
+      paintTelemetryAt(seconds * 1000);
+      if (playRunning) {
+        scrubbing = true;
+        layout.seekSeconds = seconds;
+        return;
+      }
+      refreshLayoutPreview();
+    });
+    $('layoutTime').addEventListener('change', () => {
+      const seconds = Number($('layoutTime').value || 0);
+      scrubbing = false;
+      paintTelemetryAt(seconds * 1000);
+      if (playRunning) {
+        layout.seekSeconds = seconds;
+        maybeRefreshMapWindow(seconds);
+      }
+      else refreshLayoutPreview();
+    });
+    window.addEventListener('resize', () => {
+      fitOverlayFrame();
+      refreshChipsSoon();
+    });
+    if (typeof ResizeObserver !== 'undefined' && $('layoutStage')) {
+      const stageObserver = new ResizeObserver(() => {
+        fitOverlayFrame();
+        refreshChipsSoon();
+      });
+      stageObserver.observe($('layoutStage'));
+    }
+    if ($('layoutFullscreenButton')) {
+      $('layoutFullscreenButton').addEventListener('click', () => { toggleStageFullscreen(); });
+    }
+    if ($('stageFullscreenToggle')) {
+      $('stageFullscreenToggle').addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleStageFullscreen();
+      });
+    }
+    if ($('orientLandscapeBtn')) {
+      $('orientLandscapeBtn').addEventListener('click', () => { switchCanvasOrientation('landscape'); });
+    }
+    if ($('orientPortraitBtn')) {
+      $('orientPortraitBtn').addEventListener('click', () => { switchCanvasOrientation('portrait'); });
+    }
+    if ($('modeFloatBtn')) {
+      $('modeFloatBtn').addEventListener('click', () => { switchLayoutMode('float'); });
+    }
+    if ($('modeSplitBtn')) {
+      $('modeSplitBtn').addEventListener('click', () => { switchLayoutMode('split'); });
+    }
+    if ($('exportResToolbarSelect')) {
+      $('exportResToolbarSelect').addEventListener('change', () => {
+        const val = $('exportResToolbarSelect').value || 'source';
+        if (layout.config) layout.config.exportResolution = val;
+        syncResolutionControls();
+        markDirty();
+      });
+    }
+    if ($('layoutPresetSelect')) {
+      $('layoutPresetSelect').addEventListener('change', () => {
+        const sel = $('layoutPresetSelect');
+        const nameInput = $('layoutPresetName');
+        if (sel && nameInput) nameInput.value = sel.value;
+        loadNamedLayoutPreset(sel ? sel.value : '');
+      });
+    }
+    if ($('layoutPresetLoadButton')) {
+      $('layoutPresetLoadButton').addEventListener('click', () => { loadNamedLayoutPreset(); });
+    }
+    if ($('layoutPresetSaveButton')) {
+      $('layoutPresetSaveButton').addEventListener('click', () => { saveNamedLayoutPreset(); });
+    }
+    if ($('layoutPresetDeleteButton')) {
+      $('layoutPresetDeleteButton').addEventListener('click', () => { deleteNamedLayoutPreset(); });
+    }
+    if ($('layoutPresetName')) {
+      $('layoutPresetName').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveNamedLayoutPreset();
+        }
+      });
+    }
+    $('layoutPlayButton').addEventListener('click', () => playLayoutPreview().catch((error) => showToast(error.message, true)));
+    if ($('layoutSpeedSelect')) {
+      $('layoutSpeedSelect').addEventListener('change', () => {
+        const spd = Math.max(0.25, Math.min(16, Number($('layoutSpeedSelect').value) || 1));
+        if (layout.config) layout.config.playbackSpeed = spd;
+        const sideSel = $('export-speed-select');
+        if (sideSel) sideSel.value = String(spd);
+        const vid = layoutVideo();
+        if (vid) { try { vid.playbackRate = Math.min(16, spd); } catch (_) {} }
+        markDirty();
+      });
+    }
+    if ($('layoutFpsSelect')) {
+      $('layoutFpsSelect').addEventListener('change', () => {
+        const fpsVal = Math.max(5, Math.min(120, Number($('layoutFpsSelect').value) || 60));
+        if (layout.config) layout.config.fps = fpsVal;
+        const rangeEl = $('export-fps-range');
+        if (rangeEl) rangeEl.value = String(fpsVal);
+        const outEl = document.querySelector('[data-step-out="export-fps-range"]');
+        if (outEl) outEl.textContent = String(Math.round(fpsVal));
+        markDirty();
+      });
+    }
+    if ($('layoutExportButton')) {
+      $('layoutExportButton').addEventListener('click', () => startVideoExport());
+    }
+    if ($('exportSelectedButton')) {
+      $('exportSelectedButton').addEventListener('click', () => startVideoExport());
+    }
+    $('layoutRefreshButton').addEventListener('click', async () => {
+      try {
+        await flushLayoutSave();
+        await loadLayout();
+        setSaveHint('已从磁盘重新加载', 'saved');
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    $('layoutSaveButton').addEventListener('click', saveLayout);
+    $('layoutResetButton').addEventListener('click', async () => {
+      try {
+        window.clearTimeout(layoutSaveTimer);
+        layout.dirty = false;
+        await requestJson('/api/layout', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ layout: {}, revision: nextLayoutRevision() })
+        });
+        await loadLayout();
+        setSaveHint('已恢复默认并记住', 'saved');
+        showToast('已恢复默认排版');
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    window.addEventListener('pagehide', () => { flushLayoutSave(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushLayoutSave();
+    });
+    $('startButton').addEventListener('click', startStudio);
+    const cacheButton = $('cacheButton');
+    if (cacheButton) {
+      cacheButton.addEventListener('click', () => {
+        const ids = selectedTrips()
+          .filter((trip) => !localOf(trip).demo && !localOf(trip).ready)
+          .map((trip) => trip.id);
+        startCache(ids);
+      });
+    }
+    $('revealButton').addEventListener('click', async () => {
+      const path = $('revealButton').dataset.path;
+      if (!path) return;
+      try {
+        await requestJson('/api/reveal', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path })
+        });
+      } catch (error) { showToast(error.message, true); }
+    });
+    refreshAll();
+  </script>
+</body>
+</html>

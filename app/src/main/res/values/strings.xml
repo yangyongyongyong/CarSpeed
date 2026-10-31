@@ -263,6 +263,11 @@
     <string name="hdr_watermark_label">HDR</string>
     <string name="loop_storage_label_default">循环录像空间：10 GB</string>
     <string name="loop_storage_label">循环录像空间：%1$d GB</string>
+    <string name="storage_usage_chart_caption">已使用</string>
+    <string name="storage_usage_summary">已用 %1$s / %2$s</string>
+    <string name="storage_usage_detail">%1$d%% · 剩余 %2$s</string>
+    <string name="storage_usage_summary_default">正在统计录像空间…</string>
+    <string name="storage_usage_detail_default">按当前循环录像配额计算</string>
     <string name="loop_storage_helper">优先保障最新录像：空间不足时会继续删除最老的 CarSpeed 视频，并始终预留至少 1GB 手机可用空间；只有无旧片段可删仍不足时才停止新分段。</string>
     <string name="segment_duration_label_default">单文件时长：5 分钟</string>
     <string name="segment_duration_label">单文件时长：%1$d 分钟</string>

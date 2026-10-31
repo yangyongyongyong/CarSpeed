@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CarSpeed Overlay</title>
+<style>
+{{fontFaces}}
+  :root {
+    --primary-color: {{accentColor}};
+    --primary-glow: {{accentColor}}66;
+    --gauge-value-color: #00f2ff;
+    --gauge-unit-color: #cbd5e1;
+    --marker-color: #00f2ff;
+    --route-color: {{accentColor}};
+    --played-color: #ffffff;
+    --bg-panel: rgba(13, 17, 23, 0.65);
+    --border-panel: rgba(255, 255, 255, 0.15);
+    --font-hud: 'Chakra Petch', sans-serif;
+    --font-num: 'Orbitron', sans-serif;
+    /* 1080p 上 1 = 参考稿的像素。更高分辨率按高度放大，比例不变。 */
+    --ui: {{uiScale}};
+    forced-color-adjust: none;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    forced-color-adjust: none;
+  }
+
+  html, body {
+    width: {{canvasWidth}}px;
+    height: {{canvasHeight}}px;
+    overflow: hidden;
+    background: transparent;
+    /* 父页面是 color-scheme: dark；iframe 也走 dark 会自带一块不透明黑底，盖住底下的录像。 */
+    color-scheme: normal;
+    font-family: var(--font-hud);
+    color: #fff;
+  }
+  .video-plate {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: var(--split-video-pct, 100%);
+    object-fit: cover;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .hud-widget { position: absolute; z-index: 10; }
+
+  /* 1. 左上角：赛事计时栏。x/y 是左上角。 */
+  #widget-timing {
+    min-width: calc(330px * var(--ui));
+    background: var(--bg-panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-panel);
+    border-left: calc(4px * var(--ui)) solid var(--primary-color);
+    padding: calc(12px * var(--ui)) calc(18px * var(--ui));
+    border-radius: calc(2px * var(--ui)) calc(12px * var(--ui)) calc(2px * var(--ui)) calc(8px * var(--ui));
+    box-shadow: 0 calc(12px * var(--ui)) calc(30px * var(--ui)) rgba(0, 0, 0, 0.5);
+  }
+  .timing-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: calc(8px * var(--ui));
+    gap: calc(18px * var(--ui));
+  }
+  .rec-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(6px * var(--ui));
+    font-size: calc(11px * var(--ui));
+    font-weight: 700;
+    letter-spacing: calc(1px * var(--ui));
+    color: #ff334b;
+  }
+  .rec-dot {
+    width: calc(7px * var(--ui));
+    height: calc(7px * var(--ui));
+    background: #ff334b;
+    border-radius: 50%;
+    box-shadow: 0 0 calc(8px * var(--ui)) #ff334b;
+  }
+  .hud-sat {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(4px * var(--ui));
+    padding: calc(1px * var(--ui)) calc(7px * var(--ui));
+    border-radius: calc(4px * var(--ui));
+    background: rgba(0, 242, 255, 0.12);
+    border: 1px solid rgba(0, 242, 255, 0.28);
+    color: #94a3b8;
+    font-size: calc(11px * var(--ui));
+    font-weight: 600;
+    letter-spacing: calc(0.4px * var(--ui));
+  }
+  .hud-sat b {
+    color: #00f2ff;
+    font-weight: 700;
+  }
+  .timestamp {
+    font-size: calc(13px * var(--ui));
+    letter-spacing: calc(0.5px * var(--ui));
+    color: #cbd5e1;
+    font-family: var(--font-hud);
+    font-style: italic;
+    font-weight: 500;
+  }
+  .progress-track {
+    width: 100%;
+    height: calc(4px * var(--ui));
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: calc(2px * var(--ui));
+    overflow: hidden;
+    position: relative;
+    margin-bottom: calc(8px * var(--ui));
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #ffaa00, var(--primary-color));
+    box-shadow: 0 0 calc(8px * var(--ui)) var(--primary-color);
+  }
+  .telemetry-row {
+    display: flex;
+    justify-content: space-between;
+    gap: calc(14px * var(--ui));
+    font-size: calc(12px * var(--ui));
+    font-style: italic;
+    font-weight: 500;
+    color: #94a3b8;
+    white-space: nowrap;
+  }
+  .telemetry-val { color: #fff; font-weight: 700; font-style: normal; }
+  .telemetry-val.accent { color: var(--primary-color); }
+
+  /* 2. 左下角：斜切地名 + 暗色地图。x/y 是中心，所以整体回移一半。 */
+  #widget-map { transform: translate(-50%, -50%); }
+  #widget-map.is-split-map {
+    transform: none;
+    z-index: 6;
+  }
+  #widget-map.is-split-map .map-container {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: #0d131a;
+  }
+  .map-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(8px * var(--ui));
+    padding: calc(6px * var(--ui)) calc(14px * var(--ui));
+    background: var(--bg-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-panel);
+    border-bottom: none;
+    transform: skewX(-12deg);
+    border-radius: calc(4px * var(--ui)) calc(10px * var(--ui)) 0 0;
+    font-size: calc(13px * var(--ui));
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: -1px;
+    margin-left: calc(6px * var(--ui));
+    max-width: calc(220px * var(--ui));
+  }
+  .map-badge > * { transform: skewX(12deg); }
+  .map-badge span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .map-indicator {
+    width: calc(4px * var(--ui));
+    height: calc(12px * var(--ui));
+    flex: 0 0 auto;
+    background: var(--primary-color);
+    box-shadow: 0 0 calc(8px * var(--ui)) var(--primary-color);
+  }
+  .map-container {
+    background: rgba(10, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-panel);
+    border-radius: 0 calc(16px * var(--ui)) calc(4px * var(--ui)) calc(16px * var(--ui));
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 calc(10px * var(--ui)) calc(30px * var(--ui)) rgba(0, 0, 0, 0.6);
+  }
+  .vector-map {
+    position: absolute;
+    inset: calc(-20px * var(--ui));
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.04) 2px, transparent 2px),
+      linear-gradient(35deg, transparent 40%, rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0.06) 46%, transparent 46%);
+    background-size: calc(16px * var(--ui)) calc(16px * var(--ui)), 100% 100%;
+  }
+  /* 底图铺满整张卡片。墨卡托窗和 220:140 同比例，铺满不会把路拉变形。 */
+  .map-plot {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: #121a22;
+  }
+  .map-plot.is-road {
+    background: #1a222d;
+  }
+  .map-photo {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    will-change: transform;
+  }
+  .map-plot.is-satellite .map-photo {
+    filter: contrast(1.03);
+  }
+  .map-plot.is-road .map-photo {
+    filter: contrast(1.04) saturate(1.05);
+  }
+  .map-mode-tag {
+    position: absolute;
+    top: calc(6px * var(--ui));
+    right: calc(6px * var(--ui));
+    z-index: 3;
+    padding: calc(1px * var(--ui)) calc(6px * var(--ui));
+    border-radius: calc(3px * var(--ui));
+    background: rgba(8, 12, 18, 0.72);
+    color: #fff;
+    font-size: calc(10px * var(--ui));
+    letter-spacing: calc(1px * var(--ui));
+    pointer-events: none;
+  }
+  .map-plot.is-satellite::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: transparent;
+    pointer-events: none;
+  }
+  .map-plot.is-road::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: rgba(8, 12, 18, 0.06);
+    pointer-events: none;
+  }
+  .map-route-line {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .map-route-line path {
+    stroke: var(--route-color, var(--primary-color));
+    /* 线宽按卡片 --ui 走屏幕像素。写进 100 单位的 viewBox 再 none 拉伸，南北向会胖成一条带子。 */
+    stroke-width: calc(1.75px * var(--ui));
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    filter: drop-shadow(0 0 calc(0.8px * var(--ui)) #000);
+  }
+  .map-route-line path.route-played {
+    stroke: var(--played-color, #ffffff);
+    stroke-width: calc(2.2px * var(--ui));
+  }
+  /* 上视频下地图（split）模式：还原手机 App 翠绿路线底边 + 纯白内芯与 >180km/h 自动加粗 */
+  #widget-map.is-split-map .map-route-line path.route-full {
+    stroke: #4fd697;
+    stroke-width: calc(3.6px * var(--ui));
+    filter: drop-shadow(0 0 calc(1.2px * var(--ui)) rgba(15, 23, 42, 0.55));
+  }
+  #widget-map.is-split-map .map-route-line path.route-played {
+    stroke: #ffffff;
+    stroke-width: calc(1.8px * var(--ui));
+    filter: none;
+  }
+  #widget-map.is-high-speed .map-route-line path.route-full {
+    stroke-width: calc(2.6px * var(--ui));
+  }
+  #widget-map.is-split-map.is-high-speed .map-route-line path.route-full {
+    stroke-width: calc(5.4px * var(--ui));
+  }
+  #widget-map.is-split-map.is-high-speed .map-route-line path.route-played {
+    stroke-width: calc(2.7px * var(--ui));
+  }
+
+  /* 地图叠加层：最高速度玫红点 + 测速雷达摄像头与限速胶囊 */
+  .map-overlays-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .map-max-speed-dot {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: calc(11px * var(--ui));
+    height: calc(11px * var(--ui));
+    border-radius: 50%;
+    background: #ff4081;
+    border: calc(2px * var(--ui)) solid #ffffff;
+    box-shadow: 0 calc(2px * var(--ui)) calc(6px * var(--ui)) rgba(255, 64, 129, 0.75);
+  }
+  .map-max-speed-dot .max-speed-tag {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 2px * var(--ui));
+    transform: translateX(-50%);
+    padding: calc(0.5px * var(--ui)) calc(4px * var(--ui));
+    border-radius: calc(4px * var(--ui));
+    background: rgba(255, 64, 129, 0.94);
+    color: #ffffff;
+    font-family: var(--font-num);
+    font-size: calc(7.5px * var(--ui));
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .map-radar-item {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    filter: drop-shadow(0 calc(2px * var(--ui)) calc(4px * var(--ui)) rgba(15, 23, 42, 0.55));
+  }
+  .map-radar-item .radar-cam-svg {
+    width: calc(20px * var(--ui));
+    height: calc(20px * var(--ui));
+    display: block;
+  }
+  .map-radar-item.is-compact .radar-cam-svg {
+    width: calc(15px * var(--ui));
+    height: calc(15px * var(--ui));
+  }
+  .map-radar-item .radar-limit-pill {
+    margin-top: calc(-2px * var(--ui));
+    padding: calc(0.5px * var(--ui)) calc(4.5px * var(--ui));
+    border-radius: calc(5px * var(--ui));
+    background: rgba(21, 32, 51, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+    font-family: var(--font-num);
+    font-size: calc(7.8px * var(--ui));
+    font-weight: 800;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+  .map-radar-item.is-compact .radar-limit-pill {
+    font-size: calc(6.5px * var(--ui));
+    padding: 0 calc(3.5px * var(--ui));
+  }
+
+  /* 手机 App 同款三色脉冲闪动当前位置圈（青 -> 琥珀黄 -> 玫红 300ms 切换 + 900ms 扩散环） */
+  @keyframes pulseRingExpand {
+    0% {
+      transform: translate(-50%, -50%) scale(0.45);
+      opacity: 0.85;
+      background: rgba(0, 229, 255, 0.42);
+    }
+    33% {
+      background: rgba(255, 193, 7, 0.42);
+    }
+    66% {
+      background: rgba(255, 64, 129, 0.42);
+    }
+    100% {
+      transform: translate(-50%, -50%) scale(1.85);
+      opacity: 0.08;
+      background: rgba(0, 229, 255, 0.12);
+    }
+  }
+  @keyframes pulseCoreColor {
+    0%, 32.9% { background: #00e5ff; }
+    33%, 65.9% { background: #ffc107; }
+    66%, 100% { background: #ff4081; }
+  }
+  .car-marker.car-pulse-marker {
+    z-index: 4;
+    width: calc(28px * var(--ui));
+    height: calc(28px * var(--ui));
+    filter: none;
+  }
+  .car-marker.car-pulse-marker .pulse-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: calc(24px * var(--ui));
+    height: calc(24px * var(--ui));
+    border-radius: 50%;
+    animation: pulseRingExpand 0.9s infinite ease-out;
+  }
+  .car-marker.car-pulse-marker .pulse-core {
+    position: relative;
+    width: calc(11px * var(--ui));
+    height: calc(11px * var(--ui));
+    border-radius: 50%;
+    background: #00e5ff;
+    border: calc(2.2px * var(--ui)) solid #ffffff;
+    box-shadow: 0 calc(2px * var(--ui)) calc(6px * var(--ui)) rgba(0, 0, 0, 0.55);
+    animation: pulseCoreColor 0.9s infinite steps(1, end);
+  }
+  .split-distance-pill {
+    position: absolute;
+    left: calc(12px * var(--ui));
+    top: calc(12px * var(--ui));
+    z-index: 4;
+    padding: calc(4px * var(--ui)) calc(10px * var(--ui));
+    border-radius: calc(999px * var(--ui));
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    box-shadow: 0 calc(3px * var(--ui)) calc(10px * var(--ui)) rgba(15, 23, 42, 0.22);
+    color: #334155;
+    font-family: var(--font-hud);
+    font-size: calc(10.5px * var(--ui));
+    font-weight: 600;
+    pointer-events: none;
+  }
+  .split-distance-pill strong {
+    color: #0f172a;
+    font-weight: 800;
+    margin-left: calc(3px * var(--ui));
+  }
+  .car-marker {
+    position: absolute;
+    z-index: 3;
+    width: calc(26px * var(--ui));
+    height: calc(26px * var(--ui));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    filter: drop-shadow(0 calc(2px * var(--ui)) calc(6px * var(--ui)) rgba(0, 0, 0, 0.85))
+            drop-shadow(0 0 calc(10px * var(--ui)) var(--marker-color, #00f2ff));
+  }
+  .car-marker svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+  }
+  /* 保留参考稿三角裁切定义以兼容结构校验 */
+  .car-marker-shape {
+    clip-path: polygon(50% 0%, 0% 100%, 50% 75%, 100% 100%);
+  }
+  .map-scale-bar {
+    position: absolute;
+    left: calc(10px * var(--ui));
+    bottom: calc(7px * var(--ui));
+    z-index: 3;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(1px * var(--ui));
+    color: #f8fafc;
+    font-size: calc(8.5px * var(--ui));
+    font-weight: 700;
+    letter-spacing: calc(0.4px * var(--ui));
+    text-shadow: 0 calc(1px * var(--ui)) calc(2px * var(--ui)) rgba(0, 0, 0, 0.95),
+                 0 0 calc(3px * var(--ui)) rgba(0, 0, 0, 0.85);
+    pointer-events: none;
+  }
+  .map-scale-label {
+    line-height: 1;
+  }
+  .map-scale-line {
+    height: calc(3.5px * var(--ui));
+    border-bottom: calc(1.4px * var(--ui)) solid #ffffff;
+    border-left: calc(1.4px * var(--ui)) solid #ffffff;
+    border-right: calc(1.4px * var(--ui)) solid #ffffff;
+    filter: drop-shadow(0 calc(1px * var(--ui)) calc(1.5px * var(--ui)) rgba(0, 0, 0, 0.9));
+  }
+  .map-coords {
+    position: absolute;
+    right: calc(9px * var(--ui));
+    bottom: calc(6px * var(--ui));
+    z-index: 3;
+    padding: calc(1.5px * var(--ui)) calc(6px * var(--ui));
+    background: rgba(8, 12, 18, 0.48);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: calc(3px * var(--ui));
+    color: rgba(226, 232, 240, 0.92);
+    font-family: var(--font-display);
+    font-size: calc(var(--coord-px, 8.5px) * var(--ui));
+    font-weight: 600;
+    letter-spacing: calc(0.35px * var(--ui));
+    line-height: 1.15;
+    text-shadow: 0 calc(1px * var(--ui)) calc(2px * var(--ui)) rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* 3. 右下角速度表。x/y 是中心。--ui 按参考稿 250px 表盘缩放。 */
+  #widget-speed { transform: translate(-50%, -50%); }
+
+  .style-forza {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .style-forza .gauge-svg { width: 100%; height: 100%; transform: rotate(135deg); }
+  .style-forza .gauge-bg {
+    fill: none;
+    stroke: rgba(15, 23, 42, 0.68);
+    stroke-width: 10;
+    stroke-dasharray: 471;
+    stroke-dashoffset: 118;
+    stroke-linecap: round;
+  }
+  .style-forza .gauge-bar {
+    fill: none;
+    stroke: var(--primary-color);
+    stroke-width: 10;
+    stroke-dasharray: 471;
+    stroke-linecap: round;
+  }
+  .style-forza .center-info {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: skewX(-10deg);
+  }
+  .style-forza .speed-num {
+    font-family: var(--font-num);
+    font-size: calc(76px * var(--ui));
+    font-weight: 900;
+    line-height: 0.9;
+    letter-spacing: calc(-2px * var(--ui));
+    color: var(--gauge-value-color, #00f2ff);
+    text-shadow: none;
+  }
+  .style-forza .speed-unit {
+    font-size: calc(14px * var(--ui));
+    letter-spacing: calc(2px * var(--ui));
+    font-weight: 700;
+    color: var(--gauge-unit-color, #e2e8f0);
+    margin-top: calc(4px * var(--ui));
+    text-shadow: none;
+  }
+  .style-forza .gear-pill {
+    margin-top: calc(4px * var(--ui));
+    padding: calc(1px * var(--ui)) calc(12px * var(--ui));
+    background: rgba(13, 17, 23, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: calc(10px * var(--ui));
+    font-size: calc(13px * var(--ui));
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  .style-aero {
+    display: flex;
+    align-items: flex-end;
+    gap: calc(16px * var(--ui));
+    padding: calc(16px * var(--ui));
+  }
+  .style-aero .ladder-ticks {
+    display: flex;
+    flex-direction: column;
+    gap: calc(5px * var(--ui));
+    height: calc(120px * var(--ui));
+    justify-content: flex-end;
+  }
+  .style-aero .tick {
+    width: calc(14px * var(--ui));
+    height: calc(3px * var(--ui));
+    background: rgba(255, 255, 255, 0.2);
+    transform: skewX(-20deg);
+  }
+  .style-aero .tick.active {
+    width: calc(28px * var(--ui));
+    background: var(--primary-color);
+  }
+  .style-aero .aero-numbers {
+    transform: skewX(-12deg);
+  }
+  .style-aero .speed-num {
+    font-family: var(--font-num);
+    font-size: calc(88px * var(--ui));
+    font-weight: 900;
+    line-height: 0.85;
+    color: #fff;
+  }
+  .style-aero .speed-unit {
+    font-size: calc(14px * var(--ui));
+    font-weight: 700;
+    letter-spacing: calc(4px * var(--ui));
+    color: var(--primary-color);
+  }
+
+  .style-gt {
+    background: var(--bg-panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-panel);
+    padding: calc(20px * var(--ui)) calc(26px * var(--ui));
+    border-radius: calc(4px * var(--ui)) calc(24px * var(--ui)) calc(4px * var(--ui)) calc(16px * var(--ui));
+    transform: skewX(-10deg);
+    box-shadow: 0 calc(15px * var(--ui)) calc(35px * var(--ui)) rgba(0, 0, 0, 0.7);
+  }
+  .style-gt > * { transform: skewX(10deg); }
+  .style-gt .gt-header {
+    font-size: calc(11px * var(--ui));
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: calc(1.5px * var(--ui));
+    margin-bottom: calc(4px * var(--ui));
+    display: flex;
+    justify-content: space-between;
+    gap: calc(24px * var(--ui));
+  }
+  .style-gt .speed-num {
+    font-family: var(--font-num);
+    font-size: calc(64px * var(--ui));
+    font-weight: 900;
+    color: #fff;
+    line-height: 1;
+  }
+  .style-gt .gt-bars {
+    display: flex;
+    gap: calc(3px * var(--ui));
+    margin-top: calc(10px * var(--ui));
+  }
+  .style-gt .gt-block {
+    width: calc(8px * var(--ui));
+    height: calc(14px * var(--ui));
+    background: rgba(255, 255, 255, 0.1);
+    transform: skewX(-20deg);
+  }
+  .style-gt .gt-block.fill {
+    background: var(--primary-color);
+  }
+
+  .style-circular {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .style-circular .gauge-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .style-circular .gauge-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.08);
+    stroke-width: 10;
+  }
+  .style-circular .gauge-bar {
+    fill: none;
+    stroke: var(--primary-color);
+    stroke-width: 10;
+    stroke-linecap: round;
+  }
+  .style-circular .center-info {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .style-circular .speed-num {
+    font-family: var(--font-num);
+    font-size: calc(64px * var(--ui));
+    font-weight: 900;
+    line-height: 0.9;
+    color: #fff;
+  }
+  .style-circular .speed-unit {
+    font-size: calc(14px * var(--ui));
+    letter-spacing: calc(2px * var(--ui));
+    font-weight: 700;
+    color: #94a3b8;
+    margin-top: calc(4px * var(--ui));
+  }
+
+  .field {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-family: var(--font-hud);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+  }
+  .field.boxed {
+    padding: calc(3px * var(--ui)) calc(9px * var(--ui));
+    background: var(--bg-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-panel);
+    border-left: calc(3px * var(--ui)) solid var(--primary-color);
+    border-radius: calc(2px * var(--ui)) calc(8px * var(--ui)) calc(2px * var(--ui)) calc(6px * var(--ui));
+  }
+  .info-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    font-family: var(--font-hud);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<img id="video-plate" class="video-plate" alt="">
+{{widgets}}
+</body>
+</html>
