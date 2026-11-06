@@ -96,6 +96,7 @@ class HistoryActivity : AppCompatActivity() {
     private var batchDeleteMode = false
     private val batchSelectedTripIds = mutableSetOf<String>()
     private var videoDateSpans: List<CountSpan> = emptyList()
+    private var skipNextResumeRender = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -154,8 +155,25 @@ class HistoryActivity : AppCompatActivity() {
         btnDeleteAllVideos.setOnClickListener { confirmDeleteAllVideos() }
         btnDeleteCurrentPageVideos.setOnClickListener { confirmDeleteCurrentPageVideos() }
         setupBatchDeleteUi()
+        skipNextResumeRender = true
         render()
         thumbnailExecutor.execute { runCatching { pruneThumbnailDiskCache() } }
+    }
+
+    /**
+     * 页面重新可见时刷新驾驶记录列表，确保刚录完或从回放页返回后能立即看到最新状态。
+     */
+    override fun onResume() {
+        super.onResume()
+        if (skipNextResumeRender) {
+            skipNextResumeRender = false
+            return
+        }
+        synchronized(videoUriByPath) {
+            videoUrisLoaded = false
+            videoUriByPath.clear()
+        }
+        render()
     }
 
     override fun onDestroy() {
@@ -1366,23 +1384,27 @@ class HistoryActivity : AppCompatActivity() {
                             android.provider.MediaStore.MediaColumns._ID,
                             android.provider.MediaStore.MediaColumns.DATA
                         ),
-                        "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
-                        arrayOf("DCIM/CarSpeed/%"),
+                        null,
+                        null,
                         null
                     )?.use { cursor ->
                         val idColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns._ID)
                         val dataColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns.DATA)
                         while (cursor.moveToNext()) {
                             val path = cursor.getString(dataColumn) ?: continue
-                            videoUriByPath[path] = android.content.ContentUris.withAppendedId(
+                            if (!path.contains("/CarSpeed/", ignoreCase = true)) continue
+                            val uri = android.content.ContentUris.withAppendedId(
                                 collection,
                                 cursor.getLong(idColumn)
                             )
+                            videoUriByPath[path] = uri
+                            videoUriByPath[path.lowercase(Locale.ROOT)] = uri
                         }
                     }
                 }
             }
             return videoUriByPath[videoFile.absolutePath]
+                ?: videoUriByPath[videoFile.absolutePath.lowercase(Locale.ROOT)]
         }
     }
 

@@ -122,6 +122,9 @@ class SeamlessDashcamRecorder(
     private var lastKeyFrameRequestElapsedMs = 0L
     @Volatile private var orientationHintDegrees = 0
     @Volatile private var hdrSceneModeEnabled = false
+    @Volatile private var currentSpeedKmh = 0f
+    @Volatile private var lastExposureTimeNs: Long? = null
+    private var appliedAeCompIndex = Int.MIN_VALUE
     private var startNotified = false
     private var stillReader: ImageReader? = null
     private var includeStillSurface = true
@@ -145,6 +148,7 @@ class SeamlessDashcamRecorder(
             request: CaptureRequest,
             result: TotalCaptureResult
         ) {
+            result.get(CaptureResult.SENSOR_EXPOSURE_TIME)?.let { lastExposureTimeNs = it }
             callback.onCaptureResult(result)
         }
     }
@@ -218,8 +222,9 @@ class SeamlessDashcamRecorder(
     }
 
     /** 录像中改了 HDR 或手动对焦：直接换重复请求，不重建会话，也不断开分段。 */
-    fun updateCaptureSettings(enableHdr: Boolean) {
+    fun updateCaptureSettings(enableHdr: Boolean, speedKmh: Float = currentSpeedKmh) {
         hdrRequested = enableHdr
+        currentSpeedKmh = speedKmh.coerceAtLeast(0f)
         val handler = cameraHandler ?: return
         handler.post {
             if (stopRequested || stopped.get()) return@post
@@ -238,6 +243,19 @@ class SeamlessDashcamRecorder(
             }
             if (hdrChanged) callback.onHdrStateChanged(hdr)
         }
+    }
+
+    /**
+     * 实时接收 GPS 车速变化；当车速跨越低速/中速/高速区间或夜间慢快门状态变化导致目标曝光补偿档位改变时，
+     * 无缝更新重复拍摄请求（不中断录像分段）。
+     */
+    fun updateDrivingSpeed(speedKmh: Float) {
+        val clamped = speedKmh.coerceAtLeast(0f)
+        currentSpeedKmh = clamped
+        val characteristics = cameraCharacteristics ?: return
+        val desiredAe = DashcamShutterPolicy.resolveAeCompensationIndex(characteristics, clamped, lastExposureTimeNs)
+        if (desiredAe == appliedAeCompIndex) return
+        updateCaptureSettings(hdrRequested, clamped)
     }
 
     fun setPreviewSurface(surface: Surface?) {
@@ -519,60 +537,57 @@ class SeamlessDashcamRecorder(
             sessionPreviewSurface?.let { add(it) }
             stillSurface?.let { add(it) }
         }
-        camera.createCaptureSession(
-            surfaces,
-            object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    if (stopRequested || sessionId != captureSessionGeneration) {
-                        session.close()
-                        return
-                    }
-                    val previousSession = captureSession
-                    captureSession = session
-                    captureSessionPreviewSurface = sessionPreviewSurface
-                    previewTargeted = sessionPreviewSurface != null
-                    try {
-                        applyRepeatingRequest()
-                        previousSession?.takeIf { it !== session }?.close()
-                        if (!startNotified) {
-                            startNotified = true
-                            callback.onStarted()
-                        }
-                        val handler = cameraHandler
-                        handler?.removeCallbacks(memoryStillTick)
-                        handler?.postDelayed(memoryStillTick, MEMORY_STILL_INTERVAL_MS)
-                    } catch (error: Exception) {
-                        notifyError(error)
-                        stop()
-                    }
-                }
-
-                override fun onConfigureFailed(session: CameraCaptureSession) {
+        val stateCallback = object : CameraCaptureSession.StateCallback() {
+            override fun onConfigured(session: CameraCaptureSession) {
+                if (stopRequested || sessionId != captureSessionGeneration) {
                     session.close()
-                    if (sessionId != captureSessionGeneration || stopRequested) return
-                    if (stillSurface != null && stillCandidateIndex + 1 < stillCandidates.size) {
-                        stillCandidateIndex += 1
-                        openStillReader(stillCandidates[stillCandidateIndex])
-                        createCaptureSession(camera, characteristics)
-                        return
-                    }
-                    if (stillSurface != null) {
-                        includeStillSurface = false
-                        closeStillReader()
-                        createCaptureSession(camera, characteristics)
-                        return
-                    }
-                    if (sessionPreviewSurface != null) {
-                        previewSurface = null
-                        createCaptureSession(camera, characteristics)
-                    } else {
-                        notifyError(IllegalStateException("摄像头录像会话创建失败"))
-                        stop()
-                    }
+                    return
                 }
-            },
-            cameraHandler
-        )
+                val previousSession = captureSession
+                captureSession = session
+                captureSessionPreviewSurface = sessionPreviewSurface
+                previewTargeted = sessionPreviewSurface != null
+                try {
+                    applyRepeatingRequest()
+                    previousSession?.takeIf { it !== session }?.close()
+                    if (!startNotified) {
+                        startNotified = true
+                        callback.onStarted()
+                    }
+                    val handler = cameraHandler
+                    handler?.removeCallbacks(memoryStillTick)
+                    handler?.postDelayed(memoryStillTick, MEMORY_STILL_INTERVAL_MS)
+                } catch (error: Exception) {
+                    notifyError(error)
+                    stop()
+                }
+            }
+
+            override fun onConfigureFailed(session: CameraCaptureSession) {
+                session.close()
+                if (sessionId != captureSessionGeneration || stopRequested) return
+                if (stillSurface != null && stillCandidateIndex + 1 < stillCandidates.size) {
+                    stillCandidateIndex += 1
+                    openStillReader(stillCandidates[stillCandidateIndex])
+                    createCaptureSession(camera, characteristics)
+                    return
+                }
+                if (stillSurface != null) {
+                    includeStillSurface = false
+                    closeStillReader()
+                    createCaptureSession(camera, characteristics)
+                    return
+                }
+                if (sessionPreviewSurface != null) {
+                    previewSurface = null
+                    createCaptureSession(camera, characteristics)
+                } else {
+                    notifyError(IllegalStateException("摄像头录像会话创建失败"))
+                    stop()
+                }
+            }
+        }
+        camera.createCaptureSession(surfaces, stateCallback, cameraHandler)
     }
 
     /** 在相机线程调用。 */
@@ -581,14 +596,27 @@ class SeamlessDashcamRecorder(
         val camera = cameraDevice ?: return
         val characteristics = cameraCharacteristics ?: return
         val surface = encoderInputSurface ?: return
+        val aeIndex = DashcamShutterPolicy.resolveAeCompensationIndex(
+            characteristics,
+            currentSpeedKmh,
+            lastExposureTimeNs
+        )
         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
             addTarget(surface)
             activePreviewTarget()?.let { addTarget(it) }
             applyHdrOptions()
             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(mode.fps, mode.fps))
+            applyPrimaryLensLock()
+            DashcamShutterPolicy.applyToCaptureRequest(
+                builder = this,
+                characteristics = characteristics,
+                speedKmh = currentSpeedKmh,
+                lastExposureTimeNs = lastExposureTimeNs
+            )
             applyFocusOptions(characteristics)
         }.build()
         session.setRepeatingRequest(request, repeatingCallback, cameraHandler)
+        appliedAeCompIndex = aeIndex
         appliedCaptureSettingsKey = captureSettingsKey()
     }
 
@@ -598,7 +626,19 @@ class SeamlessDashcamRecorder(
     }
 
     private fun captureSettingsKey(): String {
-        return "$hdrSceneModeEnabled|${CameraFocus.isManualEnabled(appContext)}|${CameraFocus.percent(appContext)}"
+        val aeIndex = cameraCharacteristics?.let {
+            DashcamShutterPolicy.resolveAeCompensationIndex(it, currentSpeedKmh, lastExposureTimeNs)
+        } ?: 0
+        return "$hdrSceneModeEnabled|${CameraFocus.isManualEnabled(appContext)}|${CameraFocus.percent(appContext)}|$aeIndex"
+    }
+
+    /**
+     * 显式将变焦倍率锁定为 1.0x 标准主摄倍率，禁止逻辑多摄自动切往 0.6x 超广角微距镜头。
+     */
+    private fun CaptureRequest.Builder.applyPrimaryLensLock() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            runCatching { set(CaptureRequest.CONTROL_ZOOM_RATIO, 1.0f) }
+        }
     }
 
     private fun CaptureRequest.Builder.applyFocusOptions(characteristics: CameraCharacteristics) {
@@ -606,9 +646,13 @@ class SeamlessDashcamRecorder(
             val maxDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)
                 ?.coerceAtLeast(0f)
                 ?: 0f
+            val hyperfocal = characteristics.get(CameraCharacteristics.LENS_INFO_HYPERFOCAL_DISTANCE)
             if (maxDistance > 0.01f) {
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
-                set(CaptureRequest.LENS_FOCUS_DISTANCE, CameraFocus.focusDistanceDiopters(appContext, maxDistance))
+                set(
+                    CaptureRequest.LENS_FOCUS_DISTANCE,
+                    CameraFocus.focusDistanceDiopters(appContext, maxDistance, hyperfocal)
+                )
                 return
             }
         }
@@ -1028,6 +1072,13 @@ class SeamlessDashcamRecorder(
             encoderSurface?.let { addTarget(it) }
             activePreviewTarget()?.let { addTarget(it) }
             applyHdrOptions()
+            applyPrimaryLensLock()
+            DashcamShutterPolicy.applyToCaptureRequest(
+                builder = this,
+                characteristics = characteristics,
+                speedKmh = currentSpeedKmh,
+                lastExposureTimeNs = lastExposureTimeNs
+            )
             applyFocusOptions(characteristics)
             set(
                 CaptureRequest.JPEG_ORIENTATION,
@@ -1060,9 +1111,7 @@ class SeamlessDashcamRecorder(
     )
 
     private fun backCameraId(manager: CameraManager): String? {
-        return manager.cameraIdList.firstOrNull { id ->
-            manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        } ?: manager.cameraIdList.firstOrNull()
+        return CameraCapabilities.selectPrimaryBackCameraId(manager)
     }
 
     private fun orientationHint(rotation: Int): Int {
@@ -1087,7 +1136,7 @@ class SeamlessDashcamRecorder(
         private const val AUDIO_CHANNEL_COUNT = 1
         private const val AUDIO_BYTES_PER_SAMPLE = 2
         private const val AUDIO_BIT_RATE = 64_000
-        private const val BITRATE_PER_PIXEL_FPS = 0.10
+        private const val BITRATE_PER_PIXEL_FPS = 0.15
         private const val MIN_VIDEO_BITRATE = 2_000_000
         private const val MAX_VIDEO_BITRATE = 80_000_000
         private const val JPEG_IMAGE_FORMAT = 256

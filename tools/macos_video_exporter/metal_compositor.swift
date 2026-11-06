@@ -523,8 +523,9 @@ kernel void fused_stabilize_cas_and_blend_nv12(
                 float minY = float(p.atlasY) + 0.5f;
                 float maxX = float(p.atlasX + srcW) - 0.5f;
                 float maxY = float(p.atlasY + srcH) - 0.5f;
+                float atlasSharp = (srcW == dstW && srcH == dstH) ? 0.08f : ov.sharpness;
                 float4 rgba = sample_bicubic_cas_rgba(
-                    atlasTex, s, ax, ay, minX, minY, maxX, maxY, invAtlasW, invAtlasH, ov.sharpness
+                    atlasTex, s, ax, ay, minX, minY, maxX, maxY, invAtlasW, invAtlasH, atlasSharp
                 );
                 float a = rgba.a;
                 if (a > 0.002f) {

@@ -1,9 +1,9 @@
 {
-  "width": 1920,
-  "height": 1080,
+  "width": 1080,
+  "height": 1920,
   "fps": 60,
   "playbackSpeed": 4.0,
-  "layoutMode": "float",
+  "layoutMode": "split",
   "splitVideoPercent": 38,
   "exportResolution": "source",
   "fields": [
@@ -37,7 +37,7 @@
       "color": "#ffffff",
       "background": true,
       "backgroundColor": "#000000",
-      "backgroundOpacity": 55,
+      "backgroundOpacity": 70,
       "stroke": true,
       "strokeWidth": 3,
       "strokeColor": "#000000",
@@ -162,14 +162,14 @@
   ],
   "gauge": {
     "enabled": true,
-    "style": "gt",
-    "x": 0.9504592408864561,
-    "y": 0.9277898332328712,
-    "radiusPercent": 0.09,
+    "style": "bar",
+    "x": 0.9207317073170732,
+    "y": 0.3141441181689142,
+    "radiusPercent": 0.06242022357723577,
     "barWidth": 420,
     "barHeight": 34,
     "barSegments": 28,
-    "opacity": 85,
+    "opacity": 100,
     "backgroundColor": "#0b1410",
     "arcColor": "#ff5e00",
     "valueColor": "#00f2ff",
@@ -182,6 +182,7 @@
     "enabled": false,
     "fields": [
       "time",
+      "speed",
       "coordinates",
       "address"
     ],
@@ -189,20 +190,20 @@
     "padding": 14,
     "opacity": 100,
     "backgroundColor": "#ffffff",
-    "textColor": "#d64343"
+    "textColor": "#17201e"
   },
   "mapLayer": {
     "enabled": true,
-    "sizePercent": 0.3306478874611527,
-    "x": 0.14533246352121656,
-    "y": 0.0793702737308355,
+    "sizePercent": 0.19,
+    "x": 0.25,
+    "y": 0.8,
     "opacity": 100,
     "backgroundColor": "#1d2a24",
     "backgroundOpacity": 100,
     "routeColor": "#7fb7ff",
     "playedColor": "#ffffff",
     "markerColor": "#00f2ff",
-    "scaleMeters": 640,
+    "scaleMeters": 220,
     "showScaleBar": true,
     "scaleBarColor": "#ffffff",
     "mapStyle": "satellite",
@@ -210,7 +211,7 @@
     "showSpeedLabel": true,
     "labelColor": "#ffffff",
     "showCoordinates": true,
-    "coordinateSize": 14,
+    "coordinateSize": 11,
     "coordinateColor": "#ffffff",
     "cycleOverviewEnabled": true,
     "overviewSeconds": 10,
@@ -218,12 +219,12 @@
   },
   "hud": {
     "enabled": true,
-    "x": 0.7518184900542495,
-    "y": 0.0,
+    "x": 0.06,
+    "y": 0.045,
     "opacity": 100,
-    "timeSize": 19,
-    "durationSize": 37,
-    "progressSize": 37,
+    "timeSize": 12,
+    "durationSize": 26,
+    "progressSize": 26,
     "timeFormat24h": true,
     "showDate": false,
     "showDuration": true,
@@ -261,6 +262,8 @@
   },
   "privacy": {
     "enabled": true,
-    "trimMeters": 2000
-  }
+    "trimMeters": 1000,
+    "speedOffsetKmh": -100.0
+  },
+  "speedOffsetKmh": -100.0
 }

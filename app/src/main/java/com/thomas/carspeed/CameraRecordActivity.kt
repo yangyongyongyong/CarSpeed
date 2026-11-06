@@ -107,7 +107,9 @@ class CameraRecordActivity : AppCompatActivity() {
         ) {
             DashcamService.updatePreviewFocusTelemetry(
                 result.get(CaptureResult.LENS_FOCUS_DISTANCE),
-                result.get(CaptureResult.CONTROL_AF_STATE)
+                result.get(CaptureResult.CONTROL_AF_STATE),
+                result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
+                result.get(CaptureResult.SENSOR_SENSITIVITY)
             )
         }
     }

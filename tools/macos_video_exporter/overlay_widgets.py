@@ -267,11 +267,13 @@ def build_map_overlays_html(
     span_y: float,
     *,
     compact_radar: bool = False,
+    is_split: bool = False,
 ) -> str:
     """在 0..100% 地图窗口内构建最高速度玫红点与测速雷达限速胶囊 HTML。"""
     if span_x <= 0 or span_y <= 0:
         return ""
     items: list[str] = []
+    avoid_pts: list[tuple[float, float]] = []
     peak = max_speed_point(points)
     if peak is not None:
         plat, plon, pspd = _point_lat_lon_speed(peak)
@@ -280,16 +282,28 @@ def build_map_overlays_html(
         py_pct = (pmy - origin_y) / span_y * 100.0
         if -8.0 <= px_pct <= 108.0 and -8.0 <= py_pct <= 108.0:
             peak_kmh = int(round(pspd))
+            avoid_pts.append((px_pct, py_pct))
             items.append(
                 f'<div class="map-max-speed-dot" style="left:{px_pct:.2f}%;top:{py_pct:.2f}%" '
                 f'title="最高速度 {peak_kmh} km/h">'
                 f'<span class="max-speed-tag">{peak_kmh}</span></div>'
             )
+    min_dist_pct = (11.5 if compact_radar else 8.5) if not is_split else (6.0 if compact_radar else 4.5)
+    min_dist_sq = min_dist_pct * min_dist_pct
+    max_radars = (5 if compact_radar else 8) if not is_split else (10 if compact_radar else 14)
+    drawn_radars: list[tuple[float, float]] = []
     for r_lat, r_lon, r_spd in deduplicate_radars(radars):
+        if len(drawn_radars) >= max_radars:
+            break
         rmx, rmy = mercator_unit(r_lat, r_lon)
         rx_pct = (rmx - origin_x) / span_x * 100.0
         ry_pct = (rmy - origin_y) / span_y * 100.0
-        if -8.0 <= rx_pct <= 108.0 and -8.0 <= ry_pct <= 108.0:
+        if 4.0 <= rx_pct <= 96.0 and 4.0 <= ry_pct <= 96.0:
+            if any((rx_pct - ax) ** 2 + (ry_pct - ay) ** 2 < min_dist_sq * 0.72 for ax, ay in avoid_pts):
+                continue
+            if any((rx_pct - dx) ** 2 + (ry_pct - dy) ** 2 < min_dist_sq for dx, dy in drawn_radars):
+                continue
+            drawn_radars.append((rx_pct, ry_pct))
             spd_pill = f'<span class="radar-limit-pill">{r_spd}</span>' if r_spd > 0 else ""
             items.append(
                 f'<div class="map-radar-item{" is-compact" if compact_radar else ""}" '

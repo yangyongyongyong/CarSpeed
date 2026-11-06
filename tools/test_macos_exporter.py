@@ -874,6 +874,41 @@ def test_bugfixes_and_forza_gauge(server) -> None:
     split_cfg.export_resolution = "720p"
     check("竖屏split导出720p为720x1280", server.resolve_export_dimensions(3840, 2160, split_cfg), (720, 1280))
 
+    # 车速偏移隐私保护测试（默认 -100 km/h，下限 0 km/h）
+    def_layout = server.default_layout()
+    check("默认车速偏移为 -100 km/h", def_layout.privacy.speed_offset_kmh, -100.0)
+    check("实际80km/h偏移-100后钳位为0km/h", server.apply_speed_offset_kmh(80.0, -100.0), 0.0)
+    check("实际135km/h偏移-100后为35km/h", server.apply_speed_offset_kmh(135.0, -100.0), 35.0)
+    custom_opt = server.parse_options({"trip": "demo-hangzhou", "speedOffsetKmh": -60})
+    check("导出参数自定义车速偏移解析", server.resolve_speed_offset_kmh(def_layout, custom_opt), -60.0)
+    offset_pts = server.apply_speed_offset_to_track_points(priv_pts, -50.0)
+    check("轨迹点应用-50偏移后为30km/h", offset_pts[0].speed_kmh, 30.0)
+    zero_pts = server.apply_speed_offset_to_track_points(priv_pts, -100.0)
+    check("轨迹点应用-100偏移后钳位为0km/h", zero_pts[0].speed_kmh, 0.0)
+
+    # 4K 卫星图四大进阶增强校验（分层无损合成 + SDF 等高线重建 + 36Mbps 码率 + 真 4K 矢量道路胶囊）
+    check(
+        "SDF等高线Sigmoid曲线低值趋近0且高值趋近255",
+        (server._SAT_SDF_SIGMOID_LUT[40] < 5, server._SAT_SDF_SIGMOID_LUT[210] > 250),
+        (True, True),
+    )
+    check("4K 60fps 导出码率提升至 36 Mbps", server.bitrate(2160, 3840, 60), "36000000")
+    check(
+        "道路标签自动剥离省市区与门牌后缀",
+        (
+            server.clean_route_label_text("杭州市余杭区留石高架路"),
+            server.clean_route_label_text("杭州市东西大道良渚文化村"),
+            server.clean_route_label_text("杭州市余杭区日望桥23号楼"),
+        ),
+        ("留石高架路", "良渚文化村", "日望桥"),
+    )
+    sample_cues = [
+        server.Cue(0, 5000, "2026-10-30 09:39:12  |  60.0 km/h  |  杭州市余杭区大陆路"),
+        server.Cue(5000, 15000, "2026-10-30 09:39:20  |  80.0 km/h  |  杭州市余杭区留石高架路"),
+    ]
+    extracted_labels = server.extract_route_vector_labels(sample_cues, priv_pts)
+    check("从SRT提取沿线矢量道路节点", len(extracted_labels) >= 1 and extracted_labels[0]["label"] == "大陆路", True)
+
 
 def main() -> int:
     server = load_server()

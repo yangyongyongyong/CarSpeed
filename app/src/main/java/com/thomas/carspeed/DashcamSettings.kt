@@ -56,7 +56,8 @@ object DashcamSettings {
     const val DEFAULT_LOOP_STORAGE_GB = 10
     const val MIN_LOOP_STORAGE_GB = 1
     const val MAX_LOOP_STORAGE_GB = 100
-    const val DEFAULT_FOCUS_PERCENT = 0
+    const val DEFAULT_MANUAL_FOCUS_ENABLED = true
+    const val DEFAULT_FOCUS_PERCENT = 1
     const val DEFAULT_SEGMENT_MINUTES = 1
     const val MIN_SEGMENT_MINUTES = 1
     const val MAX_SEGMENT_MINUTES = 10

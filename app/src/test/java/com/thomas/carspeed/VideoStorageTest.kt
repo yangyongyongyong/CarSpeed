@@ -422,7 +422,7 @@ class VideoStorageTest {
                 seg2.absolutePath to 240_000L,
                 seg3.absolutePath to 240_000L,
                 seg4.absolutePath to 240_000L,
-                seg5.absolutePath to 132_000L
+                seg5.absolutePath.lowercase() to 132_000L
             )
             assertEquals(1_092_000L, VideoStorage.tripDurationMs(segments, mediaStoreMap))
         } finally {
@@ -436,7 +436,7 @@ class VideoStorageTest {
         val hd = SeamlessDashcamRecorder.videoBitRate(VideoMode("720p", 1280, 720, 30))
         val sd = SeamlessDashcamRecorder.videoBitRate(VideoMode("480p", 854, 480, 30))
 
-        assertTrue(fhd in 5_500_000..7_000_000)
+        assertTrue(fhd in 8_000_000..10_500_000)
         assertTrue(hd < fhd)
         assertTrue(sd < hd)
     }

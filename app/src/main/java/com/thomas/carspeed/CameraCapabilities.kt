@@ -159,13 +159,61 @@ object CameraCapabilities {
 
     fun debugModes(context: Context): List<VideoMode> = supportedVideoModes(context)
 
+    /**
+     * 在后置摄像头集合中按传感器物理面积（SENSOR_INFO_PHYSICAL_SIZE）与标准广角焦距（4.0mm~7.5mm）
+     * 优选主摄相机 ID，避免误选超广角或微距副摄。
+     */
+    fun selectPrimaryBackCameraId(manager: CameraManager): String? {
+        val ids = manager.cameraIdList
+        if (ids.isEmpty()) return null
+        val backIds = ids.filter { id ->
+            runCatching {
+                manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) ==
+                    CameraCharacteristics.LENS_FACING_BACK
+            }.getOrDefault(false)
+        }
+        val candidates = backIds.ifEmpty { ids.toList() }
+        return candidates.maxWithOrNull(compareBy<String> { id ->
+            val chars = runCatching { manager.getCameraCharacteristics(id) }.getOrNull()
+            val size = chars?.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val area = if (size != null) size.width * size.height else 0f
+            val focal = chars?.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull() ?: 0f
+            val isMainFocal = focal in 4.0f..7.5f
+            (if (isMainFocal) 1000f else 0f) + area
+        }) ?: candidates.firstOrNull()
+    }
+
+    /**
+     * 如果打开的是后置逻辑多摄（Logical Multi-Camera），返回其底层传感器面积最大的物理主摄 ID（如 vivo V2426A 的 "2"），
+     * 供 SessionConfiguration / OutputConfiguration.setPhysicalCameraId 显式绑定物理主摄，防止自动切到超广角微距镜头。
+     */
+    fun selectPrimaryPhysicalBackCameraId(
+        manager: CameraManager,
+        logicalCameraId: String,
+        characteristics: CameraCharacteristics
+    ): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        val capabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: IntArray(0)
+        val isLogical = capabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)
+        if (!isLogical) return null
+        val physicalIds = runCatching { characteristics.physicalCameraIds }.getOrNull().orEmpty()
+        if (physicalIds.isEmpty()) return null
+        return physicalIds
+            .filter { it != logicalCameraId }
+            .maxByOrNull { pid ->
+                val pChars = runCatching { manager.getCameraCharacteristics(pid) }.getOrNull()
+                val size = pChars?.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+                val area = if (size != null) size.width * size.height else 0f
+                val focal = pChars?.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull() ?: 0f
+                val isMainFocal = focal in 4.0f..7.5f
+                (if (isMainFocal) 1000f else 0f) + area
+            }
+    }
+
     private fun backCameraId(context: Context): String? {
         cachedBackCameraId?.let { return it }
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        return (manager.cameraIdList.firstOrNull { id ->
-            val chars = manager.getCameraCharacteristics(id)
-            chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        } ?: manager.cameraIdList.firstOrNull())?.also { cachedBackCameraId = it }
+        return selectPrimaryBackCameraId(manager)?.also { cachedBackCameraId = it }
     }
 
     private fun profileQueries(): List<ProfileQuery> {

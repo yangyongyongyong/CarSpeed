@@ -15,6 +15,7 @@ class CameraFocusDistanceLabelTest {
         assertEquals("10cm", CameraFocus.distanceLabel(100, 10f, "远处/∞"))
         assertEquals("20cm", CameraFocus.distanceLabel(50, 10f, "远处/∞"))
         assertEquals("1.0m", CameraFocus.distanceLabel(10, 10f, "远处/∞"))
+        assertEquals("14m", CameraFocus.distanceLabel(1, 10f, "远处/∞"))
         assertEquals("2.0m", CameraFocus.distanceLabel(50, 1f, "远处/∞"))
         assertEquals("50m", CameraFocus.distanceLabel(2, 1f, "远处/∞"))
     }

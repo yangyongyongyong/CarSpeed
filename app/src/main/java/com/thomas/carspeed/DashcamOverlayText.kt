@@ -13,7 +13,9 @@ data class DashcamTelemetry(
     val satelliteCount: Int? = null,
     val address: String? = null,
     val focusDistanceDiopters: Float? = null,
-    val autofocusState: String? = null
+    val autofocusState: String? = null,
+    val exposureTimeNs: Long? = null,
+    val isoSensitivity: Int? = null
 )
 
 data class DashcamInfoBarText(
@@ -111,6 +113,8 @@ object DashcamOverlayText {
             manualFocus = CameraFocus.isManualEnabled(context),
             focusDistanceDiopters = telemetry.focusDistanceDiopters,
             autofocusState = telemetry.autofocusState,
+            exposureTimeNs = telemetry.exposureTimeNs,
+            isoSensitivity = telemetry.isoSensitivity,
             placeholdersWhenMissing = placeholdersWhenMissing,
             addressPendingText = context.getString(R.string.watermark_address_pending)
         )

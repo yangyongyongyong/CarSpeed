@@ -83,6 +83,8 @@ class DashcamService : LifecycleService(), LocationListener {
     )
     private var lastFocusDistanceDiopters: Float? = null
     private var lastAutofocusState: String? = null
+    private var lastExposureTimeNs: Long? = null
+    private var lastIsoSensitivity: Int? = null
     private val voiceCommandCooldown = VoiceCommandCooldown()
     private var parkingStationarySinceElapsedMs: Long? = null
     private val activeTrackPoints = mutableListOf<VideoTrackPoint>()
@@ -211,6 +213,7 @@ class DashcamService : LifecycleService(), LocationListener {
         RoadLayerEngine.consumeSubtitleCorrection()?.let { rewriteRecordedRoadLayer(it) }
         if (location.hasSpeed()) {
             lastSpeedKmh = SpeedRules.toKmhClamped(location.speed)
+            seamlessRecorder?.updateDrivingSpeed(lastSpeedKmh)
             updateParkingStop(lastSpeedKmh)
             updateStationaryWait(lastSpeedKmh)
             RoadLayerEngine.onSpeed(now, lastSpeedKmh)
@@ -1067,7 +1070,9 @@ class DashcamService : LifecycleService(), LocationListener {
             satelliteCount = gpsUsedSatelliteCount,
             address = lastAddressText,
             focusDistanceDiopters = lastFocusDistanceDiopters,
-            autofocusState = lastAutofocusState
+            autofocusState = lastAutofocusState,
+            exposureTimeNs = lastExposureTimeNs,
+            isoSensitivity = lastIsoSensitivity
         )
     }
 
@@ -1085,7 +1090,10 @@ class DashcamService : LifecycleService(), LocationListener {
     private fun updateFocusTelemetry(result: CaptureResult) {
         lastFocusDistanceDiopters = result.get(CaptureResult.LENS_FOCUS_DISTANCE)
         lastAutofocusState = autofocusStateLabel(result.get(CaptureResult.CONTROL_AF_STATE))
+        lastExposureTimeNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME)
+        lastIsoSensitivity = result.get(CaptureResult.SENSOR_SENSITIVITY)
         updateTelemetrySnapshot()
+        seamlessRecorder?.updateDrivingSpeed(lastSpeedKmh)
     }
 
     @Suppress("DEPRECATION")
@@ -1416,10 +1424,17 @@ class DashcamService : LifecycleService(), LocationListener {
             return RouteRadarMarks.limitSummary(limits)
         }
 
-        fun updatePreviewFocusTelemetry(focusDistanceDiopters: Float?, autofocusState: Int?) {
+        fun updatePreviewFocusTelemetry(
+            focusDistanceDiopters: Float?,
+            autofocusState: Int?,
+            exposureTimeNs: Long? = null,
+            isoSensitivity: Int? = null
+        ) {
             telemetrySnapshot = telemetrySnapshot.copy(
                 focusDistanceDiopters = focusDistanceDiopters,
-                autofocusState = autofocusStateLabel(autofocusState)
+                autofocusState = autofocusStateLabel(autofocusState),
+                exposureTimeNs = exposureTimeNs ?: telemetrySnapshot.exposureTimeNs,
+                isoSensitivity = isoSensitivity ?: telemetrySnapshot.isoSensitivity
             )
         }
 

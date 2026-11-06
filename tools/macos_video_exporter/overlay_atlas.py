@@ -823,17 +823,17 @@ class NativeStudioAtlasRenderer:
 
     def _get_radar_badge_sprite(self, ui: float, speed_limit: int, compact: bool = False) -> Image.Image:
         """生成并缓存手机 App 同款测速雷达摄像头图标与底部限速数字胶囊（参照 ic_speed_radar.xml）。"""
-        ui_bucket = max(6, int(round(ui * 10)))
+        ui_bucket = max(4, int(round(ui * 10)))
         key = (ui_bucket, int(speed_limit or 0), bool(compact))
         cached = self._radar_cache.get(key)
         if cached is not None:
             return cached
 
-        scale_ui = (ui_bucket / 10.0) * (0.76 if compact else 1.0)
+        scale_ui = (ui_bucket / 10.0) * (0.58 if compact else 0.90)
         ss = 2
-        cam_d = max(20, int(round(24 * scale_ui))) * ss
-        pill_h = (max(12, int(round(13 * scale_ui))) * ss) if speed_limit > 0 else 0
-        w = max(cam_d + 8 * ss, int(round(34 * scale_ui)) * ss)
+        cam_d = max(13 if compact else 18, int(round(22 * scale_ui))) * ss
+        pill_h = (max(9 if compact else 11, int(round(12 * scale_ui))) * ss) if speed_limit > 0 else 0
+        w = max(cam_d + 6 * ss, int(round(30 * scale_ui)) * ss)
         h = cam_d + pill_h + 4 * ss
         layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
@@ -868,12 +868,12 @@ class NativeStudioAtlasRenderer:
         # 底部悬挂深藏青圆角限速胶囊
         if speed_limit > 0:
             spd_str = str(int(speed_limit))
-            font = load_latin_font("Orbitron-Bold.ttf", max(10, int(round(8.2 * scale_ui * ss))))
+            font = load_latin_font("Orbitron-Bold.ttf", max(8, int(round(7.6 * scale_ui * ss))))
             tb = draw.textbbox((0, 0), spd_str, font=font)
             tw = tb[2] - tb[0]
             th = tb[3] - tb[1]
-            pw = max(tw + int(round(9 * scale_ui * ss)), int(round(18 * scale_ui * ss)))
-            ph = th + int(round(4 * scale_ui * ss))
+            pw = max(tw + int(round(7 * scale_ui * ss)), int(round(14 * scale_ui * ss)))
+            ph = th + int(round(3.5 * scale_ui * ss))
             px0 = int(round(cx - pw / 2.0))
             py0 = int(round(cy + r_out - 2.5 * scale_ui * ss))
             draw.rounded_rectangle(
@@ -969,6 +969,156 @@ class NativeStudioAtlasRenderer:
             )
             draw.text((bx + (pw - tw) // 2 - tb[0], by + (ph - th) // 2 - tb[1]), label, font=font, fill=(255, 255, 255, 255))
 
+    @staticmethod
+    def _clean_short_road_name(raw_address: str) -> str:
+        """从实时地址字符串中剥离省市区前缀，提取简短道路/地标名称供原生 4K 矢量胶囊展示。"""
+        text = str(raw_address or "").strip()
+        if not text:
+            return ""
+        text = re.sub(
+            r"^(?:中国)?(?:[\u4e00-\u9fa5]{2,7}(?:省|自治区|特别行政区))?"
+            r"(?:[\u4e00-\u9fa5]{2,7}(?:市|自治州))?"
+            r"(?:[\u4e00-\u9fa5]{2,7}(?:区|县|县级市))?",
+            "",
+            text,
+        ).strip()
+        text = re.sub(r"\([^)]*\)|（[^）]*）", "", text)
+        text = re.sub(r"\d+号(?:楼|院|附\d+)?.*$", "", text)
+        text = re.sub(r"(?:[一二三四五六七八九十\d]+标)?项目部.*$", "", text)
+        text = re.sub(r"(?:辅路|桥下|入口|出口|方向|附近)$", "", text).strip()
+        if len(text) > 7:
+            rm = re.match(r"^([\u4e00-\u9fa5]{2,5}(?:大道|高架路|高速|路|街|线))([\u4e00-\u9fa5]{3,6})$", text)
+            if rm:
+                return rm.group(2)
+            m = re.search(r"([\u4e00-\u9fa5]{2,7}(?:高架路|快速路|高速公路|高速|大道|大街|隧道|立交|大桥|路|街|线|桥))", text)
+            if m:
+                cand = m.group(1)
+                for bad in ("政集团", "集团", "公司", "项目部"):
+                    if cand.startswith(bad) and len(cand) > len(bad) + 1:
+                        cand = cand[len(bad) :]
+                return cand[:8]
+            text = text[:8]
+        return text
+
+    def _draw_vector_route_labels(
+        self,
+        card: Image.Image,
+        route_labels: list[dict[str, Any]] | None,
+        *,
+        origin_x: float,
+        origin_y: float,
+        inv_sx: float,
+        inv_sy: float,
+        card_w: int,
+        card_h: int,
+        ui: float,
+        current_road: str = "",
+        occupied_boxes: list[tuple[int, int, int, int]] | None = None,
+        max_labels: int = 8,
+    ) -> None:
+        """使用 macOS 原生 PingFang SC 矢量字体在 4K 地图画布上直接绘制沿线关键道路与地标胶囊（带 AABB 碰撞避让）。"""
+        if not route_labels:
+            return
+        draw = ImageDraw.Draw(card)
+        font_px = max(11, int(round(10.8 * ui)))
+        font = load_cjk_font(font_px)
+        pad_x = max(6, int(round(7.5 * ui)))
+        pad_y = max(3, int(round(3.5 * ui)))
+        dot_r = max(2, int(round(2.6 * ui)))
+        placed: list[tuple[int, int, int, int]] = list(occupied_boxes or [])
+        margin_x = max(10, int(round(12 * ui)))
+        margin_y = max(10, int(round(14 * ui)))
+
+        def _overlaps(box: tuple[int, int, int, int]) -> bool:
+            ax0, ay0, ax1, ay1 = box
+            for bx0, by0, bx1, by1 in placed:
+                if not (ax1 < bx0 or ax0 > bx1 or ay1 < by0 or ay0 > by1):
+                    return True
+            return False
+
+        # 优先排布当前行驶道路，再按沿线顺序排布其余路段节点
+        ordered = sorted(
+            route_labels,
+            key=lambda item: (0 if (current_road and item.get("label") == current_road) else 1, item.get("elapsed_ms", 0)),
+        )
+        drawn_count = 0
+        seen_texts: set[str] = set()
+        for item in ordered:
+            if drawn_count >= max_labels:
+                break
+            label = str(item.get("label") or "").strip()
+            if not label or label in seen_texts:
+                continue
+            mx = item.get("mx")
+            my = item.get("my")
+            if mx is None or my is None:
+                lat = float(item.get("latitude") or 0.0)
+                lon = float(item.get("longitude") or 0.0)
+                mx, my = overlay_widgets.amap_mercator(lat, lon)
+            px = int(round((float(mx) - origin_x) * inv_sx))
+            py = int(round((float(my) - origin_y) * inv_sy))
+            if not (margin_x <= px <= card_w - margin_x and margin_y <= py <= card_h - margin_y):
+                continue
+
+            tb = draw.textbbox((0, 0), label, font=font)
+            tw = tb[2] - tb[0]
+            th = tb[3] - tb[1]
+            pw = tw + pad_x * 2 + dot_r * 2 + max(3, int(round(4 * ui)))
+            ph = th + pad_y * 2
+            offset_gap = max(6, int(round(7 * ui)))
+            # 依次尝试锚点右上、左上、右下、正上方 4 个候选方位避让轨迹线与雷达图标
+            candidates = (
+                (px + offset_gap, py - ph // 2),
+                (px - offset_gap - pw, py - ph // 2),
+                (px - pw // 2, py - offset_gap - ph),
+                (px - pw // 2, py + offset_gap),
+            )
+            chosen_box: tuple[int, int, int, int] | None = None
+            for cx0, cy0 in candidates:
+                cx1 = cx0 + pw
+                cy1 = cy0 + ph
+                if cx0 < margin_x or cy0 < margin_y or cx1 > card_w - margin_x or cy1 > card_h - margin_y:
+                    continue
+                guard_pad = max(4, int(round(5 * ui)))
+                guard_box = (cx0 - guard_pad, cy0 - guard_pad, cx1 + guard_pad, cy1 + guard_pad)
+                if not _overlaps(guard_box):
+                    chosen_box = (cx0, cy0, cx1, cy1)
+                    placed.append(guard_box)
+                    break
+            if chosen_box is None:
+                continue
+
+            bx0, by0, bx1, by1 = chosen_box
+            is_active = bool(current_road and label == current_road)
+            # 绘制与轨迹点相连的细引导线及锚点小圆点
+            near_x = max(bx0, min(px, bx1))
+            near_y = max(by0, min(py, by1))
+            lead_col = (0, 242, 255, 215) if is_active else (148, 163, 184, 175)
+            draw.line((px, py, near_x, near_y), fill=lead_col, width=max(1, int(round(1.3 * ui))))
+            draw.ellipse((px - dot_r, py - dot_r, px + dot_r, py + dot_r), fill=(0, 242, 255, 245) if is_active else (255, 255, 255, 230), outline=(10, 14, 20, 220))
+
+            bg_fill = (12, 20, 32, 236) if is_active else (11, 16, 25, 216)
+            border_col = (0, 242, 255, 235) if is_active else (255, 255, 255, 92)
+            border_w = max(1, int(round((1.6 if is_active else 1.1) * ui)))
+            draw.rounded_rectangle(
+                (bx0, by0, bx1, by1),
+                radius=max(4, ph // 2),
+                fill=bg_fill,
+                outline=border_col,
+                width=border_w,
+            )
+            # 胶囊左侧亮色指示圆点 + 4K 矢量中文路名
+            ind_cx = bx0 + pad_x + dot_r
+            ind_cy = by0 + ph // 2
+            ind_col = (0, 242, 255, 255) if is_active else (79, 214, 151, 245)
+            draw.ellipse((ind_cx - dot_r, ind_cy - dot_r, ind_cx + dot_r, ind_cy + dot_r), fill=ind_col)
+            tx = ind_cx + dot_r + max(3, int(round(4.5 * ui))) - tb[0]
+            ty = by0 + (ph - th) // 2 - tb[1]
+            txt_col = (255, 255, 255, 255) if is_active else (241, 245, 249, 250)
+            draw.text((tx, ty), label, font=font, fill=txt_col)
+            seen_texts.add(label)
+            drawn_count += 1
+
     def render_map_tile(
         self,
         region: AtlasRegion,
@@ -982,6 +1132,7 @@ class NativeStudioAtlasRenderer:
         telemetry: dict[str, str] | None = None,
         speed_kmh: float = 0.0,
         output_elapsed_sec: float | None = None,
+        route_labels: list[dict[str, Any]] | None = None,
     ) -> Image.Image:
         """直接在内存中绘制高德地图区域（支持悬浮窗 float 模式、上视频下地图 split 竖屏模式及 10s:50s 周期丝滑缩放）。"""
         map_cfg = self.layout.map_layer
@@ -1140,7 +1291,16 @@ class NativeStudioAtlasRenderer:
                 if len(played_xy) >= 2:
                     c_draw.line(played_xy, fill=_rgba(played_rgb, 255 * opacity), width=w_played)
 
+                occupied_boxes: list[tuple[int, int, int, int]] = []
+                if is_split:
+                    # 预留顶部左右 HUD 胶囊避让区
+                    top_guard_h = int(round(56 * ui))
+                    occupied_boxes.append((0, 0, card_w, top_guard_h))
+
                 # 2.5 绘制最高速度点与测速雷达图标（与手机 App MapRouteView 一致）
+                compact_radar = overview_blend >= 0.45 or scale_meters <= 0 or scale_meters >= 3000
+                overlay_marker_ui = ui * (0.66 if (not is_split and compact_radar) else (0.78 if not is_split else 1.0))
+                radar_avoid_pts: list[tuple[int, int]] = [(marker_px_x, marker_px_y)]
                 peak_pt = getattr(self, "_peak_point", None)
                 if peak_pt is not None:
                     plat, plon, pspd = overlay_widgets._point_lat_lon_speed(peak_pt)
@@ -1148,18 +1308,59 @@ class NativeStudioAtlasRenderer:
                     ppx = int(round((pmx - origin_x) * inv_sx))
                     ppy = int(round((pmy - origin_y) * inv_sy))
                     if -24 <= ppx <= card_w + 24 and -24 <= ppy <= card_h + 24:
-                        self._draw_max_speed_dot(card, ppx, ppy, ui, pspd)
+                        self._draw_max_speed_dot(card, ppx, ppy, overlay_marker_ui, pspd)
+                        pad_pk = int(round(24 * overlay_marker_ui))
+                        occupied_boxes.append((ppx - pad_pk, ppy - pad_pk, ppx + pad_pk, ppy + pad_pk))
+                        radar_avoid_pts.append((ppx, ppy))
 
-                compact_radar = overview_blend >= 0.45 or scale_meters <= 0 or scale_meters >= 3000
+                radar_ui = overlay_marker_ui
+                min_radar_dist_sq = int(round(max(24.0, (28.0 if compact_radar else 30.0) * radar_ui))) ** 2
+                max_radars = (5 if compact_radar else 8) if not is_split else (10 if compact_radar else 14)
+                drawn_radar_pts: list[tuple[int, int]] = []
                 for rmx, rmy, r_spd in getattr(self, "_dedup_radars_merc", ()):
+                    if len(drawn_radar_pts) >= max_radars:
+                        break
                     rpx = int(round((rmx - origin_x) * inv_sx))
                     rpy = int(round((rmy - origin_y) * inv_sy))
-                    if -32 <= rpx <= card_w + 32 and -32 <= rpy <= card_h + 32:
-                        r_sprite = self._get_radar_badge_sprite(ui, r_spd, compact=compact_radar)
+                    margin_px = 14 if not is_split else 24
+                    if margin_px <= rpx <= card_w - margin_px and margin_px <= rpy <= card_h - margin_px:
+                        if any((rpx - ax) ** 2 + (rpy - ay) ** 2 < int(min_radar_dist_sq * 0.72) for ax, ay in radar_avoid_pts):
+                            continue
+                        if any((rpx - dx) ** 2 + (rpy - dy) ** 2 < min_radar_dist_sq for dx, dy in drawn_radar_pts):
+                            continue
+                        drawn_radar_pts.append((rpx, rpy))
+                        r_sprite = self._get_radar_badge_sprite(radar_ui, r_spd, compact=compact_radar)
                         card.alpha_composite(
                             r_sprite,
                             (rpx - r_sprite.width // 2, rpy - r_sprite.height // 2),
                         )
+                        occupied_boxes.append(
+                            (
+                                rpx - r_sprite.width // 2 - 4,
+                                rpy - r_sprite.height // 2 - 4,
+                                rpx + r_sprite.width // 2 + 4,
+                                rpy + r_sprite.height // 2 + 4,
+                            )
+                        )
+
+                # 2.8 绘制真 4K 原生矢量沿线道路/地标胶囊（避开当前车标、最高车速点与雷达图标）
+                mk_pad = int(round(28 * ui))
+                occupied_boxes.append((marker_px_x - mk_pad, marker_px_y - mk_pad, marker_px_x + mk_pad, marker_px_y + mk_pad))
+                cur_road_short = self._clean_short_road_name((values or {}).get("address", ""))
+                self._draw_vector_route_labels(
+                    card,
+                    route_labels,
+                    origin_x=origin_x,
+                    origin_y=origin_y,
+                    inv_sx=inv_sx,
+                    inv_sy=inv_sy,
+                    card_w=card_w,
+                    card_h=card_h,
+                    ui=ui,
+                    current_road=cur_road_short,
+                    occupied_boxes=occupied_boxes,
+                    max_labels=7 if is_split else 4,
+                )
 
                 # 3. 车标位置：split 模式使用手机 App 闪动圈，float 模式使用立体导航箭头
                 if is_split:
@@ -1169,18 +1370,19 @@ class NativeStudioAtlasRenderer:
                     _, ax, ay = self._merc_coords[idx]
                     _, bx, by = self._merc_coords[idx + 1]
                     marker_angle = math.degrees(math.atan2((bx - ax) * inv_sx, (ay - by) * inv_sy))
-                    sprite = self._get_car_marker_sprite(ui, marker_angle, raw_marker)
+                    car_ui = ui * (0.68 if compact_radar else 0.80)
+                    sprite = self._get_car_marker_sprite(car_ui, marker_angle, raw_marker)
                     card.alpha_composite(
                         sprite,
                         (marker_px_x - sprite.width // 2, marker_px_y - sprite.height // 2),
                     )
 
         if is_split:
-            # split 模式：左上角浅色毛玻璃里程胶囊，无圆角裁切直接铺满下半屏
+            # split 模式：左上角浅色毛玻璃里程胶囊 + 右上角真 4K 矢量当前道路胶囊，无圆角裁切直接铺满下半屏
+            c_draw = ImageDraw.Draw(card)
+            d_font = load_cjk_font(max(12, int(round(12.5 * ui))))
             dist_str = (telemetry or {}).get("distance", "")
             if dist_str and dist_str != "—":
-                c_draw = ImageDraw.Draw(card)
-                d_font = load_cjk_font(max(12, int(round(12.5 * ui))))
                 full_txt = f"里程  {dist_str}"
                 tb = c_draw.textbbox((0, 0), full_txt, font=d_font)
                 tw = tb[2] - tb[0]
@@ -1200,6 +1402,32 @@ class NativeStudioAtlasRenderer:
                     full_txt,
                     font=d_font,
                     fill=(15, 23, 42, 245),
+                )
+            cur_road_pill = self._clean_short_road_name((values or {}).get("address", ""))
+            if cur_road_pill:
+                rb = c_draw.textbbox((0, 0), cur_road_pill, font=d_font)
+                rtw = rb[2] - rb[0]
+                rth = rb[3] - rb[1]
+                dot_r = max(3, int(round(3.5 * ui)))
+                rpw = rtw + int(round(26 * ui)) + dot_r * 2
+                rph = rth + int(round(11 * ui))
+                rpx0 = max(int(round(14 * ui)), card_w - rpw - int(round(14 * ui)))
+                rpy0 = int(round(14 * ui))
+                c_draw.rounded_rectangle(
+                    (rpx0, rpy0, rpx0 + rpw, rpy0 + rph),
+                    radius=rph // 2,
+                    fill=(12, 18, 28, 228),
+                    outline=(0, 242, 255, 195),
+                    width=max(1, int(round(1.3 * ui))),
+                )
+                dcx = rpx0 + int(round(11 * ui)) + dot_r
+                dcy = rpy0 + rph // 2
+                c_draw.ellipse((dcx - dot_r, dcy - dot_r, dcx + dot_r, dcy + dot_r), fill=(0, 242, 255, 255))
+                c_draw.text(
+                    (dcx + dot_r + int(round(6 * ui)) - rb[0], rpy0 + (rph - rth) // 2 - rb[1]),
+                    cur_road_pill,
+                    font=d_font,
+                    fill=(255, 255, 255, 252),
                 )
             return card
 
@@ -1427,6 +1655,7 @@ class NativeStudioAtlasRenderer:
         point_at_fn: Any,
         radars: list[Any] | None = None,
         output_elapsed_sec: float | None = None,
+        route_labels: list[dict[str, Any]] | None = None,
     ) -> Image.Image:
         """渲染一整帧紧凑图集（Atlas）RGBA 图像。"""
         atlas = Image.new("RGBA", (self.plan.atlas_width, self.plan.atlas_height), (0, 0, 0, 0))
@@ -1445,6 +1674,7 @@ class NativeStudioAtlasRenderer:
                     telemetry=telemetry,
                     speed_kmh=speed_kmh,
                     output_elapsed_sec=output_elapsed_sec,
+                    route_labels=route_labels,
                 )
             elif region.name == "gauge":
                 sub = self.render_gauge_tile(region, speed_kmh)
@@ -1472,6 +1702,7 @@ def render_fullscreen_intro_map_frame(
     distance_text: str = "",
     duration_text: str = "",
     radars: list[Any] | None = None,
+    route_labels: list[dict[str, Any]] | None = None,
 ) -> Image.Image:
     """渲染片头全屏高德轨迹总览帧（支持卫星图 `satellite` 或道路图 `road`，默认 `scale_meters=0` 完整展示全程轨迹）。"""
     width = max(320, int(width))
@@ -1481,17 +1712,14 @@ def render_fullscreen_intro_map_frame(
     aspect = float(width) / float(height)
     center_pt = points[len(points) // 2] if (scale_meters and scale_meters > 0 and len(points) >= 2) else None
 
-    # 按最高 1920 长边拉取高德瓦片再双线性放大至目标画布，避免 4K 全屏超出瓦片上限
-    fetch_scale = min(1.0, 1920.0 / float(max(width, height)))
-    fetch_w = max(320, int(round(width * fetch_scale)))
-    fetch_h = max(240, int(round(height * fetch_scale)))
+    # 直接按目标画布 1:1 原生分辨率调用 amap_base_fn（内部已自动控制瓦片上限并做底图/SDF文字双层无损合成）
     base_img = None
     if len(points) >= 2 and amap_base_fn is not None:
         try:
             base_img = amap_base_fn(
                 points,
-                fetch_w,
-                fetch_h,
+                width,
+                height,
                 style,
                 scale_meters=scale_meters,
                 center=center_pt,
@@ -1500,15 +1728,15 @@ def render_fullscreen_intro_map_frame(
         except TypeError:
             base_img = amap_base_fn(
                 points,
-                fetch_w,
-                fetch_h,
+                width,
+                height,
                 style,
                 scale_meters=scale_meters,
                 center=center_pt,
             )
     if base_img is not None:
         if base_img.size != (width, height):
-            canvas = base_img.resize((width, height), Image.BILINEAR).convert("RGBA")
+            canvas = base_img.resize((width, height), Image.LANCZOS).convert("RGBA")
         else:
             canvas = base_img.convert("RGBA")
     else:
@@ -1551,6 +1779,11 @@ def render_fullscreen_intro_map_frame(
 
             # 同步标注最高速度点与测速雷达限速图标
             helper = NativeStudioAtlasRenderer(layout, width, height)
+            intro_occupied: list[tuple[int, int, int, int]] = [
+                (0, 0, int(round(520 * ui)), int(round(130 * ui))),
+                (int(sx0 - r_outer - 8), int(sy0 - r_outer - 8), int(sx0 + r_outer + 8), int(sy0 + r_outer + 8)),
+                (int(ex0 - r_outer - 8), int(ey0 - r_outer - 8), int(ex0 + r_outer + 8), int(ey0 + r_outer + 8)),
+            ]
             peak_pt = overlay_widgets.max_speed_point(points)
             if peak_pt is not None:
                 plat, plon, pspd = overlay_widgets._point_lat_lon_speed(peak_pt)
@@ -1559,13 +1792,43 @@ def render_fullscreen_intro_map_frame(
                 ppy = int(round((pmy - origin_y) * inv_sy))
                 if 0 <= ppx <= width and 0 <= ppy <= height:
                     helper._draw_max_speed_dot(canvas, ppx, ppy, ui * 1.15, pspd)
+                    intro_occupied.append((ppx - 36, ppy - 36, ppx + 36, ppy + 36))
+            intro_radar_pts: list[tuple[int, int]] = []
+            intro_min_dist_sq = int(round(max(28.0, 32.0 * ui))) ** 2
             for r_lat, r_lon, r_spd in overlay_widgets.deduplicate_radars(radars):
+                if len(intro_radar_pts) >= 12:
+                    break
                 rmx, rmy = overlay_widgets.mercator_unit(r_lat, r_lon)
                 rpx = int(round((rmx - origin_x) * inv_sx))
                 rpy = int(round((rmy - origin_y) * inv_sy))
                 if 0 <= rpx <= width and 0 <= rpy <= height:
+                    if any((rpx - dx) ** 2 + (rpy - dy) ** 2 < intro_min_dist_sq for dx, dy in intro_radar_pts):
+                        continue
+                    intro_radar_pts.append((rpx, rpy))
                     r_sp = helper._get_radar_badge_sprite(ui * 1.1, r_spd, compact=True)
                     canvas.alpha_composite(r_sp, (rpx - r_sp.width // 2, rpy - r_sp.height // 2))
+                    intro_occupied.append(
+                        (
+                            rpx - r_sp.width // 2 - 4,
+                            rpy - r_sp.height // 2 - 4,
+                            rpx + r_sp.width // 2 + 4,
+                            rpy + r_sp.height // 2 + 4,
+                        )
+                    )
+            if route_labels:
+                helper._draw_vector_route_labels(
+                    canvas,
+                    route_labels,
+                    origin_x=origin_x,
+                    origin_y=origin_y,
+                    inv_sx=inv_sx,
+                    inv_sy=inv_sy,
+                    card_w=width,
+                    card_h=height,
+                    ui=ui * 1.08,
+                    occupied_boxes=intro_occupied,
+                    max_labels=9,
+                )
 
     # 2. 左上角行程概览信息牌（模式标签 + 行程标题/里程/时长）
     mode_label = "卫星全览 · SATELLITE OVERVIEW" if style == "satellite" else "路网全览 · ROAD OVERVIEW"

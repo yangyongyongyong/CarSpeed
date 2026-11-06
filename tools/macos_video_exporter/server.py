@@ -41,9 +41,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
 try:
-    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 except ImportError:  # pragma: no cover - 运行时通过 /api/health 暴露
     Image = None
+    ImageChops = None
     ImageDraw = None
     ImageFilter = None
     ImageFont = None
@@ -141,6 +142,7 @@ class ExportOptions:
     intro_scale_meters: int | None = None
     privacy_mode: bool | None = None
     privacy_trim_meters: int | None = None
+    speed_offset_kmh: float | None = None
     export_resolution: str | None = None
     export_width: int | None = None
     export_height: int | None = None
@@ -377,9 +379,10 @@ class IntroMapLayout:
 
 @dataclass
 class PrivacyLayout:
-    """家庭隐私保护模式配置：默认开启，从有有效 GPS 信号起算，自动截断开头与结尾各 1000m（1km）的视频与轨迹，防止暴露家庭/目的地住址。"""
+    """家庭与车速隐私保护配置：默认截断首尾各 1000m（1km）位置，并对显示车速应用 -100 km/h 偏移（下限 0 km/h）。"""
     enabled: bool = True
     trim_meters: int = 1000
+    speed_offset_kmh: float = -100.0
 
 
 @dataclass
@@ -516,6 +519,49 @@ def _clamp_int(value: Any, low: int, high: int, fallback: int) -> int:
         return max(low, min(high, int(value)))
     except (TypeError, ValueError):
         return fallback
+
+
+def _clamp_float(value: Any, low: float, high: float, fallback: float) -> float:
+    """将输入值安全解析为浮点数并钳位在 [low, high] 范围内。"""
+    try:
+        parsed = float(value)
+        if math.isnan(parsed) or math.isinf(parsed):
+            return fallback
+        return max(low, min(high, parsed))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def apply_speed_offset_kmh(actual_speed_kmh: float, offset_kmh: float) -> float:
+    """对实际车速叠加隐私偏移量（km/h），偏移后最低为 0 km/h（不出现负数车速）。"""
+    return max(0.0, float(actual_speed_kmh or 0.0) + float(offset_kmh or 0.0))
+
+
+def resolve_speed_offset_kmh(
+    layout: TripLayout | None = None,
+    options: ExportOptions | None = None,
+) -> float:
+    """解析当前生效的车速偏移量（km/h），优先读取导出参数，其次读取排版配置，默认 -100 km/h。"""
+    if options is not None and options.speed_offset_kmh is not None:
+        return _clamp_float(options.speed_offset_kmh, -500.0, 500.0, -100.0)
+    if layout is not None:
+        priv_cfg = getattr(layout, "privacy", None)
+        if priv_cfg is not None and getattr(priv_cfg, "speed_offset_kmh", None) is not None:
+            return _clamp_float(getattr(priv_cfg, "speed_offset_kmh"), -500.0, 500.0, -100.0)
+    return -100.0
+
+
+def apply_speed_offset_to_track_points(
+    points: list[TrackPoint],
+    offset_kmh: float,
+) -> list[TrackPoint]:
+    """对轨迹点序列中的所有车速统一应用车速偏移，使地图最高速度标记与路线速度同步脱敏。"""
+    if abs(float(offset_kmh or 0.0)) < 1e-6 or not points:
+        return points
+    return [
+        dataclasses.replace(pt, speed_kmh=apply_speed_offset_kmh(pt.speed_kmh, offset_kmh))
+        for pt in points
+    ]
 
 
 def layout_from_dict(data: dict[str, Any]) -> TripLayout:
@@ -656,9 +702,15 @@ def layout_from_dict(data: dict[str, Any]) -> TripLayout:
         scale_meters=_clamp_int(intro_raw.get("scaleMeters"), 0, 20000, 0),
     )
     privacy_raw = data.get("privacy") if isinstance(data.get("privacy"), dict) else {}
+    raw_speed_offset = (
+        privacy_raw.get("speedOffsetKmh")
+        if privacy_raw.get("speedOffsetKmh") is not None
+        else data.get("speedOffsetKmh")
+    )
     privacy = PrivacyLayout(
         enabled=bool(privacy_raw.get("enabled", True)),
         trim_meters=_clamp_int(privacy_raw.get("trimMeters"), 0, 10000, 1000),
+        speed_offset_kmh=_clamp_float(raw_speed_offset, -500.0, 500.0, -100.0),
     )
     raw_speed = data.get("playbackSpeed")
     try:
@@ -819,7 +871,15 @@ def layout_to_dict(layout: TripLayout) -> dict[str, Any]:
         "privacy": {
             "enabled": bool(getattr(getattr(layout, "privacy", None), "enabled", True)),
             "trimMeters": _clamp_int(getattr(getattr(layout, "privacy", None), "trim_meters", 1000), 0, 10000, 1000),
+            "speedOffsetKmh": round(
+                _clamp_float(getattr(getattr(layout, "privacy", None), "speed_offset_kmh", -100.0), -500.0, 500.0, -100.0),
+                1,
+            ),
         },
+        "speedOffsetKmh": round(
+            _clamp_float(getattr(getattr(layout, "privacy", None), "speed_offset_kmh", -100.0), -500.0, 500.0, -100.0),
+            1,
+        ),
     }
 
 
@@ -2153,11 +2213,12 @@ def overlay_preview_image(trip_id: str, workspace: Path, query: dict[str, str]) 
             pass
     remote = open_trip(trip_id, workspace)
     sample_ms = max(0, int(float(query.get("t") or 0) * 1000))
-    values, speed_kmh = sample_trip_values(remote, workspace, sample_ms)
+    speed_offset_kmh = resolve_speed_offset_kmh(layout)
+    values, speed_kmh = sample_trip_values(remote, workspace, sample_ms, speed_offset_kmh=speed_offset_kmh)
     width, height = layout.width, layout.height
 
     background, _note = preview_background(trip_id, workspace, remote, sample_ms, width, height)
-    map_points = preview_track_points(remote, workspace)
+    map_points = apply_speed_offset_to_track_points(preview_track_points(remote, workspace), speed_offset_kmh)
     overlay = render_overlay_frame(layout, values, speed_kmh, width, height, sample_ms, map_points)
     composed = Image.alpha_composite(background.convert("RGBA"), overlay)
     # 浏览器覆盖层里已经有参考稿那张地图。再叠 PIL 地图，预览上会有两块。
@@ -2174,6 +2235,7 @@ def overlay_preview_live(
     *,
     include_background: bool = True,
     include_html: bool = True,
+    map_window_only: bool = False,
 ) -> dict[str, Any]:
     """编辑器预览：底图和覆盖层 HTML 分开给。拖动时只改 HTML 里的位置，不用重拍整页。"""
     assert Image is not None
@@ -2187,8 +2249,11 @@ def overlay_preview_live(
     remote = open_trip(trip_id, workspace)
     sample_ms = max(0, int(float(query.get("t") or 0) * 1000))
     width, height = layout.width, layout.height
-    src_w, src_h = detect_trip_source_size(trip_id, workspace, remote)
-    exp_w, exp_h = resolve_export_dimensions(src_w, src_h, layout)
+    if map_window_only:
+        src_w, src_h, exp_w, exp_h = width, height, width, height
+    else:
+        src_w, src_h = detect_trip_source_size(trip_id, workspace, remote)
+        exp_w, exp_h = resolve_export_dimensions(src_w, src_h, layout)
     html = ""
     # 播放时只要新的一帧底图。重做覆盖层会再扫一遍字幕和地图，iframe 也会整页重载。
     map_points: list[TrackPoint] = []
@@ -2202,11 +2267,15 @@ def overlay_preview_live(
     priv_cfg = getattr(layout, "privacy", None) or PrivacyLayout()
     priv_enabled = bool(getattr(priv_cfg, "enabled", True))
     priv_meters = max(0, min(10000, int(getattr(priv_cfg, "trim_meters", 1000) or 1000)))
-    full_dur_ms = preview_duration_ms(trip_id, workspace) if include_html else 0
+    speed_offset_kmh = resolve_speed_offset_kmh(layout)
+    full_dur_ms = preview_duration_ms(trip_id, workspace) if (include_html and not map_window_only) else 0
     priv_start_ms = 0
     priv_end_ms = full_dur_ms
     if include_html:
         raw_map_points = preview_track_points(remote, workspace)
+        if map_window_only and raw_map_points:
+            full_dur_ms = raw_map_points[-1].elapsed_ms + 1000
+            priv_end_ms = full_dur_ms
         if priv_enabled and priv_meters > 0 and len(raw_map_points) >= 2:
             priv_start_ms, priv_end_ms, map_points = compute_privacy_trim_bounds(
                 raw_map_points,
@@ -2218,25 +2287,15 @@ def overlay_preview_live(
                 sample_ms = max(priv_start_ms, min(priv_end_ms, sample_ms))
         else:
             map_points = raw_map_points
-        values, speed_kmh = sample_trip_values(remote, workspace, sample_ms)
-        map_radars = preview_track_radars(remote, workspace)
-        html = overlay_html_for(
-            layout,
-            values,
-            speed_kmh,
-            width,
-            height,
-            sample_ms,
-            map_points,
-            font_base="/assets/fonts/",
-            track_radars=map_radars,
-        ) or ""
+        map_points = apply_speed_offset_to_track_points(map_points, speed_offset_kmh)
         try:
             import overlay_widgets
             map_center = point_at(map_points, sample_ms) if len(map_points) >= 2 else None
             is_split = getattr(layout, "layout_mode", "float") == "split"
             split_pct = max(25, min(65, int(getattr(layout, "split_video_percent", 38) or 38)))
             if is_split:
+                mw = float(width)
+                mh = max(120.0, float(height) * (100.0 - split_pct) / 100.0)
                 map_aspect = float(width) / max(1.0, float(height) * (100.0 - split_pct) / 100.0)
             else:
                 mw, mh, _ = overlay_widgets.map_card_size(layout.map_layer.size_percent, width, height)
@@ -2250,6 +2309,70 @@ def overlay_preview_live(
                 if (cycle_on and layout.map_layer.scale_meters > 0)
                 else (1.0 if layout.map_layer.scale_meters <= 0 else 0.0)
             )
+            if map_window_only:
+                # 仅刷新局部/全貌底图瓦片与墨卡托窗口边界，跳过整本 SRT/轨迹重复序列化，实现倍速播放与缩放零卡顿
+                # 预览底图四周多留 1.50x 墨卡托缓冲区（Overscan），彻底杜绝平移/缩放期间边缘露出黑边
+                overscan = 1.50 if (layout.map_layer.scale_meters > 0 and ov_blend < 0.98) else 1.0
+                eff_scale = float(layout.map_layer.scale_meters or 0) * overscan
+                req_w = min(960, max(96, int(round(mw * (1.25 if overscan > 1.0 else 1.0)))))
+                req_h = min(960, max(96, int(round(mh * (1.25 if overscan > 1.0 else 1.0)))))
+                frame = overlay_widgets.route_mercator_frame(
+                    map_points,
+                    scale_meters=eff_scale,
+                    center=map_center,
+                    aspect=map_aspect,
+                    overview_blend=ov_blend,
+                )
+                full_frame = overlay_widgets.route_mercator_frame(
+                    map_points,
+                    scale_meters=0,
+                    center=None,
+                    aspect=map_aspect,
+                    overview_blend=1.0,
+                )
+                if frame is not None:
+                    _, ox, oy, sx, sy = frame
+                    fox, foy, fsx, fsy = (full_frame[1], full_frame[2], full_frame[3], full_frame[4]) if full_frame else (ox, oy, sx, sy)
+                    map_frame_payload = {
+                        "originX": ox,
+                        "originY": oy,
+                        "spanX": sx,
+                        "spanY": sy,
+                        "fullOriginX": fox,
+                        "fullOriginY": foy,
+                        "fullSpanX": fsx,
+                        "fullSpanY": fsy,
+                        "aspect": map_aspect,
+                        "overviewBlend": round(ov_blend, 4),
+                        "scaleMeters": float(layout.map_layer.scale_meters or 0),
+                    }
+                map_img = amap_card_data_url(
+                    map_points,
+                    req_w,
+                    req_h,
+                    layout.map_layer.map_style or "satellite",
+                    scale_meters=eff_scale,
+                    center=map_center,
+                    aspect=map_aspect,
+                    overview_blend=ov_blend,
+                )
+                return {
+                    "mapImage": map_img,
+                    "mapFrame": map_frame_payload,
+                }
+            values, speed_kmh = sample_trip_values(remote, workspace, sample_ms, speed_offset_kmh=speed_offset_kmh)
+            map_radars = preview_track_radars(remote, workspace)
+            html = overlay_html_for(
+                layout,
+                values,
+                speed_kmh,
+                width,
+                height,
+                sample_ms,
+                map_points,
+                font_base="/assets/fonts/",
+                track_radars=map_radars,
+            ) or ""
             frame = overlay_widgets.route_mercator_frame(
                 map_points,
                 scale_meters=layout.map_layer.scale_meters,
@@ -2302,6 +2425,8 @@ def overlay_preview_live(
         _, total_distance_m, _ = track_progress(map_points, sample_ms)
         for cue in trip_cues(remote, workspace):
             fv = cue_field_values(cue.text)
+            raw_cue_spd = extract_speed_kmh(fv.get("speed"))
+            offset_cue_spd = apply_speed_offset_kmh(raw_cue_spd, speed_offset_kmh)
             cues_payload.append({
                 "startMs": cue.start_ms,
                 "endMs": cue.end_ms,
@@ -2312,7 +2437,7 @@ def overlay_preview_live(
                 "focus": fv.get("focus") or "",
                 "videoMode": fv.get("videoMode") or "",
                 "waitTime": fv.get("waitTime") or "",
-                "speed": fv.get("speed") or "",
+                "speed": f"{offset_cue_spd:.1f} km/h" if fv.get("speed") else "",
             })
     payload: dict[str, Any] = {
         "width": width,
@@ -2327,9 +2452,10 @@ def overlay_preview_live(
         "privacyEndMs": priv_end_ms,
         "privacyEnabled": priv_enabled,
         "privacyTrimMeters": priv_meters,
+        "speedOffsetKmh": speed_offset_kmh,
         "html": html,
         # 播放时表盘按这条曲线走，不再停在预览那一帧。点就是字幕里的全部速度。
-        "speeds": [[ms, speed] for ms, speed in speed_series(remote, workspace)],
+        "speeds": [[ms, round(apply_speed_offset_kmh(speed, speed_offset_kmh), 2)] for ms, speed in speed_series(remote, workspace)],
         "mapFrame": map_frame_payload,
         "trackPoints": track_payload,
         "radars": radars_payload,
@@ -2417,10 +2543,29 @@ def join_track_segments(groups: list[list[TrackPoint]]) -> list[TrackPoint]:
     return ordered
 
 
+_PREVIEW_TRACK_POINTS_CACHE: dict[tuple[Any, ...], list[TrackPoint]] = {}
+_PREVIEW_TRACK_RADARS_CACHE: dict[tuple[Any, ...], list[TrackRadar]] = {}
+_TRIP_CUES_MEM_CACHE: dict[tuple[Any, ...], list[Cue]] = {}
+
+
 def preview_track_points(remote: RemoteTrip, workspace: Path) -> list[TrackPoint]:
     """预览用轨迹：从已缓存的 SRT/轨迹里取，够画整条路线即可。"""
     if is_demo_trip(remote.id):
         return demo_track_points()
+    stamps: list[tuple[str, int, int]] = []
+    for segment in remote.segments:
+        path = segment.track_path or segment.subtitle_path
+        if not path:
+            continue
+        local = resolve_local_sidecar(remote, workspace, path)
+        if local is not None and local.is_file():
+            st = local.stat()
+            stamps.append((str(local), st.st_mtime_ns, st.st_size))
+    cache_key = (remote.id, tuple(stamps))
+    with MEM_CACHE_LOCK:
+        cached = _PREVIEW_TRACK_POINTS_CACHE.get(cache_key)
+        if cached is not None:
+            return list(cached)
     groups: list[list[TrackPoint]] = []
     for segment in remote.segments:
         path = segment.track_path or segment.subtitle_path
@@ -2467,7 +2612,12 @@ def preview_track_points(remote: RemoteTrip, workspace: Path) -> list[TrackPoint
                 elapsed = cue.start_ms
         if group:
             groups.append(group)
-    return join_track_segments(groups)
+    joined = join_track_segments(groups)
+    with MEM_CACHE_LOCK:
+        if len(_PREVIEW_TRACK_POINTS_CACHE) > 8:
+            _PREVIEW_TRACK_POINTS_CACHE.clear()
+        _PREVIEW_TRACK_POINTS_CACHE[cache_key] = list(joined)
+    return joined
 
 
 def preview_track_radars(remote: RemoteTrip, workspace: Path) -> list[TrackRadar]:
@@ -2527,6 +2677,20 @@ _SPEED_SERIES_CACHE: dict[tuple[Any, ...], list[tuple[int, float]]] = {}
 
 def trip_cues(remote: RemoteTrip, workspace: Path) -> list[Cue]:
     """行程时间轴上的全部字幕。后一段按片长接在前一段后面，一条不丢。"""
+    stamps: list[tuple[str, int, int]] = []
+    for segment in remote.segments:
+        subtitle_path = segment.subtitle_path
+        if not subtitle_path:
+            continue
+        local = resolve_local_sidecar(remote, workspace, subtitle_path)
+        if local is not None and local.is_file():
+            st = local.stat()
+            stamps.append((str(local), st.st_mtime_ns, st.st_size))
+    cache_key = (remote.id, tuple(stamps))
+    with MEM_CACHE_LOCK:
+        cached = _TRIP_CUES_MEM_CACHE.get(cache_key)
+        if cached is not None:
+            return list(cached)
     cues: list[Cue] = []
     for segment in remote.segments:
         subtitle_path = segment.subtitle_path
@@ -2539,6 +2703,10 @@ def trip_cues(remote: RemoteTrip, workspace: Path) -> list[Cue]:
         offset_ms = segment_offset_ms(remote, segment, stem, workspace)
         cues.extend(parse_srt(local, offset_ms))
     cues.sort(key=lambda cue: cue.start_ms)
+    with MEM_CACHE_LOCK:
+        if len(_TRIP_CUES_MEM_CACHE) > 8:
+            _TRIP_CUES_MEM_CACHE.clear()
+        _TRIP_CUES_MEM_CACHE[cache_key] = list(cues)
     return cues
 
 
@@ -2602,22 +2770,29 @@ def sample_trip_values(
     remote: RemoteTrip,
     workspace: Path,
     sample_ms: int,
+    *,
+    speed_offset_kmh: float = 0.0,
 ) -> tuple[dict[str, str], float]:
     """按时间取出该时刻的字段值和速度；没有字幕时给一组可预览的示例值。"""
     if is_demo_trip(remote.id):
-        return demo_trip_values(sample_ms)
+        demo_vals, demo_spd = demo_trip_values(sample_ms)
+        adj_demo_spd = apply_speed_offset_kmh(demo_spd, speed_offset_kmh)
+        demo_vals = dict(demo_vals)
+        demo_vals["speed"] = f"{adj_demo_spd:.1f} km/h"
+        return demo_vals, adj_demo_spd
     cues = trip_cues(remote, workspace)
     if not cues:
+        fallback_spd = apply_speed_offset_kmh(42.0, speed_offset_kmh)
         return {
             "time": datetime.fromtimestamp(max(1, remote.started_at_ms / 1000)).strftime("%Y-%m-%d %H:%M:%S"),
-            "speed": "42.0 km/h",
+            "speed": f"{fallback_spd:.1f} km/h",
             "satellites": "GPS卫星：18",
             "coordinates": "30.30408,120.06519",
             "address": "示例路段",
             "focus": "对焦 0.07D(14m) · MF",
             "videoMode": "4K 3840x2160 · 30fps",
             "waitTime": "静止等待：00:00:00",
-        }, 42.0
+        }, fallback_spd
     chosen = next((cue for cue in cues if cue.end_ms > sample_ms), cues[-1])
     values = cue_field_values(chosen.text)
     # 字幕大约一秒一条。整秒拿着开头那个数，加速时表盘会比车慢一拍。
@@ -2627,7 +2802,8 @@ def sample_trip_values(
         speed_kmh = extract_speed_kmh(values.get("speed"))
     else:
         speed_kmh = interpolated
-        values["speed"] = f"{speed_kmh:.1f} km/h"
+    speed_kmh = apply_speed_offset_kmh(speed_kmh, speed_offset_kmh)
+    values["speed"] = f"{speed_kmh:.1f} km/h"
     return values, speed_kmh
 
 
@@ -4018,12 +4194,14 @@ def compose_studio_overlay_video(
         video_dst_w = width
         video_dst_h = height
     raw_track_points = read_track_points(pulled)
-    start_ms, end_ms, track_points = resolve_export_range_and_track(
+    speed_offset_kmh = resolve_speed_offset_kmh(layout, options)
+    start_ms, end_ms, unoffset_track_points = resolve_export_range_and_track(
         pulled.total_duration_ms,
         options,
         raw_track_points,
         layout,
     )
+    track_points = apply_speed_offset_to_track_points(unoffset_track_points, speed_offset_kmh)
     source_duration_ms = max(1, end_ms - start_ms)
     raw_opt_speed = options.playback_speed if options.playback_speed is not None else getattr(layout, "playback_speed", 1.0)
     speed = normalized_speed(raw_opt_speed)
@@ -4032,6 +4210,7 @@ def compose_studio_overlay_video(
     fps = normalized_fps(raw_opt_fps)
     track_radars = read_track_radars(pulled)
     cues = layout_cues(pulled)
+    route_vector_labels = extract_route_vector_labels(cues, track_points)
     list_file = pulled.root / "concat.txt"
     list_file.write_text("".join(f"file {shlex.quote(str(video))}\n" for video in pulled.videos), encoding="utf-8")
     output = pulled.root / f"{safe_name(pulled.trip)}-mac-share-{datetime.now().strftime('%Y%m%d-%H%M%S')}.mp4"
@@ -4040,9 +4219,9 @@ def compose_studio_overlay_video(
     # 覆盖层采用 5 fps 平滑刷新（每 200ms 一帧），让卫星底图、路线平移与速度表动画连贯顺滑且车标永久居中
     atlas_fps = 5.0
     total_atlas_frames = max(1, math.ceil(output_duration_ms * atlas_fps / 1000.0))
-    # 当导出分辨率大于 1080p（如 4K 2160x3840 竖屏）时，Atlas 覆盖层按最高 1080p 基准渲染，
-    # 再由 Metal GPU 着色器按比例无损叠加到目标画面，使单帧 Atlas 体积降低 75%（6.4MB vs 25.6MB）
-    atlas_scale = 2 if min(width, height) >= 2160 else 1
+    # Atlas 覆盖层统一按目标导出分辨率 1:1 原生渲染（4K 下直接渲染 2160x3840 / 3840x2160），
+    # 避免 1080p 二次放大导致高德卫星底图、地图注记文字、里程胶囊与路线边缘模糊
+    atlas_scale = 1
     atlas_canvas_w = even(max(320, width // atlas_scale))
     atlas_canvas_h = even(max(240, height // atlas_scale))
     renderer = overlay_atlas.NativeStudioAtlasRenderer(layout, atlas_canvas_w, atlas_canvas_h)
@@ -4106,8 +4285,14 @@ def compose_studio_overlay_video(
             worker_local.renderer = local_renderer
         out_ms = int(round(frame_idx * 1000.0 / atlas_fps))
         src_ms = min(end_ms - 1, int(round(start_ms + out_ms * speed)))
-        values = cue_values_at(cues, src_ms) or {}
-        speed_kmh = extract_speed_kmh(values.get("speed")) or track_speed_at(track_points, src_ms)
+        values = dict(cue_values_at(cues, src_ms) or {})
+        raw_speed_kmh = (
+            extract_speed_kmh(values.get("speed"))
+            if values.get("speed")
+            else track_speed_at(unoffset_track_points, src_ms)
+        )
+        speed_kmh = apply_speed_offset_kmh(raw_speed_kmh, speed_offset_kmh)
+        values["speed"] = f"{speed_kmh:.1f} km/h"
         travelled, total_dist, ratio = track_progress(track_points, src_ms)
         telemetry = {
             "duration": hud_duration_text(max(0, src_ms - start_ms)),
@@ -4128,12 +4313,18 @@ def compose_studio_overlay_video(
             point_at_fn=point_at,
             radars=track_radars,
             output_elapsed_sec=out_ms / 1000.0,
+            route_labels=route_vector_labels,
         )
         return atlas_img.tobytes()
 
     metal_bin = ensure_metal_compositor_bin()
     b_str = bitrate(width, height, fps)
-    bitrate_bps = int(float(b_str[:-1]) * 1_000_000) if b_str.endswith("M") else 14_000_000
+    if b_str.endswith(("M", "m")):
+        bitrate_bps = int(float(b_str[:-1]) * 1_000_000)
+    elif b_str.isdigit():
+        bitrate_bps = int(b_str)
+    else:
+        bitrate_bps = 24_000_000
     stab_enabled = (
         bool(options.stabilize)
         if options.stabilize is not None
@@ -4198,6 +4389,7 @@ def compose_studio_overlay_video(
                 distance_text=dist_label,
                 duration_text=dur_label,
                 radars=track_radars,
+                route_labels=route_vector_labels,
             )
             slide_path = pulled.root / f"intro_map_{s_style}.png"
             img.save(slide_path, format="PNG")
@@ -4678,6 +4870,100 @@ def cue_field_values(text: str) -> dict[str, str]:
     return values
 
 
+_ROUTE_ADMIN_PREFIX_RE = re.compile(
+    r"^(?:中国)?(?:[\u4e00-\u9fa5]{2,7}(?:省|自治区|特别行政区))?"
+    r"(?:[\u4e00-\u9fa5]{2,7}(?:市|自治州))?"
+    r"(?:[\u4e00-\u9fa5]{2,7}(?:区|县|县级市))?"
+)
+_ROUTE_ROAD_EXTRACT_RE = re.compile(
+    r"([\u4e00-\u9fa5]{2,7}(?:高架路|快速路|高速公路|高速|大道|大街|隧道|立交|大桥|路|街|线|桥))"
+)
+
+
+def clean_route_label_text(raw_address: str) -> str:
+    """从 SRT 原始地址中剥离省市区前缀与门牌号后缀，提取精炼的道路或地标名称（2~8 字）。"""
+    text = str(raw_address or "").strip()
+    if not text:
+        return ""
+    text = _ROUTE_ADMIN_PREFIX_RE.sub("", text).strip()
+    text = re.sub(r"\([^)]*\)|（[^）]*）", "", text)
+    text = re.sub(r"\d+号(?:楼|院|附\d+)?.*$", "", text)
+    text = re.sub(r"(?:[一二三四五六七八九十\d]+标)?项目部.*$", "", text)
+    text = re.sub(r"(?:辅路|桥下|入口|出口|方向|附近)$", "", text).strip()
+    if len(text) > 7:
+        # 若以「东西大道良渚文化村」之类道路+地标组合出现，优先保留后半段知名地标
+        road_m = re.match(r"^([\u4e00-\u9fa5]{2,5}(?:大道|高架路|高速|路|街|线))([\u4e00-\u9fa5]{3,6})$", text)
+        if road_m:
+            return road_m.group(2)
+        match = _ROUTE_ROAD_EXTRACT_RE.search(text)
+        if match:
+            candidate = match.group(1)
+            # 过滤如「政集团良睦路」这类带单位前缀的匹配，取末尾纯路名
+            for bad_prefix in ("政集团", "集团", "公司", "项目部"):
+                if candidate.startswith(bad_prefix) and len(candidate) > len(bad_prefix) + 1:
+                    candidate = candidate[len(bad_prefix) :]
+            if 2 <= len(candidate) <= 8:
+                return candidate
+        text = text[:8]
+    return text if 2 <= len(text) <= 8 else ""
+
+
+def extract_route_vector_labels(
+    cues: list[Cue],
+    track_points: list[TrackPoint],
+) -> list[dict[str, Any]]:
+    """从行程 SRT 字幕与 GPS 轨迹中提取沿线关键道路与地标节点，供 4K 原生矢量地图标签渲染。"""
+    if not cues or len(track_points) < 2:
+        return []
+    import overlay_widgets
+
+    segments: list[tuple[str, int, int]] = []
+    for cue in cues:
+        vals = cue_field_values(cue.text)
+        raw_addr = vals.get("address", "")
+        clean_name = clean_route_label_text(raw_addr)
+        if not clean_name:
+            continue
+        if segments and segments[-1][0] == clean_name:
+            prev_name, s_ms, _ = segments[-1]
+            segments[-1] = (prev_name, s_ms, cue.end_ms)
+        else:
+            segments.append((clean_name, cue.start_ms, cue.end_ms))
+
+    labels: list[dict[str, Any]] = []
+    seen_names_coords: list[tuple[str, float, float]] = []
+    for name, s_ms, e_ms in segments:
+        mid_ms = (s_ms + e_ms) // 2
+        pt = point_at(track_points, mid_ms)
+        mx, my = overlay_widgets.amap_mercator(pt.latitude, pt.longitude)
+        # 同一路名若在相近位置重复出现则跳过，避免密集重叠
+        too_close = False
+        for prev_name, pmx, pmy in seen_names_coords:
+            dist_merc = math.hypot(mx - pmx, my - pmy)
+            if prev_name == name and dist_merc < 1.8e-4:
+                too_close = True
+                break
+            if dist_merc < 2.2e-5:
+                too_close = True
+                break
+        if too_close:
+            continue
+        seen_names_coords.append((name, mx, my))
+        labels.append(
+            {
+                "label": name,
+                "latitude": pt.latitude,
+                "longitude": pt.longitude,
+                "mx": mx,
+                "my": my,
+                "start_ms": s_ms,
+                "end_ms": e_ms,
+                "elapsed_ms": mid_ms,
+            }
+        )
+    return labels
+
+
 def overlay_html_for(
     layout: TripLayout,
     values: dict[str, str],
@@ -4761,6 +5047,7 @@ def overlay_html_for(
             sx,
             sy,
             compact_radar=(overview_blend >= 0.45 or map_scale <= 0 or map_scale >= 3000),
+            is_split=is_split,
         )
     map_image = amap_card_data_url(
         track_points,
@@ -6244,8 +6531,11 @@ def _amap_tile_disk_path(zoom: int, x: int, y: int, style: str, ext: str = "bin"
 def is_amap_tile_cached_on_disk(zoom: int, x: int, y: int, style: str = "satellite") -> bool:
     """检查指定缩放层级与坐标的高德合成瓦片是否已离线缓存到本机磁盘。"""
     style_key = "road" if str(style) == "road" else "satellite"
-    composed_path = _amap_tile_disk_path(zoom, x, y, f"composed_{style_key}", "jpg")
-    return composed_path.is_file() and composed_path.stat().st_size > 128
+    for prefix in (f"composed_clean_{style_key}", f"composed_hd_{style_key}", f"composed_{style_key}"):
+        composed_path = _amap_tile_disk_path(zoom, x, y, prefix, "jpg")
+        if composed_path.is_file() and composed_path.stat().st_size > 128:
+            return True
+    return False
 
 
 def collect_trip_amap_tiles(
@@ -6493,121 +6783,232 @@ _SAT_ROAD_ALPHA_LUT = [int(round(i * 0.45)) for i in range(256)]
 
 
 _SAT_LABEL_INV_LUT = [
-    255 if i <= 148 else (12 if i >= 228 else int(round(255 - (i - 148) / 80.0 * (255 - 12))))
+    255 if i <= 175 else (12 if i >= 225 else int(round(255 - (i - 175) / 50.0 * (255 - 12))))
     for i in range(256)
 ]
 _SAT_LABEL_KEEP_LUT = [
-    12 if i <= 50 else (255 if i >= 165 else int(round(12 + (i - 50) / 115.0 * (255 - 12))))
+    12 if i <= 75 else (255 if i >= 170 else int(round(12 + (i - 75) / 95.0 * (255 - 12))))
     for i in range(256)
 ]
-_SAT_LABEL_ALPHA_LUT = [min(255, int(round(i * 1.26))) for i in range(256)]
+_SAT_LABEL_ALPHA_LUT = [min(255, int(round(i * 1.28))) for i in range(256)]
+_AMAP_COMPOSED_TILE_PX = 512
+
+# SDF（有符号距离场）等高线重建 LUT：256x256 连续字芯场 -> BICUBIC 2x 连续场超采样 -> Sigmoid 等高线刀刻切割
+_SAT_SDF_CORE_INV_LUT = [
+    255 if i <= 168 else (0 if i >= 232 else int(round(255.0 * (232.0 - i) / 64.0)))
+    for i in range(256)
+]
+_SAT_SDF_CORE_KEEP_LUT = [
+    0 if i <= 75 else (255 if i >= 165 else int(round(255.0 * (i - 75.0) / 90.0)))
+    for i in range(256)
+]
+_SAT_SDF_ALPHA_GATE_LUT = [
+    0 if i < 85 else (255 if i >= 195 else int(round(255.0 * (i - 85.0) / 110.0)))
+    for i in range(256)
+]
+_SAT_SDF_SIGMOID_LUT = [
+    max(0, min(255, int(round(255.0 / (1.0 + math.exp(-(i - 116.0) / 11.5))))))
+    for i in range(256)
+]
+_SAT_SDF_STROKE_ALPHA_LUT = [min(255, int(round(i * 1.32))) for i in range(256)]
 
 
 @lru_cache(maxsize=128)
 def _decode_amap_satellite_label_rgba(zoom: int, x: int, y: int) -> Any:
-    """拉取高德 ltype=4 纯文字注记瓦片并自适应转换为高对比「纯白字芯 + 深黑描边」RGBA 图层。
+    """拉取高德 ltype=4 纯文字注记瓦片，使用 SDF（有符号距离场）等高线重建算法生成 512x512 无损「刀刻白字 + 形态学深黑描边」RGBA 图层。
 
-    高德注记层中：
-    - 普通 POI / 道路名采用「浅灰字芯(#939698) + 白描边(#ffffff)」，在卫星图上白边会糊成白块导致字芯看不清；
-    - 村落名(如龚家斗)本身已是「亮色字芯 + 黑描边(L<45)」。
-    通过局部最小亮度检测自动区分两类标签，统一输出「纯白字芯 + 深黑描边」。
+    核心原理：
+    1. 区分最外圈半透明环(20<=alpha<=175)亮度，精准分离白边字（高速/路名/POI）与黑边字（村落名），提取 256x256 连续字芯场；
+    2. 对连续字芯场做 2x BICUBIC 超采样至 512x512，再经 Sigmoid S 曲线等高线阈值切割出锋利无毛刺的纯白字芯；
+    3. 由纯白字芯经 MaxFilter(5) 形态学膨胀 + GaussianBlur(0.85) 生成均匀丝滑的纯黑外描边包络，持久化为无损 PNG，全程 0 次进入有损 JPEG。
     """
     assert Image is not None
+    sdf_disk = _amap_tile_disk_path(zoom, x, y, "composed_sdf_label", "png")
+    try:
+        if sdf_disk.is_file() and sdf_disk.stat().st_size > 64:
+            with Image.open(sdf_disk) as cached_png:
+                if cached_png.size == (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX):
+                    return cached_png.convert("RGBA")
+    except Exception:  # noqa: BLE001
+        pass
+
     label_raw = _download_amap_tile(zoom, x, y, "satellite_text")
     with Image.open(io.BytesIO(label_raw)) as l_handle:
         label_rgba = l_handle.convert("RGBA")
     _, _, _, la = label_rgba.split()
     lum = label_rgba.convert("L")
-    inv_c = lum.point(_SAT_LABEL_INV_LUT)
+    core_inv = lum.point(_SAT_SDF_CORE_INV_LUT)
     if ImageFilter is not None:
         white_bg = Image.new("L", label_rgba.size, 255)
-        opaque_mask = la.point([255 if i > 40 else 0 for i in range(256)])
-        lum_opaque = Image.composite(lum, white_bg, opaque_mask)
-        local_min = lum_opaque.filter(ImageFilter.MinFilter(7))
-        dark_halo_mask = local_min.point([255 if i < 45 else 0 for i in range(256)])
-        keep_c = lum.point(_SAT_LABEL_KEEP_LUT)
-        final_c = Image.composite(keep_c, inv_c, dark_halo_mask)
+        edge_mask = la.point([255 if 20 <= i <= 175 else 0 for i in range(256)])
+        edge_lum = Image.composite(lum, white_bg, edge_mask)
+        local_min = edge_lum.filter(ImageFilter.MinFilter(9))
+        dark_halo_mask = local_min.point([255 if i < 75 else 0 for i in range(256)])
+        core_keep = lum.point(_SAT_SDF_CORE_KEEP_LUT)
+        raw_core = Image.composite(core_keep, core_inv, dark_halo_mask)
     else:
-        final_c = inv_c
-    return Image.merge("RGBA", (final_c, final_c, final_c, la.point(_SAT_LABEL_ALPHA_LUT)))
+        raw_core = core_inv
+
+    alpha_gate = la.point(_SAT_SDF_ALPHA_GATE_LUT)
+    if ImageChops is not None:
+        core_256 = ImageChops.multiply(raw_core, alpha_gate)
+    else:
+        core_256 = Image.composite(raw_core, Image.new("L", raw_core.size, 0), alpha_gate)
+
+    # 连续距离场 2x 超采样 + Sigmoid 等高线刀刻重建
+    core_512_smooth = core_256.resize((_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX), Image.BICUBIC)
+    sharp_core_512 = core_512_smooth.point(_SAT_SDF_SIGMOID_LUT)
+
+    if ImageFilter is not None:
+        dilated_512 = sharp_core_512.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(0.85))
+        stroke_alpha_512 = dilated_512.point(_SAT_SDF_STROKE_ALPHA_LUT)
+    else:
+        stroke_alpha_512 = sharp_core_512
+
+    stroke_layer = Image.new("RGBA", (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX), (10, 14, 20, 0))
+    stroke_layer.putalpha(stroke_alpha_512)
+    fill_layer = Image.new("RGBA", (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX), (255, 255, 255, 0))
+    fill_layer.putalpha(sharp_core_512)
+    label_512 = Image.alpha_composite(stroke_layer, fill_layer)
+    try:
+        sdf_disk.parent.mkdir(parents=True, exist_ok=True)
+        tmp_png = sdf_disk.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        label_512.save(tmp_png, format="PNG", compress_level=1)
+        tmp_png.replace(sdf_disk)
+    except Exception:  # noqa: BLE001
+        pass
+    return label_512
+
+
+@lru_cache(maxsize=256)
+def _decode_amap_satellite_base_rgb(zoom: int, x: int, y: int) -> Any:
+    """拉取并合成 512x512 (@2x Retina) 纯净卫星底图（z+1 的 2x2 原生高清卫星影像 + ltype=2 半透明路网，不含文字注记）。
+
+    将底图与文字注记分层解耦存储，避免文字进入 JPEG 8x8 DCT 块产生蚊式噪点或在底图裁切时经历二次重采样。
+    """
+    assert Image is not None
+    clean_disk = _amap_tile_disk_path(zoom, x, y, "composed_clean_satellite", "jpg")
+    try:
+        if clean_disk.is_file() and clean_disk.stat().st_size > 128:
+            with Image.open(clean_disk) as cached_img:
+                if cached_img.size == (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX):
+                    return cached_img.convert("RGB")
+    except Exception:  # noqa: BLE001
+        pass
+
+    f_road = _AMAP_SUBTILE_FETCH_POOL.submit(_download_amap_tile, zoom, x, y, "satellite_roads")
+    base_rgba: Any | None = None
+    if zoom < 18:
+        sub_limit = 2 ** (zoom + 1)
+        sub_futs = [
+            (
+                dx,
+                dy,
+                _AMAP_SUBTILE_FETCH_POOL.submit(
+                    _download_amap_tile,
+                    zoom + 1,
+                    (x * 2 + dx) % sub_limit,
+                    y * 2 + dy,
+                    "satellite",
+                ),
+            )
+            for dx in (0, 1)
+            for dy in (0, 1)
+            if 0 <= y * 2 + dy < sub_limit
+        ]
+        quad = Image.new("RGBA", (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX), (28, 34, 42, 255))
+        quad_ok = 0
+        for dx, dy, sfut in sub_futs:
+            try:
+                sraw = sfut.result(timeout=15)
+                with Image.open(io.BytesIO(sraw)) as sh:
+                    quad.paste(sh.convert("RGBA"), (dx * 256, dy * 256))
+                quad_ok += 1
+            except Exception:  # noqa: BLE001
+                pass
+        if quad_ok == 4:
+            base_rgba = quad
+    if base_rgba is None:
+        raw = _download_amap_tile(zoom, x, y, "satellite")
+        with Image.open(io.BytesIO(raw)) as handle:
+            base_rgba = handle.convert("RGBA").resize(
+                (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX),
+                Image.LANCZOS,
+            )
+
+    br, bg, bb, ba = base_rgba.split()
+    base_rgba = Image.merge(
+        "RGBA",
+        (
+            br.point(_SAT_BASE_R_LUT),
+            bg.point(_SAT_BASE_G_LUT),
+            bb.point(_SAT_BASE_B_LUT),
+            ba,
+        ),
+    )
+    try:
+        road_raw = f_road.result(timeout=15)
+        with Image.open(io.BytesIO(road_raw)) as r_handle:
+            road_rgba = r_handle.convert("RGBA").resize(
+                (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX),
+                Image.BICUBIC,
+            )
+        rr, rg, rb, ra = road_rgba.split()
+        road_rgba = Image.merge("RGBA", (rr, rg, rb, ra.point(_SAT_ROAD_ALPHA_LUT)))
+        base_rgba.alpha_composite(road_rgba)
+    except Exception:  # noqa: BLE001
+        pass
+
+    out_rgb = base_rgba.convert("RGB")
+    try:
+        clean_disk.parent.mkdir(parents=True, exist_ok=True)
+        tmp_jpg = clean_disk.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        out_rgb.save(tmp_jpg, format="JPEG", quality=96, subsampling=0)
+        tmp_jpg.replace(clean_disk)
+    except Exception:  # noqa: BLE001
+        pass
+    return out_rgb
 
 
 @lru_cache(maxsize=256)
 def _decode_amap_tile_rgb(zoom: int, x: int, y: int, style: str = "road") -> Any:
-    """拉取并解码单块高德瓦片为 RGB Image 对象并持久化缓存；卫星模式分层叠加半透明路网(ltype=2)与白字黑边高对比地名注记(ltype=4)。"""
+    """拉取并合成 512x512 (@2x Retina) 超清高德瓦片；兼容单瓦片直接调用与离线瓦片预取。"""
     assert Image is not None
     style_key = "road" if str(style) == "road" else "satellite"
-    composed_disk = _amap_tile_disk_path(zoom, x, y, f"composed_{style_key}", "jpg")
-    try:
-        if composed_disk.is_file() and composed_disk.stat().st_size > 128:
-            with Image.open(composed_disk) as cached_img:
-                return cached_img.convert("RGB")
-    except Exception:  # noqa: BLE001
-        pass
-    if style_key == "satellite":
-        # 使用独立的子瓦片线程池 _AMAP_SUBTILE_FETCH_POOL 并发拉取卫星底图、半透明路网与文字注记，
-        # 避免在外层 _AMAP_TILE_FETCH_POOL 满载时发生嵌套 submit 线程饥饿死锁
-        f_sat = _AMAP_SUBTILE_FETCH_POOL.submit(_download_amap_tile, zoom, x, y, "satellite")
-        f_road = _AMAP_SUBTILE_FETCH_POOL.submit(_download_amap_tile, zoom, x, y, "satellite_roads")
-        f_text = _AMAP_SUBTILE_FETCH_POOL.submit(_download_amap_tile, zoom, x, y, "satellite_text")
-        raw = f_sat.result(timeout=18)
-    else:
-        raw = _download_amap_tile(zoom, x, y, style_key)
-    with Image.open(io.BytesIO(raw)) as handle:
-        if handle.mode == "P" and "transparency" in handle.info:
-            base_rgba = handle.convert("RGBA")
-        elif style_key == "satellite":
-            base_rgba = handle.convert("RGBA")
-        else:
-            out_road = handle.convert("RGB")
-            try:
-                composed_disk.parent.mkdir(parents=True, exist_ok=True)
-                tmp_jpg = composed_disk.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
-                out_road.save(tmp_jpg, format="JPEG", quality=95, subsampling=0)
-                tmp_jpg.replace(composed_disk)
-            except Exception:  # noqa: BLE001
-                pass
-            return out_road
-    if style_key == "satellite":
-        # 1. 只压暗底层纯卫星影像（style=6），不压暗上层地名文字
-        br, bg, bb, ba = base_rgba.split()
-        base_rgba = Image.merge(
-            "RGBA",
-            (
-                br.point(_SAT_BASE_R_LUT),
-                bg.point(_SAT_BASE_G_LUT),
-                bb.point(_SAT_BASE_B_LUT),
-                ba,
-            ),
-        )
-        # 2. 叠加柔和半透明路网线条（ltype=2，避免粗白路网压住卫星细节和文字）
+    composed_disk = _amap_tile_disk_path(zoom, x, y, f"composed_hd_{style_key}", "jpg")
+    if style_key == "road":
         try:
-            road_raw = f_road.result(timeout=15)
-            with Image.open(io.BytesIO(road_raw)) as r_handle:
-                road_rgba = r_handle.convert("RGBA")
-            rr, rg, rb, ra = road_rgba.split()
-            road_rgba = Image.merge("RGBA", (rr, rg, rb, ra.point(_SAT_ROAD_ALPHA_LUT)))
-            base_rgba.alpha_composite(road_rgba)
+            if composed_disk.is_file() and composed_disk.stat().st_size > 128:
+                with Image.open(composed_disk) as cached_img:
+                    if cached_img.size == (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX):
+                        return cached_img.convert("RGB")
         except Exception:  # noqa: BLE001
             pass
-        # 3. 叠加纯文字注记层（ltype=4），转换为高对比「纯白字芯 + 深色描边」
+        raw = _download_amap_tile(zoom, x, y, style_key)
+        with Image.open(io.BytesIO(raw)) as handle:
+            out_road = handle.convert("RGB").resize(
+                (_AMAP_COMPOSED_TILE_PX, _AMAP_COMPOSED_TILE_PX),
+                Image.LANCZOS,
+            )
+        if ImageFilter is not None:
+            out_road = out_road.filter(ImageFilter.UnsharpMask(radius=0.8, percent=110, threshold=2))
         try:
-            _ = f_text.result(timeout=15)
-            label_rgba = _decode_amap_satellite_label_rgba(zoom, x, y)
-            base_rgba.alpha_composite(label_rgba)
-        except Exception:  # noqa: BLE001 - 注记层失败时保留纯卫星底图
+            composed_disk.parent.mkdir(parents=True, exist_ok=True)
+            tmp_jpg = composed_disk.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+            out_road.save(tmp_jpg, format="JPEG", quality=96, subsampling=0)
+            tmp_jpg.replace(composed_disk)
+        except Exception:  # noqa: BLE001
             pass
-    out_rgb = base_rgba.convert("RGB")
-    if ImageFilter is not None:
-        out_rgb = out_rgb.filter(ImageFilter.UnsharpMask(radius=0.75, percent=85, threshold=2))
+        return out_road
+
+    base_rgb = _decode_amap_satellite_base_rgb(zoom, x, y)
+    base_rgba = base_rgb.convert("RGBA")
     try:
-        composed_disk.parent.mkdir(parents=True, exist_ok=True)
-        tmp_jpg = composed_disk.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
-        out_rgb.save(tmp_jpg, format="JPEG", quality=95, subsampling=0)
-        tmp_jpg.replace(composed_disk)
+        label_rgba = _decode_amap_satellite_label_rgba(zoom, x, y)
+        base_rgba.alpha_composite(label_rgba)
     except Exception:  # noqa: BLE001
         pass
-    return out_rgb
+    return base_rgba.convert("RGB")
 
 
 def amap_base_map(config: MapLayerLayout, points: list[TrackPoint], diameter: int) -> Any | None:
@@ -6666,6 +7067,8 @@ def amap_base_map(config: MapLayerLayout, points: list[TrackPoint], diameter: in
             tile = fut.result(timeout=20)
         except Exception:  # noqa: BLE001 - 单块失败就留底色，不影响整体
             continue
+        if tile.size != (256, 256):
+            tile = tile.resize((256, 256), Image.BICUBIC)
         canvas.paste(tile, (int(tile_x * 256 - origin_px[0]), int(tile_y * 256 - origin_px[1])))
         fetched += 1
     if fetched == 0:
@@ -6687,6 +7090,7 @@ def amap_base_map(config: MapLayerLayout, points: list[TrackPoint], diameter: in
 
 _AMAP_TILE_CACHE: dict[tuple[Any, ...], Any] = {}
 _AMAP_GRID_CANVAS_CACHE: dict[tuple[Any, ...], Any] = {}
+_AMAP_LABEL_GRID_CACHE: dict[tuple[Any, ...], Any] = {}
 _AMAP_CARD_DATA_URL_CACHE: dict[tuple[Any, ...], str] = {}
 # 演示行程的预览底图按画面尺寸缓存，拖排版滑块时不用每次重拼瓦片。
 _DEMO_BACKGROUND_CACHE: dict[tuple[Any, ...], Any] = {}
@@ -6724,13 +7128,16 @@ def amap_card_base_map(
     if frame is None:
         return None
     _, origin_x, origin_y, span_x, span_y = frame
-    # 整张图刚好装下这扇窗口，再选合适的瓦片层级。
+    # 整张图刚好装下这扇窗口，再选合适的瓦片层级；
+    # 对于 4K 高分屏（width >= 1600），以 1.65x 视网膜系数选择注记层级，使文字字号适中且底层 z+1 卫星图达到原生 4K 密度。
     mid_lat = sum(point.latitude for point in points) / len(points)
     meters_per_unit = 40075016.686 * math.cos(math.radians(mid_lat))
     meters_per_px_full = meters_per_unit / 256.0
-    target_mpp = (span_x * meters_per_unit) / max(1, width)
+    hi_dpi_factor = 1.65 if max(width, height) >= 1800 else 1.0
+    eff_label_width = max(1.0, float(width) / hi_dpi_factor)
+    target_mpp = (span_x * meters_per_unit) / eff_label_width
     zoom = int(round(math.log2(meters_per_px_full / max(1e-12, target_mpp))))
-    zoom = max(12, min(18, zoom))
+    zoom = max(12, min(17, zoom))
     n = 2 ** zoom
     left = origin_x * n
     top = origin_y * n
@@ -6741,7 +7148,7 @@ def amap_card_base_map(
     last_x = int(math.floor(right))
     last_y = int(math.floor(bottom))
     # 限制瓦片数，避免一次预览拉爆。
-    if (last_x - first_x + 1) * (last_y - first_y + 1) > 64:
+    if (last_x - first_x + 1) * (last_y - first_y + 1) > 100:
         zoom = max(12, zoom - 1)
         n = 2 ** zoom
         left = origin_x * n
@@ -6753,13 +7160,91 @@ def amap_card_base_map(
         last_x = int(math.floor(right))
         last_y = int(math.floor(bottom))
 
+    tile_px = _AMAP_COMPOSED_TILE_PX
     style_key = map_style if map_style in {"satellite", "road"} else "satellite"
-    grid_key = (zoom, first_x, first_y, last_x, last_y, style_key)
+    x0 = (left - first_x) * float(tile_px)
+    y0 = (top - first_y) * float(tile_px)
+    x1 = (right - first_x) * float(tile_px)
+    y1 = (bottom - first_y) * float(tile_px)
+
+    if style_key == "satellite":
+        # 卫星模式采用「纯净卫星底图网格」与「无损 SDF 文字注记网格」双层解耦裁切：
+        # 文字注记从 512x512 无损 RGBA 一步 LANCZOS 重采样直达目标画布再 alpha_composite，全程 0 次进 JPEG、0 次二次缩放模糊
+        base_grid_key = (zoom, first_x, first_y, last_x, last_y, "satellite_clean", tile_px)
+        label_grid_key = (zoom, first_x, first_y, last_x, last_y, "satellite_sdf_label", tile_px)
+        with MEM_CACHE_LOCK:
+            base_canvas = _AMAP_GRID_CANVAS_CACHE.get(base_grid_key)
+            label_canvas = _AMAP_LABEL_GRID_CACHE.get(label_grid_key)
+        if base_canvas is None or label_canvas is None:
+            canvas_w = (last_x - first_x + 1) * tile_px
+            canvas_h = (last_y - first_y + 1) * tile_px
+            built_base = Image.new("RGB", (canvas_w, canvas_h), (28, 34, 42))
+            built_label = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+            grid_coords_sat: list[tuple[int, int, int]] = []
+            for tile_x in range(first_x, last_x + 1):
+                for tile_y in range(first_y, last_y + 1):
+                    if 0 <= tile_y < n:
+                        grid_coords_sat.append((tile_x, tile_y, tile_x % n))
+            base_futs = [
+                (tx, ty, _AMAP_TILE_FETCH_POOL.submit(_decode_amap_satellite_base_rgb, zoom, wx, ty))
+                for tx, ty, wx in grid_coords_sat
+            ]
+            label_futs = [
+                (tx, ty, _AMAP_TILE_FETCH_POOL.submit(_decode_amap_satellite_label_rgba, zoom, wx, ty))
+                for tx, ty, wx in grid_coords_sat
+            ]
+            fetched_sat = 0
+            for tile_x, tile_y, bfut in base_futs:
+                try:
+                    btile = bfut.result(timeout=20)
+                except Exception:  # noqa: BLE001
+                    continue
+                if btile.size != (tile_px, tile_px):
+                    btile = btile.resize((tile_px, tile_px), Image.BICUBIC)
+                built_base.paste(btile, ((tile_x - first_x) * tile_px, (tile_y - first_y) * tile_px))
+                fetched_sat += 1
+            if fetched_sat == 0:
+                return None
+            for tile_x, tile_y, lfut in label_futs:
+                try:
+                    ltile = lfut.result(timeout=20)
+                except Exception:  # noqa: BLE001
+                    continue
+                if ltile.size != (tile_px, tile_px):
+                    ltile = ltile.resize((tile_px, tile_px), Image.LANCZOS)
+                built_label.paste(ltile, ((tile_x - first_x) * tile_px, (tile_y - first_y) * tile_px))
+            with MEM_CACHE_LOCK:
+                if len(_AMAP_GRID_CANVAS_CACHE) > 16:
+                    _AMAP_GRID_CANVAS_CACHE.clear()
+                if len(_AMAP_LABEL_GRID_CACHE) > 16:
+                    _AMAP_LABEL_GRID_CACHE.clear()
+                _AMAP_GRID_CANVAS_CACHE[base_grid_key] = built_base
+                _AMAP_LABEL_GRID_CACHE[label_grid_key] = built_label
+            base_canvas = built_base
+            label_canvas = built_label
+
+        cropped_base = base_canvas.resize(
+            (width, height),
+            resample=Image.BICUBIC,
+            box=(x0, y0, x1, y1),
+        )
+        if ImageFilter is not None:
+            cropped_base = cropped_base.filter(ImageFilter.UnsharpMask(radius=0.65, percent=70, threshold=2))
+        out_rgba = cropped_base.convert("RGBA")
+        cropped_label = label_canvas.resize(
+            (width, height),
+            resample=Image.LANCZOS,
+            box=(x0, y0, x1, y1),
+        )
+        out_rgba.alpha_composite(cropped_label)
+        return out_rgba
+
+    grid_key = (zoom, first_x, first_y, last_x, last_y, style_key, tile_px)
     with MEM_CACHE_LOCK:
         canvas = _AMAP_GRID_CANVAS_CACHE.get(grid_key)
     if canvas is None:
-        canvas_w = (last_x - first_x + 1) * 256
-        canvas_h = (last_y - first_y + 1) * 256
+        canvas_w = (last_x - first_x + 1) * tile_px
+        canvas_h = (last_y - first_y + 1) * tile_px
         built = Image.new("RGB", (canvas_w, canvas_h), (28, 34, 42))
         grid_coords: list[tuple[int, int, int]] = []
         for tile_x in range(first_x, last_x + 1):
@@ -6777,7 +7262,9 @@ def amap_card_base_map(
                 tile = fut.result(timeout=20)
             except Exception:  # noqa: BLE001
                 continue
-            built.paste(tile, ((tile_x - first_x) * 256, (tile_y - first_y) * 256))
+            if tile.size != (tile_px, tile_px):
+                tile = tile.resize((tile_px, tile_px), Image.BICUBIC)
+            built.paste(tile, ((tile_x - first_x) * tile_px, (tile_y - first_y) * tile_px))
             fetched += 1
         if fetched == 0:
             return None
@@ -6787,10 +7274,6 @@ def amap_card_base_map(
             _AMAP_GRID_CANVAS_CACHE[grid_key] = built
         canvas = built
     # 使用 SIMD 加速的亚像素浮点 box + BICUBIC 三次卷积重采样裁切，使 center_pt 零误差落在卡片正中心
-    x0 = (left - first_x) * 256.0
-    y0 = (top - first_y) * 256.0
-    x1 = (right - first_x) * 256.0
-    y1 = (bottom - first_y) * 256.0
     resampled = canvas.resize(
         (width, height),
         resample=Image.BICUBIC,
@@ -7151,11 +7634,19 @@ def generate_overlay_video(
     assert process.stdin is not None
     err_chunks, err_thread = _start_stderr_drain(process)
     try:
+        ov_speed_offset_kmh = resolve_speed_offset_kmh(layout)
+        ov_track_points = apply_speed_offset_to_track_points(track_points, ov_speed_offset_kmh)
         for frame_index in range(total_frames):
             elapsed_ms = frame_index * 1000 / fps
-            values = cue_values_at(cues, elapsed_ms) or {}
-            speed_kmh = extract_speed_kmh(values.get("speed")) or track_speed_at(track_points, elapsed_ms)
-            layer = render_overlay_frame(layout, values, speed_kmh, width, height, int(elapsed_ms), track_points)
+            values = dict(cue_values_at(cues, elapsed_ms) or {})
+            raw_spd = (
+                extract_speed_kmh(values.get("speed"))
+                if values.get("speed")
+                else track_speed_at(track_points, elapsed_ms)
+            )
+            speed_kmh = apply_speed_offset_kmh(raw_spd, ov_speed_offset_kmh)
+            values["speed"] = f"{speed_kmh:.1f} km/h"
+            layer = render_overlay_frame(layout, values, speed_kmh, width, height, int(elapsed_ms), ov_track_points)
             process.stdin.write(layer.tobytes())
             if progress and frame_index % fps == 0:
                 percent = 40 + int(50 * frame_index / max(1, total_frames))
@@ -7275,7 +7766,8 @@ def normalized_fps(value: int) -> int:
 
 
 def bitrate(width: int, height: int, fps: int) -> str:
-    value = max(2_000_000, min(28_000_000, int(width * height * min(fps, 60) * 0.16)))
+    """根据输出分辨率与帧率计算目标编码码率（4K 60fps 最高提升至 36 Mbps，保证高德卫星图与文字锐利无块效应）。"""
+    value = max(2_000_000, min(36_000_000, int(width * height * min(fps, 60) * 0.16)))
     return str(value)
 
 
@@ -7295,6 +7787,9 @@ def safe_name(value: str) -> str:
 
 def parse_options(data: dict[str, Any]) -> ExportOptions:
     fields = data.get("subtitleFields") or {}
+    raw_speed_offset = data.get("speedOffsetKmh")
+    if raw_speed_offset is None and isinstance(data.get("privacy"), dict):
+        raw_speed_offset = data["privacy"].get("speedOffsetKmh")
     return ExportOptions(
         trip=str(data.get("trip") or ""),
         start_ms=int(float(data.get("startMs") or 0)),
@@ -7313,6 +7808,7 @@ def parse_options(data: dict[str, Any]) -> ExportOptions:
         intro_scale_meters=int(float(data["introScaleMeters"])) if data.get("introScaleMeters") is not None else None,
         privacy_mode=bool(data["privacyMode"]) if data.get("privacyMode") is not None else None,
         privacy_trim_meters=int(float(data["privacyTrimMeters"])) if data.get("privacyTrimMeters") is not None else None,
+        speed_offset_kmh=float(raw_speed_offset) if raw_speed_offset is not None else None,
         export_resolution=str(data["exportResolution"]).strip().lower() if data.get("exportResolution") is not None else None,
         export_width=int(float(data["exportWidth"])) if data.get("exportWidth") is not None else None,
         export_height=int(float(data["exportHeight"])) if data.get("exportHeight") is not None else None,
@@ -7938,6 +8434,7 @@ class Handler(BaseHTTPRequestHandler):
                         query,
                         include_background=not bool(data.get("htmlOnly")),
                         include_html=not bool(data.get("backgroundOnly")),
+                        map_window_only=bool(data.get("mapWindowOnly")),
                     )
                     self.send_json(payload)
                 elif parsed.path == "/api/preview-media":
@@ -8173,6 +8670,7 @@ INDEX_HTML = r"""
       <div><label>结束秒（空=到结尾）</label><input id="end" type="number" min="1" placeholder="自动"></div>
       <div><label>播放倍率</label><select id="speed"><option>0.5</option><option selected>1</option><option>1.5</option><option>2</option><option>4</option><option>8</option><option>16</option></select></div>
       <div><label>输出 FPS</label><input id="fps" type="number" min="5" max="120" value="60"></div>
+      <div><label>车速偏移 (km/h)</label><input id="speedOffset" type="number" min="-500" max="500" step="1" value="-100"></div>
     </div>
   </div>
   <div class="card">
@@ -8225,6 +8723,7 @@ function payload() {
     endMs: endValue ? Number(endValue) * 1000 : null,
     playbackSpeed: Number(document.getElementById('speed').value || 1),
     fps: Number(document.getElementById('fps').value || 60),
+    speedOffsetKmh: Number(document.getElementById('speedOffset').value ?? -100),
     stabilize: document.getElementById('stabilize').checked,
     includeRouteMap: document.getElementById('route').checked,
     mapHeightPercent: Number(document.getElementById('mapHeight').value),

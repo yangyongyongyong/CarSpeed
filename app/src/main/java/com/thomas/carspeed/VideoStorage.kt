@@ -323,8 +323,79 @@ object VideoStorage {
         return companionCandidates(context, videoFile, ".favorite")
     }
 
+    /**
+     * 汇总所有可见的行车视频文件：同时扫描本地目录与 MediaStore，
+     * 避免视频搬入 DCIM/CarSpeed 后因分区存储目录列举受限或大小写差异而漏扫。
+     */
     fun videoFiles(context: Context): List<File> {
-        return videoDirs(context).flatMap { videoFiles(it) }.distinctBy { it.absolutePath }
+        val fromDirs = videoDirs(context).flatMap { videoFiles(it) }
+        val fromMediaStore = mediaStoreVideoFiles(context)
+        return (fromDirs + fromMediaStore)
+            .map { normalizeVideoFile(it) }
+            .distinctBy { it.absolutePath.lowercase(Locale.ROOT) }
+    }
+
+    /**
+     * 从 MediaStore 查询本应用录制或位于 CarSpeed 相册目录下的视频文件，
+     * 解决 Android 11+ 分区存储下直接对 DCIM/CarSpeed 调用 listFiles() 无法遍历的问题。
+     */
+    private fun mediaStoreVideoFiles(context: Context): List<File> {
+        return runCatching {
+            val results = ArrayList<File>()
+            val projection = arrayOf(
+                MediaStore.MediaColumns.DATA,
+                MediaStore.MediaColumns.RELATIVE_PATH
+            )
+            context.contentResolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val relCol = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                if (dataCol >= 0) {
+                    while (cursor.moveToNext()) {
+                        val rawPath = cursor.getString(dataCol) ?: continue
+                        val relPath = if (relCol >= 0) cursor.getString(relCol).orEmpty() else ""
+                        if (!rawPath.contains("/$DIR_NAME/", ignoreCase = true) &&
+                            !relPath.contains("$DIR_NAME/", ignoreCase = true)
+                        ) {
+                            continue
+                        }
+                        val file = normalizeVideoFile(File(rawPath))
+                        if (isAppVideoFile(file) && !isShareExportFile(file)) {
+                            results.add(file)
+                        }
+                    }
+                }
+            }
+            results
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * 规范化 MediaStore 返回的视频路径大小写（例如 vivo 系统返回 /storage/emulated/0/dcim/CarSpeed），
+     * 保证与 galleryAlbumDir() 的 /storage/emulated/0/DCIM/CarSpeed 保持一致。
+     */
+    internal fun normalizeVideoFile(file: File): File {
+        val rawPath = file.absolutePath
+        val galleryRoot = runCatching { galleryAlbumDir().absolutePath }.getOrNull()
+        if (!galleryRoot.isNullOrBlank() &&
+            rawPath.startsWith(galleryRoot, ignoreCase = true) &&
+            !rawPath.startsWith(galleryRoot, ignoreCase = false)
+        ) {
+            return File(galleryRoot + rawPath.substring(galleryRoot.length))
+        }
+        val publicRoot = runCatching { existingPublicVideoDir()?.absolutePath }.getOrNull()
+        if (!publicRoot.isNullOrBlank() &&
+            rawPath.startsWith(publicRoot, ignoreCase = true) &&
+            !rawPath.startsWith(publicRoot, ignoreCase = false)
+        ) {
+            return File(publicRoot + rawPath.substring(publicRoot.length))
+        }
+        return file
     }
 
     fun recordingStartTimeMs(file: File): Long? {
@@ -347,7 +418,7 @@ object VideoStorage {
         if (segments.isEmpty()) return trackDurationMs?.coerceAtLeast(0L) ?: 0L
         if (segments.size == 1) {
             val single = segments.first()
-            mediaStoreDurations[single.absolutePath]?.takeIf { it > 0L }?.let { return it }
+            lookupMediaStoreDuration(mediaStoreDurations, single)?.let { return it }
             val raw = recordingDurationMs(single)
             if (trackDurationMs != null && trackDurationMs > 0L && (raw <= 0L || raw > MAX_SEGMENT_SLICE_MS)) {
                 return trackDurationMs
@@ -358,7 +429,7 @@ object VideoStorage {
         var hadClobberedMtimeWithoutMediaStore = false
         for (index in segments.indices) {
             val file = segments[index]
-            val fromStore = mediaStoreDurations[file.absolutePath]?.takeIf { it > 0L }
+            val fromStore = lookupMediaStoreDuration(mediaStoreDurations, file)
             if (fromStore != null) {
                 total += fromStore
                 continue
@@ -395,6 +466,20 @@ object VideoStorage {
         return total.takeIf { it > 0L } ?: (trackDurationMs?.coerceAtLeast(0L) ?: 0L)
     }
 
+    /**
+     * 兼容大小写路径（如 /dcim/ 与 /DCIM/）从 MediaStore 时长映射表中读取视频时长。
+     */
+    private fun lookupMediaStoreDuration(mediaStoreDurations: Map<String, Long>, file: File): Long? {
+        val direct = mediaStoreDurations[file.absolutePath]?.takeIf { it > 0L }
+        if (direct != null) return direct
+        val normalized = normalizeVideoFile(file).absolutePath
+        return mediaStoreDurations[normalized]?.takeIf { it > 0L }
+            ?: mediaStoreDurations[file.absolutePath.lowercase(Locale.ROOT)]?.takeIf { it > 0L }
+    }
+
+    /**
+     * 从 MediaStore 批量读取视频时长，同时写入原始路径、规范化路径与小写路径键。
+     */
     fun mediaStoreVideoDurations(context: Context): Map<String, Long> {
         return runCatching {
             val map = HashMap<String, Long>()
@@ -415,7 +500,11 @@ object VideoStorage {
                     while (cursor.moveToNext()) {
                         val path = cursor.getString(dataCol) ?: continue
                         val duration = cursor.getLong(durCol)
-                        if (duration > 0L) map[path] = duration
+                        if (duration > 0L) {
+                            map[path] = duration
+                            map[normalizeVideoFile(File(path)).absolutePath] = duration
+                            map[path.lowercase(Locale.ROOT)] = duration
+                        }
                     }
                 }
             }
@@ -615,7 +704,10 @@ object VideoStorage {
     }
 
     fun deleteVideoGroup(context: Context, videoFile: File): Int {
-        return companionFilesFor(context, videoFile).count { deleteIfExists(it) }
+        val companions = companionFilesFor(context, videoFile)
+        forgetMediaPath(context, videoFile.absolutePath)
+        val deleted = companions.count { deleteIfExists(it) }
+        return if (deleted == 0 && !videoFile.exists()) 1 else deleted
     }
 
     fun deleteVideoTrip(trip: VideoTrip): Int {
@@ -654,6 +746,7 @@ object VideoStorage {
     }
 
     fun videoFiles(dir: File): List<File> {
+        if (!dir.exists()) return emptyList()
         return dir.walkTopDown()
             .filter { isAppVideoFile(it) && !isShareExportFile(it) }
             .toList()
@@ -684,7 +777,7 @@ object VideoStorage {
     private fun videoDirs(context: Context): List<File> {
         cachedVideoDirs?.let { return it }
         val dirs = listOfNotNull(
-            galleryAlbumDir().takeIf { it.isDirectory || it.mkdirs() },
+            galleryAlbumDir(),
             videoDir(context),
             legacyAppMediaDir(context, Environment.DIRECTORY_MOVIES),
             existingPublicVideoDir()
@@ -759,7 +852,7 @@ object VideoStorage {
             runCatching {
                 context.contentResolver.delete(
                     collection,
-                    "${MediaStore.MediaColumns.DATA}=?",
+                    "LOWER(${MediaStore.MediaColumns.DATA})=LOWER(?)",
                     arrayOf(path)
                 )
             }
@@ -843,13 +936,12 @@ object VideoStorage {
         protectedFiles: Collection<File> = emptyList()
     ): Boolean {
         val dir = videoDir(context)
-        val dirs = videoDirs(context)
         val limitBytes = limitGb.coerceIn(
             DashcamSettings.MIN_LOOP_STORAGE_GB,
             DashcamSettings.MAX_LOOP_STORAGE_GB
         ) * 1024L * 1024L * 1024L
         val plan = planCleanup(
-            files = dirs.flatMap { managedVideoFiles(context, it) }.distinctBy { it.absolutePath },
+            files = allManagedVideoFiles(context),
             limitBytes = limitBytes,
             usableSpaceBytes = dir.usableSpace,
             requiredFreeBytes = requiredFreeBytes,
@@ -871,13 +963,24 @@ object VideoStorage {
             DashcamSettings.MIN_LOOP_STORAGE_GB,
             DashcamSettings.MAX_LOOP_STORAGE_GB
         ) * 1024L * 1024L * 1024L
-        val usedBytes = videoDirs(context)
-            .flatMap { managedVideoFiles(context, it) }
-            .distinctBy { it.absolutePath }
+        val usedBytes = allManagedVideoFiles(context)
             .sumOf { it.length().coerceAtLeast(0L) }
         return StorageUsage(usedBytes = usedBytes, limitBytes = limitBytes)
     }
 
+    /**
+     * 汇总应用受管的可循环清理文件（含通过 MediaStore 发现的 DCIM/CarSpeed 视频及其伴随文件）。
+     */
+    private fun allManagedVideoFiles(context: Context): List<File> {
+        val tripProtectedCache = HashMap<String, Boolean>()
+        val fromDirs = videoDirs(context).flatMap { managedVideoFiles(context, it) }
+        val fromMediaStore = mediaStoreVideoFiles(context)
+            .flatMap { video -> companionFilesFor(context, video) }
+            .filter { file -> isAutoGeneratedCompanionFile(context, file, tripProtectedCache) }
+        return (fromDirs + fromMediaStore)
+            .map { normalizeVideoFile(it) }
+            .distinctBy { it.absolutePath.lowercase(Locale.ROOT) }
+    }
     fun planCleanup(
         files: List<File>,
         limitBytes: Long,
@@ -933,7 +1036,7 @@ object VideoStorage {
 
     fun estimateSegmentBytes(mode: VideoMode, durationMs: Long): Long {
         val seconds = (durationMs / 1000L).coerceAtLeast(1L)
-        val bitsPerPixelFrame = 0.12
+        val bitsPerPixelFrame = 0.16
         val estimatedBitsPerSecond = mode.width.toDouble() * mode.height.toDouble() * mode.fps * bitsPerPixelFrame
         val estimatedBytes = (estimatedBitsPerSecond / 8.0 * seconds).toLong()
         return estimatedBytes.coerceAtLeast(150L * 1024L * 1024L)
@@ -1026,6 +1129,7 @@ object VideoStorage {
 
     private fun relativePathForKnownVideoRoot(context: Context, sourceDir: File): String? {
         val roots = listOfNotNull(
+            galleryAlbumDir(),
             sharedAlbumRoot(context),
             existingPublicVideoDir(),
             legacyAppMediaDir(context, Environment.DIRECTORY_MOVIES)
@@ -1038,9 +1142,13 @@ object VideoStorage {
     private fun childRelativePath(root: File, child: File): String? {
         val rootPath = root.absoluteFile.path.trimEnd(File.separatorChar)
         val childPath = child.absoluteFile.path
-        if (childPath == rootPath) return ""
+        if (childPath.equals(rootPath, ignoreCase = true)) return ""
         val prefix = rootPath + File.separator
-        return if (childPath.startsWith(prefix)) childPath.removePrefix(prefix) else null
+        return if (childPath.startsWith(prefix, ignoreCase = true)) {
+            childPath.substring(prefix.length)
+        } else {
+            null
+        }
     }
 
     private fun renameIfExists(from: File, to: File) {

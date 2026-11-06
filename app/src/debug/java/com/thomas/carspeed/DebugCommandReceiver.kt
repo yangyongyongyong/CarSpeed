@@ -467,6 +467,9 @@ class DebugCommandReceiver : BroadcastReceiver() {
             .putNullable("longitude", telemetry.longitude)
             .putNullable("focusDistanceDiopters", telemetry.focusDistanceDiopters)
             .putNullable("autofocusState", telemetry.autofocusState)
+            .putNullable("exposureTimeNs", telemetry.exposureTimeNs)
+            .putNullable("shutterSpeed", DashcamShutterPolicy.formatShutterSpeed(telemetry.exposureTimeNs))
+            .putNullable("isoSensitivity", telemetry.isoSensitivity)
     }
 
     private fun radarAlertJson(): JSONObject {

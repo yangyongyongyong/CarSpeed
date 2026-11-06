@@ -26,6 +26,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.annotation.OptIn as AndroidXOptIn
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -44,6 +45,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
     private lateinit var btnClose: Button
 
     private var idlePreviewProvider: ProcessCameraProvider? = null
+    private var idleCamera: Camera? = null
     private var idlePreviewUseCase: Preview? = null
     private var idlePreviewRequested = false
     private var startAfterNotificationPermission = false
@@ -63,7 +65,9 @@ class CameraFullscreenActivity : AppCompatActivity() {
         ) {
             DashcamService.updatePreviewFocusTelemetry(
                 result.get(CaptureResult.LENS_FOCUS_DISTANCE),
-                result.get(CaptureResult.CONTROL_AF_STATE)
+                result.get(CaptureResult.CONTROL_AF_STATE),
+                result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
+                result.get(CaptureResult.SENSOR_SENSITIVITY)
             )
         }
     }
@@ -151,6 +155,7 @@ class CameraFullscreenActivity : AppCompatActivity() {
         if (DashcamService.isRecording(this)) {
             idlePreviewRequested = false
             idlePreviewProvider = null
+            idleCamera = null
             idlePreviewUseCase = null
         } else {
             stopIdlePreview()
@@ -230,9 +235,10 @@ class CameraFullscreenActivity : AppCompatActivity() {
                         preview.setSurfaceProvider(previewView.surfaceProvider)
                     }
                     provider.unbindAll()
-                    provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview)
+                    idleCamera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview)
                     idlePreviewUseCase = preview
                     applyTargetRotation()
+                    applyFocusToCurrentCamera()
                 } catch (e: RuntimeException) {
                     Toast.makeText(this, getString(R.string.camera_open_failed, e.message ?: "unknown"), Toast.LENGTH_SHORT).show()
                 }
@@ -260,7 +266,16 @@ class CameraFullscreenActivity : AppCompatActivity() {
         idlePreviewRequested = false
         idlePreviewProvider?.unbindAll()
         idlePreviewProvider = null
+        idleCamera = null
         idlePreviewUseCase = null
+    }
+
+    /**
+     * 将手动对焦（默认 14m 超焦距）与 1.0x 主摄锁定同步应用到全屏预览相机，
+     * 保持与普通预览页和后台录像器完全一致的对焦状态。
+     */
+    private fun applyFocusToCurrentCamera() {
+        CameraFocus.apply(this, idleCamera)
     }
 
     private fun startOrientationListener() {

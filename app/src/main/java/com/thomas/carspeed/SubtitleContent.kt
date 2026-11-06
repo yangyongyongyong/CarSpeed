@@ -47,6 +47,8 @@ internal object SubtitleContent {
         val manualFocus: Boolean = false,
         val focusDistanceDiopters: Float? = null,
         val autofocusState: String? = null,
+        val exposureTimeNs: Long? = null,
+        val isoSensitivity: Int? = null,
         val placeholdersWhenMissing: Boolean = false,
         val addressPendingText: String = ADDRESS_PENDING
     )
@@ -214,6 +216,11 @@ internal object SubtitleContent {
             }
         }
         val state = if (facts.manualFocus) "MF" else facts.autofocusState ?: "AF--"
-        return "对焦 $focusValue · $state"
+        val exposureSummary = DashcamShutterPolicy.formatExposureSummary(facts.exposureTimeNs, facts.isoSensitivity)
+        return if (exposureSummary != null) {
+            "对焦 $focusValue · $state · $exposureSummary"
+        } else {
+            "对焦 $focusValue · $state"
+        }
     }
 }
